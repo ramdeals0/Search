@@ -1,0 +1,29 @@
+{
+  "name": "@retailer-search/search-api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -b --noEmit",
+    "lint": "echo \"lint pending\"",
+    "test": "echo \"tests pending\""
+  },
+  "dependencies": {
+    "@retailer-search/config": "workspace:*",
+    "@retailer-search/search-core": "workspace:*",
+    "@retailer-search/shared-types": "workspace:*",
+    "express": "^4.21.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

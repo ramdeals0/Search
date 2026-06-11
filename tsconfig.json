@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/shared-types" },
+    { "path": "./packages/config" },
+    { "path": "./packages/search-core" },
+    { "path": "./services/search-api" },
+    { "path": "./services/catalog-ingestion" },
+    { "path": "./services/event-collector" },
+    { "path": "./apps/storefront" },
+    { "path": "./apps/admin" }
+  ]
+}
