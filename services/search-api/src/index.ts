@@ -2103,8 +2103,14 @@ app.get("/api/v1/analytics/summary", (_req, res) => {
   res.json(getAnalyticsSummary());
 });
 
-app.listen(env.SEARCH_API_PORT, env.SEARCH_API_HOST, () => {
-  console.log(
-    `search-api listening on http://${env.SEARCH_API_HOST}:${env.SEARCH_API_PORT}`,
-  );
-});
+export default app;
+
+const isVercel = process.env.VERCEL === "1";
+
+if (!isVercel) {
+  app.listen(env.SEARCH_API_PORT, env.SEARCH_API_HOST, () => {
+    console.log(
+      `search-api listening on http://${env.SEARCH_API_HOST}:${env.SEARCH_API_PORT}`,
+    );
+  });
+}
