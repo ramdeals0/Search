@@ -120,6 +120,8 @@ Optional env:
 
 ## Demo credentials (seeded)
 
+After running `pnpm prisma:seed`, sign in with any demo user below (password **`demo123`** for all).
+
 | Email | Password | Role |
 |-------|----------|------|
 | merchandiser@example.com | demo123 | merchandiser |
@@ -128,7 +130,72 @@ Optional env:
 | releasemanager@example.com | demo123 | release_manager |
 | admin@example.com | demo123 | admin |
 
-Seeded demo data also includes sample audit entries, a pending approval (`approval-seed-demo`), one notification, and an inactive webhook endpoint.
+## Synthetic home improvement demo catalog
+
+The Prisma seed generates **synthetic, non-trademark demo data** for a Home Depot–style American home improvement retailer. All product names, brands, descriptions, and placeholder images are fabricated for local demos only.
+
+### What the seed creates
+
+| Area | Count (approx.) |
+|------|-----------------|
+| Products | 1,000 (50 heroes + generated simple/variant SKUs) |
+| Leaf categories | 39 |
+| Synthetic brands | 80+ |
+| Synonym groups | 25 |
+| Typo corrections | 15 |
+| Merchandising rules | 20 |
+| Zero-result fallbacks | 10 |
+| Approval requests | 12 |
+| Access review runs | 2 |
+| JIT elevation requests | 5 |
+| Notifications | 40 |
+| Comments + annotations | 60 |
+| Audit trail entries | 260+ |
+| Webhook endpoints + deliveries | 2 + 15 |
+| Export jobs | 8 |
+| Experiment definitions + runs | 3 + 8 |
+
+The seed also writes:
+
+- `services/search-api/prisma/seed-data/generated/catalog.json`
+- `services/search-api/src/seed-products.ts` (auto-generated loader)
+- `SystemConfig` keys under `demo.*` (catalog, search rules, experiments)
+
+Running the seed marks bootstrap as **completed** so the demo admin UI works immediately without `/setup`.
+
+### Run or reset demo data
+
+From the repo root:
+
+```bash
+pnpm prisma:generate
+pnpm prisma:migrate
+pnpm prisma:seed
+```
+
+To fully reset locally:
+
+```bash
+Remove-Item services/search-api/prisma/dev.db -Force -ErrorAction SilentlyContinue
+pnpm prisma:migrate
+pnpm prisma:seed
+pnpm dev
+```
+
+**Note:** Demo seed and first-run bootstrap conflict — use **either** migrate+seed for demos **or** migrate-only + `/setup` for bootstrap testing.
+
+### Example storefront search queries
+
+Try these on http://localhost:3000 (or your storefront port):
+
+- `cordless drill`
+- `ceiling fan`
+- `weed eater`
+- `drywall screws`
+- `shop vac`
+- `GFCI outlet`
+- `pressure washer`
+- `mulch`
 
 ## Commands
 

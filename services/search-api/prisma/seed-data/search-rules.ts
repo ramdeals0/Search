@@ -48,8 +48,6 @@ export const DEMO_TYPO_CORRECTIONS: Record<string, string> = {
   "smoke detecter": "smoke detector",
   "extention cord": "extension cord",
   "ceilng fan": "ceiling fan",
-  "cordles drill": "cordless drill",
-  "primr": "primer",
 };
 
 export const DEMO_ZERO_RESULT_FALLBACKS: Record<string, string> = {
