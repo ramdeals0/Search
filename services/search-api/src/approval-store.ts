@@ -1,20 +1,30 @@
 import type {
+  ApprovalAssignmentChangeDto,
+  ApprovalAssignmentHistoryResponseDto,
   ApprovalDecisionEntryDto,
   ApprovalEligibilityResponseDto,
+  ApprovalExceptionDto,
+  ApprovalExceptionListResponseDto,
   ApprovalListResponseDto,
   ApprovalRequestDto,
   ApprovalSlaOverviewDto,
   ApprovalSlaPolicyDto,
   ApprovalSlaStatusDto,
   CreateApprovalRequestDto,
+  ExceptionType,
   NotificationDto,
   NotificationType,
   ReviewerRole,
   UpdateApprovalSlaPolicyRequestDto,
 } from "@retailer-search/shared-types";
 import {
+  listActiveDelegationsForReviewers,
+} from "./delegation-store.js";
+import {
   createNotification,
   notificationExists,
+  notifyApprovalExceptionOpened,
+  notifyApprovalReassigned,
 } from "./notification-store.js";
 import {
   getApprovalPolicy,
@@ -24,9 +34,15 @@ import {
   resolveReviewerActor,
 } from "./reviewer-store.js";
 import { getConfigSnapshotById } from "./snapshot-store.js";
+import { recordAuditLog } from "./audit-trail-store.js";
+import type { Prisma } from "@prisma/client";
+import { prisma } from "./db.js";
 
 const approvalRequests: ApprovalRequestDto[] = [];
+const assignmentHistoryByRequest = new Map<string, ApprovalAssignmentChangeDto[]>();
+const approvalExceptions: ApprovalExceptionDto[] = [];
 let approvalIdCounter = 1;
+let exceptionIdCounter = 1;
 
 let approvalSlaPolicy: ApprovalSlaPolicyDto = {
   enabled: true,
@@ -35,7 +51,106 @@ let approvalSlaPolicy: ApprovalSlaPolicyDto = {
   escalationAfterHours: 72,
 };
 
+/** In-memory only: assignment history is not persisted in SQLite MVP. */
+/** In-memory only: approval exceptions are not persisted in SQLite MVP. */
+
 const MS_PER_HOUR = 60 * 60 * 1000;
+
+function mapApprovalRowToDto(row: {
+  id: string;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+  sourceEnvironment: string;
+  targetEnvironment: string;
+  snapshotId: string | null;
+  snapshotName: string | null;
+  requestedBy: unknown;
+  approvedBy: unknown;
+  rejectedBy: unknown;
+  reason: string;
+  decisionNote: string | null;
+  linkedExperimentId: string | null;
+  assignedReviewerIds: unknown;
+  decisions: unknown;
+  requiredApprovalCount: number | null;
+  executedBy: unknown;
+}): ApprovalRequestDto {
+  return {
+    id: row.id,
+    status: row.status as ApprovalRequestDto["status"],
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    sourceEnvironment: row.sourceEnvironment as ApprovalRequestDto["sourceEnvironment"],
+    targetEnvironment: row.targetEnvironment as ApprovalRequestDto["targetEnvironment"],
+    snapshotId: row.snapshotId ?? undefined,
+    snapshotName: row.snapshotName ?? undefined,
+    requestedBy: row.requestedBy as ApprovalRequestDto["requestedBy"],
+    approvedBy: (row.approvedBy as ApprovalRequestDto["approvedBy"]) ?? undefined,
+    rejectedBy: (row.rejectedBy as ApprovalRequestDto["rejectedBy"]) ?? undefined,
+    reason: row.reason,
+    decisionNote: row.decisionNote ?? undefined,
+    linkedExperimentId: row.linkedExperimentId ?? undefined,
+    assignedReviewerIds: (row.assignedReviewerIds as string[] | null) ?? undefined,
+    decisions: (row.decisions as ApprovalRequestDto["decisions"]) ?? undefined,
+    requiredApprovalCount: row.requiredApprovalCount ?? undefined,
+    executedBy: (row.executedBy as ApprovalRequestDto["executedBy"]) ?? undefined,
+  };
+}
+
+function persistApprovalRequest(request: ApprovalRequestDto): void {
+  void prisma.approvalRequest
+    .upsert({
+      where: { id: request.id },
+      create: {
+        id: request.id,
+        status: request.status,
+        createdAt: new Date(request.createdAt),
+        updatedAt: new Date(request.updatedAt),
+        sourceEnvironment: request.sourceEnvironment,
+        targetEnvironment: request.targetEnvironment,
+        snapshotId: request.snapshotId,
+        snapshotName: request.snapshotName,
+        requestedBy: request.requestedBy as Prisma.InputJsonValue,
+        approvedBy: (request.approvedBy ?? undefined) as Prisma.InputJsonValue | undefined,
+        rejectedBy: (request.rejectedBy ?? undefined) as Prisma.InputJsonValue | undefined,
+        reason: request.reason,
+        decisionNote: request.decisionNote,
+        linkedExperimentId: request.linkedExperimentId,
+        assignedReviewerIds: (request.assignedReviewerIds ??
+          undefined) as Prisma.InputJsonValue | undefined,
+        decisions: (request.decisions ?? undefined) as Prisma.InputJsonValue | undefined,
+        requiredApprovalCount: request.requiredApprovalCount,
+        executedBy: (request.executedBy ?? undefined) as Prisma.InputJsonValue | undefined,
+      },
+      update: {
+        status: request.status,
+        updatedAt: new Date(request.updatedAt),
+        snapshotName: request.snapshotName,
+        approvedBy: (request.approvedBy ?? undefined) as Prisma.InputJsonValue | undefined,
+        rejectedBy: (request.rejectedBy ?? undefined) as Prisma.InputJsonValue | undefined,
+        decisionNote: request.decisionNote,
+        assignedReviewerIds: (request.assignedReviewerIds ??
+          undefined) as Prisma.InputJsonValue | undefined,
+        decisions: (request.decisions ?? undefined) as Prisma.InputJsonValue | undefined,
+        requiredApprovalCount: request.requiredApprovalCount,
+        executedBy: (request.executedBy ?? undefined) as Prisma.InputJsonValue | undefined,
+      },
+    })
+    .catch((error: unknown) => {
+      console.error("Failed to persist approval request", request.id, error);
+    });
+}
+
+export async function hydrateApprovalStore(): Promise<void> {
+  approvalRequests.length = 0;
+  const rows = await prisma.approvalRequest.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+  for (const row of rows) {
+    approvalRequests.push(mapApprovalRowToDto(row));
+  }
+}
 
 function createApprovalId(): string {
   const id = `approval-${Date.now()}-${approvalIdCounter}`;
@@ -45,6 +160,7 @@ function createApprovalId(): string {
 
 function touchRequest(request: ApprovalRequestDto): void {
   request.updatedAt = new Date().toISOString();
+  persistApprovalRequest(request);
 }
 
 function cloneRequest(request: ApprovalRequestDto): ApprovalRequestDto {
@@ -151,11 +267,7 @@ export function updateApprovalSlaPolicy(
   return getApprovalSlaPolicy();
 }
 
-function getRecipientActorIds(request: ApprovalRequestDto): string[] {
-  if (request.assignedReviewerIds && request.assignedReviewerIds.length > 0) {
-    return request.assignedReviewerIds;
-  }
-
+function getDefaultReviewerPool(): string[] {
   const approverRoles: ReviewerRole[] = [
     "reviewer",
     "approver",
@@ -166,6 +278,361 @@ function getRecipientActorIds(request: ApprovalRequestDto): string[] {
       (reviewer) => reviewer.active && approverRoles.includes(reviewer.role),
     )
     .map((reviewer) => reviewer.id);
+}
+
+function getStoredAssignedReviewerIds(request: ApprovalRequestDto): string[] {
+  if (request.assignedReviewerIds && request.assignedReviewerIds.length > 0) {
+    return [...request.assignedReviewerIds];
+  }
+
+  return getDefaultReviewerPool();
+}
+
+function sortReviewerIds(reviewerIds: string[]): string[] {
+  return [...new Set(reviewerIds)].sort();
+}
+
+function syncDelegationReassignments(
+  request: ApprovalRequestDto,
+  now: Date = new Date(),
+): void {
+  if (request.status !== "pending") {
+    return;
+  }
+
+  const assigned = request.assignedReviewerIds;
+  if (!assigned || assigned.length === 0) {
+    return;
+  }
+
+  const reassignRules = listActiveDelegationsForReviewers(assigned, now).filter(
+    (rule) => rule.mode === "reassign",
+  );
+
+  if (reassignRules.length === 0) {
+    return;
+  }
+
+  let nextReviewerIds = [...assigned];
+  const reasons: string[] = [];
+
+  for (const rule of reassignRules) {
+    if (!nextReviewerIds.includes(rule.fromReviewerId)) {
+      continue;
+    }
+
+    nextReviewerIds = sortReviewerIds(
+      nextReviewerIds.map((reviewerId) =>
+        reviewerId === rule.fromReviewerId ? rule.toReviewerId : reviewerId,
+      ),
+    );
+    reasons.push(
+      `Active reassignment delegation from ${rule.fromReviewerId} to ${rule.toReviewerId}`,
+    );
+  }
+
+  if (
+    reasons.length > 0 &&
+    JSON.stringify(nextReviewerIds) !== JSON.stringify(sortReviewerIds(assigned))
+  ) {
+    recordApprovalAssignmentChange({
+      approvalRequestId: request.id,
+      previousReviewerIds: assigned,
+      nextReviewerIds,
+      reason: reasons.join("; "),
+      changeType: "reassigned",
+    });
+    request.assignedReviewerIds = nextReviewerIds;
+    touchRequest(request);
+  }
+}
+
+export function getEffectiveReviewerIds(
+  approvalRequestId: string,
+  now: Date = new Date(),
+): {
+  assignedReviewerIds: string[];
+  effectiveReviewerIds: string[];
+  delegatedReviewerIds: string[];
+} {
+  const request = findRequest(approvalRequestId);
+  if (!request) {
+    return {
+      assignedReviewerIds: [],
+      effectiveReviewerIds: [],
+      delegatedReviewerIds: [],
+    };
+  }
+
+  syncDelegationReassignments(request, now);
+
+  const assignedReviewerIds = getStoredAssignedReviewerIds(request);
+  let effectiveReviewerIds = [...assignedReviewerIds];
+  const delegatedReviewerIds: string[] = [];
+
+  const delegateRules = listActiveDelegationsForReviewers(
+    assignedReviewerIds,
+    now,
+  ).filter((rule) => rule.mode === "delegate");
+
+  for (const rule of delegateRules) {
+    if (!delegatedReviewerIds.includes(rule.toReviewerId)) {
+      delegatedReviewerIds.push(rule.toReviewerId);
+    }
+    effectiveReviewerIds.push(rule.toReviewerId);
+  }
+
+  return {
+    assignedReviewerIds: sortReviewerIds(assignedReviewerIds),
+    effectiveReviewerIds: sortReviewerIds(effectiveReviewerIds),
+    delegatedReviewerIds: sortReviewerIds(delegatedReviewerIds),
+  };
+}
+
+export function recordApprovalAssignmentChange(input: {
+  approvalRequestId: string;
+  previousReviewerIds: string[];
+  nextReviewerIds: string[];
+  reason: string;
+  changeType: ApprovalAssignmentChangeDto["changeType"];
+}): ApprovalAssignmentChangeDto {
+  const change: ApprovalAssignmentChangeDto = {
+    approvalRequestId: input.approvalRequestId,
+    previousReviewerIds: sortReviewerIds(input.previousReviewerIds),
+    nextReviewerIds: sortReviewerIds(input.nextReviewerIds),
+    reason: input.reason.trim(),
+    changedAt: new Date().toISOString(),
+    changeType: input.changeType,
+  };
+
+  const history = assignmentHistoryByRequest.get(input.approvalRequestId) ?? [];
+  history.unshift(change);
+  assignmentHistoryByRequest.set(input.approvalRequestId, history);
+  return structuredClone(change);
+}
+
+export function listApprovalAssignmentHistory(
+  approvalRequestId: string,
+  now: Date = new Date(),
+): ApprovalAssignmentHistoryResponseDto | null {
+  const request = findRequest(approvalRequestId);
+  if (!request) {
+    return null;
+  }
+
+  const reviewers = getEffectiveReviewerIds(approvalRequestId, now);
+  const changes = assignmentHistoryByRequest.get(approvalRequestId) ?? [];
+
+  return {
+    approvalRequestId,
+    assignedReviewerIds: reviewers.assignedReviewerIds,
+    effectiveReviewerIds: reviewers.effectiveReviewerIds,
+    delegatedReviewerIds: reviewers.delegatedReviewerIds,
+    total: changes.length,
+    changes: changes.map((change) => structuredClone(change)),
+  };
+}
+
+export function manuallyReassignApprovalRequest(
+  id: string,
+  nextReviewerIds: string[],
+  reason: string,
+): { request: ApprovalRequestDto | null; error?: string; change?: ApprovalAssignmentChangeDto } {
+  const request = findRequest(id);
+  if (!request || request.status !== "pending") {
+    return {
+      request: null,
+      error: "Only pending approval requests can be reassigned.",
+    };
+  }
+
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) {
+    return { request: null, error: "Reassignment reason is required." };
+  }
+
+  const validReviewerIds = sortReviewerIds(
+    nextReviewerIds.filter((reviewerId) => {
+      const reviewer = getReviewerById(reviewerId);
+      return reviewer?.active === true;
+    }),
+  );
+
+  if (validReviewerIds.length === 0) {
+    return {
+      request: null,
+      error: "At least one active reviewer must be selected for reassignment.",
+    };
+  }
+
+  const previousReviewerIds = getStoredAssignedReviewerIds(request);
+  request.assignedReviewerIds = validReviewerIds;
+  touchRequest(request);
+
+  const change = recordApprovalAssignmentChange({
+    approvalRequestId: request.id,
+    previousReviewerIds,
+    nextReviewerIds: validReviewerIds,
+    reason: trimmedReason,
+    changeType: "reassigned",
+  });
+
+  notifyApprovalReassigned({
+    approvalRequestId: request.id,
+    previousReviewerIds,
+    nextReviewerIds: validReviewerIds,
+    reason: trimmedReason,
+  });
+
+  return { request: cloneRequest(request), change };
+}
+
+function createExceptionId(): string {
+  const id = `ex-${Date.now()}-${exceptionIdCounter}`;
+  exceptionIdCounter += 1;
+  return id;
+}
+
+function hasOpenException(
+  approvalRequestId: string,
+  type: ExceptionType,
+): boolean {
+  return approvalExceptions.some(
+    (entry) =>
+      entry.approvalRequestId === approvalRequestId &&
+      entry.type === type &&
+      entry.status === "open",
+  );
+}
+
+export function createApprovalException(input: {
+  approvalRequestId: string;
+  type: ExceptionType;
+  summary: string;
+  metadata?: Record<string, unknown>;
+  notifyRecipientId?: string;
+}): ApprovalExceptionDto | null {
+  if (hasOpenException(input.approvalRequestId, input.type)) {
+    return null;
+  }
+
+  const request = findRequest(input.approvalRequestId);
+  if (!request) {
+    return null;
+  }
+
+  const exception: ApprovalExceptionDto = {
+    id: createExceptionId(),
+    approvalRequestId: input.approvalRequestId,
+    type: input.type,
+    status: "open",
+    summary: input.summary,
+    createdAt: new Date().toISOString(),
+    metadata: input.metadata,
+  };
+
+  approvalExceptions.unshift(exception);
+
+  recordAuditLog({
+    actionType: "create_approval_exception",
+    entityType: "approval_exception",
+    entityId: exception.id,
+    outcome: "success",
+    summary: `Opened exception for ${input.type.replace("_", " ")} on approval ${input.approvalRequestId}`,
+    metadata: {
+      type: input.type,
+      summary: input.summary,
+    },
+  });
+
+  notifyApprovalExceptionOpened({
+    approvalRequestId: input.approvalRequestId,
+    exceptionId: exception.id,
+    summary: input.summary,
+    recipientActorId: input.notifyRecipientId,
+  });
+
+  return structuredClone(exception);
+}
+
+function maybeScanApprovalExceptions(now: Date = new Date()): void {
+  for (const request of approvalRequests) {
+    if (request.status !== "pending") {
+      continue;
+    }
+
+    syncDelegationReassignments(request, now);
+
+    const sla = computeApprovalSlaStatus(request, now);
+    if (sla.overdue) {
+      createApprovalException({
+        approvalRequestId: request.id,
+        type: "request_overdue",
+        summary: `Approval ${request.id} is overdue (${sla.ageHours}h open).`,
+        metadata: { ageHours: sla.ageHours, targetOverdueAt: sla.targetOverdueAt },
+      });
+    }
+
+    const assigned = request.assignedReviewerIds ?? [];
+    for (const reviewerId of assigned) {
+      const reviewer = getReviewerById(reviewerId);
+      if (!reviewer || !reviewer.active) {
+        createApprovalException({
+          approvalRequestId: request.id,
+          type: "reviewer_unavailable",
+          summary: `Assigned reviewer ${reviewerId} is unavailable for approval ${request.id}.`,
+          metadata: { reviewerId },
+        });
+        continue;
+      }
+
+      const policy = getApprovalPolicy();
+      if (!policy.allowedApproverRoles.includes(reviewer.role)) {
+        createApprovalException({
+          approvalRequestId: request.id,
+          type: "role_mismatch",
+          summary: `Assigned reviewer ${reviewerId} has role '${reviewer.role}' which cannot approve approval ${request.id}.`,
+          metadata: { reviewerId, role: reviewer.role },
+        });
+      }
+    }
+  }
+}
+
+export function listOpenApprovalExceptions(): ApprovalExceptionListResponseDto {
+  maybeScanApprovalExceptions();
+
+  const open = approvalExceptions.filter((entry) => entry.status === "open");
+  const resolved = approvalExceptions.filter((entry) => entry.status === "resolved");
+
+  return {
+    total: approvalExceptions.length,
+    exceptions: [...open, ...resolved].map((entry) => structuredClone(entry)),
+  };
+}
+
+export function resolveApprovalException(
+  id: string,
+  note?: string,
+): ApprovalExceptionDto | null {
+  const exception = approvalExceptions.find((entry) => entry.id === id);
+  if (!exception || exception.status !== "open") {
+    return null;
+  }
+
+  exception.status = "resolved";
+  exception.resolvedAt = new Date().toISOString();
+  exception.metadata = {
+    ...(exception.metadata ?? {}),
+    resolutionNote: note?.trim() || undefined,
+  };
+
+  return structuredClone(exception);
+}
+
+function getRecipientActorIds(request: ApprovalRequestDto): string[] {
+  const { effectiveReviewerIds } = getEffectiveReviewerIds(request.id);
+  return effectiveReviewerIds;
 }
 
 function computeAgeHours(createdAt: string, now: Date): number {
@@ -403,6 +870,11 @@ export function maybeGenerateApprovalNotifications(
 }
 
 export function listApprovalRequests(): ApprovalListResponseDto {
+  const now = new Date();
+  for (const request of approvalRequests) {
+    syncDelegationReassignments(request, now);
+  }
+
   return {
     total: approvalRequests.length,
     requests: approvalRequests.map(cloneRequest),
@@ -513,11 +985,15 @@ export function getApprovalEligibility(
 
     if (
       request.assignedReviewerIds &&
-      request.assignedReviewerIds.length > 0 &&
-      !request.assignedReviewerIds.includes(actor.actorId)
+      request.assignedReviewerIds.length > 0
     ) {
-      canApprove = false;
-      reasons.push("Only assigned reviewers can approve this request.");
+      const { effectiveReviewerIds } = getEffectiveReviewerIds(request.id);
+      if (!effectiveReviewerIds.includes(actor.actorId)) {
+        canApprove = false;
+        reasons.push(
+          "Only assigned, delegated, or reassigned reviewers can approve this request.",
+        );
+      }
     }
   }
 

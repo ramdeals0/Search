@@ -1,0 +1,340 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  merchandiser
+  reviewer
+  approver
+  release_manager
+  admin
+}
+
+enum AccessRequestStatus {
+  pending
+  approved
+  denied
+  cancelled
+}
+
+enum AccessReviewStatus {
+  open
+  completed
+}
+
+enum JitAccessStatus {
+  pending
+  active
+  denied
+  expired
+  cancelled
+  revoked
+}
+
+enum ExportJobStatus {
+  generated
+  failed
+}
+
+enum ExportFormat {
+  json
+  csv
+}
+
+enum ExportTargetType {
+  audit_trail
+  approvals
+  access_reviews
+  security_timeline
+  audit_review_findings
+}
+
+model User {
+  id          String    @id
+  email       String    @unique
+  name        String
+  role        UserRole
+  active      Boolean   @default(true)
+  password    String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastLoginAt DateTime?
+  sessions    Session[]
+
+  @@index([role])
+  @@index([active])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model AuditTrailEntry {
+  id            String   @id
+  timestamp     DateTime @default(now())
+  actorId       String
+  actorLabel    String
+  actionType    String
+  entityType    String
+  entityId      String?
+  entityLabel   String?
+  outcome       String
+  summary       String
+  metadata      Json?
+  hashChainPrev String?
+
+  @@index([timestamp])
+  @@index([actionType])
+  @@index([entityType])
+  @@index([outcome])
+  @@index([actorId])
+}
+
+model ApprovalRequest {
+  id                    String   @id
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  status                String
+  sourceEnvironment     String
+  targetEnvironment     String
+  snapshotId            String?
+  snapshotName          String?
+  requestedBy           Json
+  approvedBy            Json?
+  rejectedBy            Json?
+  reason                String
+  decisionNote          String?
+  linkedExperimentId    String?
+  assignedReviewerIds   Json?
+  decisions             Json?
+  requiredApprovalCount Int?
+  executedBy            Json?
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([snapshotId])
+}
+
+model AccessRequest {
+  id               String              @id
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  requesterUserId  String
+  requesterEmail   String
+  requesterName    String
+  requestedRole    UserRole
+  justification    String
+  status           AccessRequestStatus
+  reviewerUserId   String?
+  reviewerName     String?
+  reviewerNote     String?
+
+  @@index([status])
+  @@index([requesterUserId])
+  @@index([createdAt])
+}
+
+model AccessReviewRun {
+  id              String             @id
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  createdByUserId String
+  createdByName   String
+  status          AccessReviewStatus
+  scopeRoles      Json
+  completedAt     DateTime?
+  summary         Json?
+  items           AccessReviewItem[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AccessReviewItem {
+  id                String          @id @default(cuid())
+  runId             String
+  run               AccessReviewRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  userId            String
+  userEmail         String
+  userName          String
+  currentRole       UserRole
+  active            Boolean
+  lastLoginAt       DateTime?
+  recommendedAction String?
+  note              String?
+
+  @@index([runId])
+  @@index([userId])
+}
+
+model JitElevationRequest {
+  id                       String          @id
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+  requesterUserId          String
+  requesterEmail           String
+  requesterName            String
+  baseRole                 UserRole
+  requestedRole            UserRole
+  justification            String
+  requestedDurationMinutes Int
+  status                   JitAccessStatus
+  approvedByUserId         String?
+  approvedByName           String?
+  reviewerNote             String?
+  activatedAt              DateTime?
+  expiresAt                DateTime?
+  revokedAt                DateTime?
+
+  @@index([status])
+  @@index([requesterUserId])
+  @@index([expiresAt])
+  @@index([createdAt])
+}
+
+model CollaborationComment {
+  id              String   @id
+  targetType      String
+  targetId        String
+  author          Json
+  message         String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  status          String
+  parentCommentId String?
+  tags            Json?
+
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+model CollaborationAnnotation {
+  id          String   @id
+  targetType  String
+  targetId    String
+  author      Json
+  anchorLabel String
+  note        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tags        Json?
+
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id                       String   @id
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  type                     String
+  title                    String
+  message                  String
+  relatedApprovalRequestId String?
+  recipientActorId         String?
+  read                     Boolean  @default(false)
+
+  @@index([read])
+  @@index([recipientActorId])
+  @@index([createdAt])
+  @@index([relatedApprovalRequestId])
+}
+
+model ExportJob {
+  id               String           @id
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  createdByUserId  String
+  createdByName    String
+  targetType       ExportTargetType
+  format           ExportFormat
+  status           ExportJobStatus
+  filters          Json?
+  fileName         String?
+  recordCount      Int?
+  errorMessage     String?
+
+  @@index([createdAt])
+  @@index([targetType])
+  @@index([status])
+  @@index([createdByUserId])
+}
+
+model WebhookEndpoint {
+  id                 String   @id
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  name               String
+  url                String
+  active             Boolean  @default(true)
+  subscribedEvents   Json
+  secret             String?
+  lastDeliveryAt     DateTime?
+  lastDeliveryStatus String?
+  deliveries         WebhookDeliveryLog[]
+
+  @@index([active])
+  @@index([createdAt])
+}
+
+model WebhookDeliveryLog {
+  id                 String          @id
+  createdAt          DateTime        @default(now())
+  endpointId         String
+  endpoint           WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  eventType          String
+  status             String
+  responseStatusCode Int?
+  errorMessage       String?
+  attemptNumber      Int
+
+  @@index([endpointId])
+  @@index([eventType])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum BootstrapStatusEnum {
+  not_started
+  admin_created
+  security_configured
+  platform_configured
+  completed
+}
+
+model BootstrapState {
+  id                       String              @id
+  status                   BootstrapStatusEnum @default(not_started)
+  initializedAt            DateTime?
+  initializedByUserId      String?
+  initializedByEmail       String?
+  instanceName             String?
+  firstAdminEmail          String?
+  securityDefaultsApplied  Boolean             @default(false)
+  governanceDefaultsApplied Boolean            @default(false)
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+}
+
+model SystemConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
+}

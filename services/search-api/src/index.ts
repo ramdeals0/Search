@@ -8,10 +8,18 @@ import type {
   ApprovalOperationResponseDto,
   ApprovalPolicyDto,
   ApprovalRequestDto,
+  ApprovalAssignmentHistoryResponseDto,
+  ApprovalExceptionDto,
+  ApprovalExceptionListResponseDto,
   ApprovalSlaOverviewDto,
   ApprovalSlaPolicyDto,
   AuditLogResponseDto,
   ActiveConfigurationDto,
+  BootstrapAdminResponseDto,
+  BootstrapStateDto,
+  CollaborationCommentDto,
+  CollaborationThreadDto,
+  DelegationListResponseDto,
   EnvironmentKey,
   EnvironmentListResponseDto,
   EnvironmentOperationResponseDto,
@@ -24,11 +32,27 @@ import type {
   QueryPreviewResponseDto,
   ReviewerListResponseDto,
   RollbackSnapshotResponseDto,
+  SavedViewListResponseDto,
   SearchFiltersDto,
   SearchRequestDto,
   SnapshotDiffResponseDto,
   SnapshotListResponseDto,
   SuggestionsResponseDto,
+  AccessRequestListResponseDto,
+  AccessReviewListResponseDto,
+  CurrentUserResponseDto,
+  LoginResponseDto,
+  UserDto,
+  ActivePrivilegeListResponseDto,
+  ExportJobListResponseDto,
+  ExportTargetType,
+  JitElevationRequestListResponseDto,
+  JitPolicyDto,
+  SecurityTimelineResponseDto,
+  WebhookDeliveryLogListResponseDto,
+  WebhookEndpointListResponseDto,
+  WebhookEventType,
+  WorkspaceStateDto,
 } from "@retailer-search/shared-types";
 import {
   approveApprovalRequest,
@@ -41,6 +65,9 @@ import {
   getApprovalSlaPolicy,
   getLatestExecutedApprovalForSnapshot,
   listApprovalRequests,
+  listApprovalAssignmentHistory,
+  listOpenApprovalExceptions,
+  manuallyReassignApprovalRequest,
   markApprovalRequestExecuted,
   maybeGenerateApprovalNotifications,
   notifyApprovalApproved,
@@ -48,8 +75,29 @@ import {
   notifyApprovalRejected,
   notifyApprovalRequested,
   rejectApprovalRequest,
+  resolveApprovalException,
   updateApprovalSlaPolicy,
 } from "./approval-store.js";
+import {
+  createDelegationRule,
+  deactivateDelegationRule,
+  listDelegationRules,
+} from "./delegation-store.js";
+import {
+  addAnnotation,
+  addComment,
+  getCollaborationThread,
+  getCommentById,
+  hydrateCollaborationStore,
+  updateCommentStatus,
+} from "./collaboration-store.js";
+import {
+  createSavedView,
+  getWorkspaceState,
+  listSavedViews,
+  setDefaultSavedView,
+  updateSavedView,
+} from "./workspace-store.js";
 import {
   createReviewer,
   getApprovalPolicy,
@@ -70,8 +118,41 @@ import {
   listPromotionHistory,
   promoteActiveConfiguration,
 } from "./active-config-store.js";
-import { listAuditLogs, recordAuditLog } from "./audit-log-store.js";
+import { listAuditLogs, recordAuditLog, recordForbiddenAccess, recordRateLimitExceeded, recordUnauthorizedAccess } from "./audit-trail-store.js";
 import {
+  completeBootstrap,
+  configureBootstrapPlatform,
+  configureBootstrapSecurity,
+  createBootstrapAdmin,
+  ensureBootstrapState,
+  hydrateBootstrapStore,
+  isSetupRequired,
+} from "./bootstrap-store.js";
+import { connectDatabase } from "./db.js";
+import {
+  attachRateLimitHeaders,
+  attachSecurityHeaders,
+  applyRateLimit,
+  createAdminMutationRateLimitPolicy,
+  createAdminReadRateLimitPolicy,
+  createAuthLoginRateLimitPolicy,
+  getRequestId,
+  isAdminMutationRequest,
+  requireHttpsInProduction,
+  requireJsonContentType,
+} from "./api-security.js";
+import {
+  forbidden as forbiddenError,
+  internalError,
+  conflict as conflictError,
+  rateLimited as rateLimitedError,
+  unauthenticated as unauthenticatedError,
+  validationError as validationErrorBody,
+} from "./error-response.js";
+import { cleanupExpiredRateLimitEntries } from "./rate-limit-store.js";
+import {
+  createNotification,
+  hydrateNotificationStore,
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -124,6 +205,64 @@ import {
 } from "./merchandising-rules.js";
 import { replaceAllSynonyms } from "./synonyms.js";
 import { seedProducts } from "./seed-products.js";
+import {
+  completeAccessReviewRun,
+  createAccessRequest,
+  createAccessReviewRun,
+  getAccessRequestById,
+  getAccessReviewRunById,
+  hydrateAccessGovernanceStore,
+  listAccessRequests,
+  listAccessReviewRuns,
+  resolveAccessRequest,
+  resolveAccessReviewItem,
+} from "./access-governance-store.js";
+import {
+  createAuthenticatedUserContext,
+  createSession,
+  deleteSession,
+  findUserByEmail,
+  getCurrentUserFromAuthHeader,
+  hydrateAuthStore,
+  isLoginAllowedDuringSetup,
+  listUsers,
+  userCount,
+  validatePassword,
+} from "./auth-store.js";
+import { hydrateAuditTrailStore } from "./audit-trail-store.js";
+import { hydrateApprovalStore } from "./approval-store.js";
+import {
+  createJitElevationRequest,
+  expireJitAccess,
+  getActivePrivilegeForUser,
+  getActivePrivileges,
+  getEffectiveRoleForUser,
+  getJitElevationRequestById,
+  getJitPolicy,
+  hydrateJitAccessStore,
+  listJitElevationRequests,
+  resolveJitElevationRequest,
+  revokeJitAccess,
+  updateJitPolicy,
+} from "./jit-access-store.js";
+import {
+  buildSecurityTimelineEntries,
+  createExportJob,
+  generateExportData,
+  getExportJobById,
+  hydrateExportStore,
+  listExportJobs,
+} from "./export-store.js";
+import {
+  createWebhookEndpoint,
+  emitWebhookEvent,
+  getDefaultTestPayload,
+  getWebhookEndpointById,
+  listWebhookDeliveryLogs,
+  listWebhookEndpoints,
+  setWebhookEndpointActive,
+} from "./webhook-store.js";
+import { getPermissionsForUser, getPermissionDeniedMessage, hasPermissionForUser } from "./rbac.js";
 
 function toFilterArray(value: unknown): string[] {
   if (value === undefined) {
@@ -356,6 +495,97 @@ const updateApprovalSlaPolicySchema = z
     path: ["overdueAfterHours"],
   });
 
+const createDelegationRuleSchema = z.object({
+  fromReviewerId: z.string().min(1),
+  toReviewerId: z.string().min(1),
+  mode: z.enum(["delegate", "reassign"]),
+  startAt: z.string().datetime().optional(),
+  endAt: z.string().datetime().optional(),
+  reason: z.string().optional(),
+});
+
+const reassignApprovalSchema = z.object({
+  nextReviewerIds: z.array(z.string().min(1)).min(1),
+  reason: z.string().min(1),
+});
+
+const resolveApprovalExceptionSchema = z.object({
+  note: z.string().optional(),
+});
+
+const collaborationTargetTypeSchema = z.enum([
+  "approval_request",
+  "experiment",
+  "experiment_run",
+  "snapshot",
+  "promotion",
+  "exception",
+]);
+
+const collaborationThreadQuerySchema = z.object({
+  targetType: collaborationTargetTypeSchema,
+  targetId: z.string().min(1),
+});
+
+const createCommentSchema = z.object({
+  targetType: collaborationTargetTypeSchema,
+  targetId: z.string().min(1),
+  actorId: z.string().min(1),
+  actorLabel: z.string().min(1),
+  message: z.string().min(1),
+  parentCommentId: z.string().min(1).optional(),
+  tags: z.array(z.string()).optional(),
+});
+
+const createAnnotationSchema = z.object({
+  targetType: collaborationTargetTypeSchema,
+  targetId: z.string().min(1),
+  actorId: z.string().min(1),
+  actorLabel: z.string().min(1),
+  anchorLabel: z.string().min(1),
+  note: z.string().min(1),
+  tags: z.array(z.string()).optional(),
+});
+
+const resolveCommentSchema = z.object({
+  status: z.enum(["open", "resolved"]),
+});
+
+const workspaceRoleSchema = z.enum([
+  "merchandiser",
+  "reviewer",
+  "approver",
+  "release_manager",
+  "admin",
+]);
+
+const savedViewsQuerySchema = z.object({
+  role: workspaceRoleSchema.optional(),
+});
+
+const workspaceQuerySchema = z.object({
+  activeRole: workspaceRoleSchema.optional(),
+});
+
+const createSavedViewSchema = z.object({
+  name: z.string().min(1),
+  role: workspaceRoleSchema,
+  description: z.string().optional(),
+  filters: z.record(z.unknown()),
+  isDefault: z.boolean().optional(),
+});
+
+const updateSavedViewSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  filters: z.record(z.unknown()).optional(),
+  isDefault: z.boolean().optional(),
+});
+
+const setDefaultSavedViewSchema = z.object({
+  role: workspaceRoleSchema,
+});
+
 const reviewerActiveSchema = z.object({
   active: z.boolean(),
 });
@@ -411,8 +641,449 @@ function promoteSnapshotToLive(input: {
   };
 }
 
+const userRoleSchema = z.enum([
+  "merchandiser",
+  "reviewer",
+  "approver",
+  "release_manager",
+  "admin",
+]);
+
+const loginBodySchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+const createBootstrapAdminSchema = z.object({
+  name: z.string().trim().min(1),
+  email: z.string().email(),
+  password: z.string().min(8),
+  confirmPassword: z.string().min(1),
+});
+
+const configureBootstrapSecuritySchema = z.object({
+  passwordMinLength: z.coerce.number().int().min(8).max(128),
+  loginAttemptLimit: z.coerce.number().int().min(1).max(100),
+  lockoutWindowMinutes: z.coerce.number().int().min(1).max(1440),
+  sessionTtlHours: z.coerce.number().int().min(1).max(720),
+  auditLoggingEnabled: z.boolean(),
+});
+
+const configureBootstrapPlatformSchema = z.object({
+  instanceName: z.string().trim().min(1),
+  stagingEnvironmentLabel: z.string().trim().min(1),
+  liveEnvironmentLabel: z.string().trim().min(1),
+  requireApprovalForLivePromotion: z.boolean(),
+  jitEnabled: z.boolean(),
+  defaultJitDurationMinutes: z.coerce.number().int().positive(),
+  accessReviewCadenceDays: z.coerce.number().int().positive(),
+  defaultWorkspaceRole: z.literal("admin"),
+});
+
+const completeBootstrapSchema = z.object({
+  confirm: z.literal(true),
+});
+
+const createAccessRequestSchema = z.object({
+  requestedRole: userRoleSchema,
+  justification: z.string().min(8),
+});
+
+const resolveAccessRequestSchema = z.object({
+  decision: z.enum(["approved", "denied", "cancelled"]),
+  reviewerNote: z.string().optional(),
+});
+
+const createAccessReviewRunSchema = z.object({
+  roles: z.array(userRoleSchema).optional(),
+});
+
+const resolveAccessReviewItemSchema = z.object({
+  userId: z.string().min(1),
+  action: z.enum(["keep", "downgrade", "disable"]),
+  note: z.string().optional(),
+});
+
+const createJitElevationRequestSchema = z.object({
+  requestedRole: userRoleSchema,
+  justification: z.string().min(8),
+  requestedDurationMinutes: z.coerce.number().int().positive(),
+});
+
+const resolveJitElevationRequestSchema = z.object({
+  decision: z.enum(["approve", "deny", "cancel"]),
+  reviewerNote: z.string().optional(),
+});
+
+const updateJitPolicySchema = z.object({
+  enabled: z.boolean(),
+  defaultDurationMinutes: z.coerce.number().int().positive(),
+  maxDurationMinutes: z.coerce.number().int().positive(),
+  approvalRequiredRoles: z.array(userRoleSchema),
+  elevatableRoles: z.array(userRoleSchema).min(1),
+});
+
+const exportTargetTypeSchema = z.enum([
+  "audit_trail",
+  "approvals",
+  "access_reviews",
+  "security_timeline",
+  "audit_review_findings",
+]);
+
+const exportFormatSchema = z.enum(["json", "csv"]);
+
+const createExportJobSchema = z.object({
+  targetType: exportTargetTypeSchema,
+  format: exportFormatSchema,
+  filters: z.record(z.unknown()).optional(),
+});
+
+const webhookEventTypeSchema = z.enum([
+  "auth.login.succeeded",
+  "auth.login.failed",
+  "rbac.access.denied",
+  "approval.created",
+  "approval.approved",
+  "approval.rejected",
+  "promotion.executed",
+  "jit.request.approved",
+  "jit.request.revoked",
+  "audit.review.completed",
+]);
+
+const createWebhookEndpointSchema = z.object({
+  name: z.string().min(1),
+  url: z.string().url(),
+  subscribedEvents: z.array(webhookEventTypeSchema).min(1),
+  secret: z.string().optional(),
+});
+
+const toggleWebhookEndpointSchema = z.object({
+  active: z.boolean(),
+});
+
+const testWebhookFireSchema = z.object({
+  eventType: webhookEventTypeSchema,
+  payload: z.record(z.unknown()).optional(),
+});
+
+async function dispatchWebhookEvent(
+  type: WebhookEventType,
+  payload: Record<string, unknown>,
+  actorId?: string,
+  actorLabel?: string,
+): Promise<void> {
+  const deliveries = await emitWebhookEvent({ type, payload });
+
+  for (const delivery of deliveries) {
+    const endpoint = getWebhookEndpointById(delivery.endpointId);
+    recordAuditLog({
+      actionType: "webhook_delivery",
+      entityType: "webhook_delivery",
+      entityId: delivery.id,
+      actorId,
+      actorLabel,
+      outcome: delivery.status === "succeeded" ? "success" : "failure",
+      summary:
+        delivery.status === "succeeded"
+          ? `Webhook delivery succeeded for endpoint ${endpoint?.name ?? delivery.endpointId} on event ${delivery.eventType}`
+          : `Webhook delivery failed for endpoint ${endpoint?.name ?? delivery.endpointId} on event ${delivery.eventType}`,
+      metadata: {
+        endpointId: delivery.endpointId,
+        endpointName: endpoint?.name,
+        eventType: delivery.eventType,
+        responseStatusCode: delivery.responseStatusCode,
+        errorMessage: delivery.errorMessage,
+      },
+    });
+  }
+}
+
+function sendValidationError(
+  res: express.Response,
+  req: express.Request,
+  message: string,
+  details?: Record<string, unknown>,
+): void {
+  res
+    .status(400)
+    .json(validationErrorBody(message, details, getRequestId(req)));
+}
+
+function assertValidBody<T>(
+  parsed: z.SafeParseReturnType<unknown, T>,
+  res: express.Response,
+  req: express.Request,
+  message = "Invalid request payload",
+): parsed is z.SafeParseSuccess<T> {
+  if (parsed.success) {
+    return true;
+  }
+
+  sendValidationError(res, req, message, parsed.error.flatten());
+  return false;
+}
+
+function sendForbidden(
+  res: express.Response,
+  req: express.Request,
+  message: string,
+  details?: Record<string, unknown>,
+): void {
+  res.status(403).json(forbiddenError(message, getRequestId(req), details));
+}
+
+function sendSetupRequired(
+  res: express.Response,
+  req: express.Request,
+  message = "Initial setup must be completed before using this endpoint",
+): void {
+  res.status(423).json(
+    forbiddenError(message, getRequestId(req), { reason: "setup_required" }),
+  );
+}
+
+function requireSetupComplete(
+  _req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+): void {
+  if (isSetupRequired()) {
+    sendSetupRequired(res, _req);
+    return;
+  }
+
+  next();
+}
+
+function sendBootstrapError(
+  res: express.Response,
+  req: express.Request,
+  error: unknown,
+): void {
+  const message =
+    error instanceof Error ? error.message : "Bootstrap operation failed";
+
+  if (message.includes("already been completed")) {
+    res.status(409).json(conflictError(message, getRequestId(req)));
+    return;
+  }
+
+  sendValidationError(res, req, message);
+}
+
+function enforceAdminRateLimit(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+): void {
+  cleanupExpiredRateLimitEntries();
+
+  const policy = isAdminMutationRequest(req)
+    ? createAdminMutationRateLimitPolicy()
+    : createAdminReadRateLimitPolicy();
+  const result = applyRateLimit(req, policy);
+  attachRateLimitHeaders(res, result.status);
+
+  if (!result.allowed) {
+    const user = getCurrentUserFromAuthHeader(req.headers.authorization);
+    recordRateLimitExceeded({
+      summary: `Admin ${policy.name} rate limit exceeded for ${req.method} ${req.path}`,
+      path: req.path,
+      method: req.method,
+      policyName: policy.name,
+      actorId: user?.id,
+      actorLabel: user?.email,
+      metadata: { resetAt: result.status.resetAt },
+    });
+    res.status(429).json(
+      rateLimitedError(
+        "Too many admin requests. Please slow down and try again.",
+        { policy: policy.name, resetAt: result.status.resetAt },
+        getRequestId(req),
+      ),
+    );
+    return;
+  }
+
+  next();
+}
+
+function enforceAdminJsonContentType(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+): void {
+  if (isAdminMutationRequest(req) && !requireJsonContentType(req, res)) {
+    return;
+  }
+
+  next();
+}
+
+function requireExportAccess(
+  req: express.Request,
+  res: express.Response,
+  targetType: ExportTargetType,
+): UserDto | null {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return null;
+  }
+
+  const effectiveRole = getEffectiveRoleForUser(user);
+
+  if (targetType === "access_reviews" || targetType === "audit_review_findings") {
+    if (user.role !== "admin" && effectiveRole !== "admin") {
+      recordForbiddenAccess({
+        summary: `User ${user.email} attempted unauthorized export of ${targetType}`,
+        path: req.path,
+        method: req.method,
+        actorId: user.id,
+        actorLabel: user.email,
+        metadata: { targetType },
+      });
+      sendForbidden(res, req, "Admin access required for this export");
+      return null;
+    }
+    return user;
+  }
+
+  const permissionByTarget: Partial<
+    Record<ExportTargetType, "view_audit_logs" | "view_approvals">
+  > = {
+    audit_trail: "view_audit_logs",
+    security_timeline: "view_audit_logs",
+    approvals: "view_approvals",
+  };
+
+  const permission = permissionByTarget[targetType];
+  if (permission && !hasPermissionForUser(user, permission, effectiveRole)) {
+    recordAuditLog({
+      actionType: "authorization_denied",
+      entityType: "export_job",
+      actorId: user.id,
+      actorLabel: user.email,
+      outcome: "failure",
+      summary: `User ${user.email} attempted unauthorized export of ${targetType}`,
+      metadata: { targetType, path: req.path },
+    });
+    void dispatchWebhookEvent(
+      "rbac.access.denied",
+      {
+        email: user.email,
+        path: req.path,
+        action: "export",
+        targetType,
+      },
+      user.id,
+      user.email,
+    );
+    res.status(403).json(
+      forbiddenError(
+        getPermissionDeniedMessage(permission),
+        getRequestId(req),
+        { targetType, path: req.path },
+      ),
+    );
+    return null;
+  }
+
+  return user;
+}
+
+function syncJitAccess(): void {
+  const expiredRequests = expireJitAccess();
+  for (const request of expiredRequests) {
+    recordAuditLog({
+      actionType: "expire_jit_elevation",
+      entityType: "jit_elevation_request",
+      entityId: request.id,
+      actorId: request.requesterUserId,
+      actorLabel: request.requesterEmail,
+      outcome: "success",
+      summary: `JIT elevation ${request.id} expired automatically`,
+      metadata: {
+        requestedRole: request.requestedRole,
+        expiresAt: request.expiresAt,
+      },
+    });
+  }
+}
+
+function requireAuthenticatedUser(
+  req: express.Request,
+  res: express.Response,
+): UserDto | null {
+  syncJitAccess();
+  const user = getCurrentUserFromAuthHeader(req.headers.authorization);
+  if (!user) {
+    recordUnauthorizedAccess({
+      summary: `Unauthenticated request to ${req.method} ${req.path}`,
+      path: req.path,
+      method: req.method,
+    });
+    res
+      .status(401)
+      .json(unauthenticatedError(undefined, getRequestId(req)));
+    return null;
+  }
+
+  return user;
+}
+
+function getAuthenticatedContext(user: UserDto) {
+  syncJitAccess();
+  const effectiveRole = getEffectiveRoleForUser(user);
+  return createAuthenticatedUserContext(user, effectiveRole);
+}
+
+function requireAdminUser(
+  req: express.Request,
+  res: express.Response,
+): UserDto | null {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return null;
+  }
+
+  if (user.role !== "admin") {
+    recordForbiddenAccess({
+      summary: `User ${user.email} attempted unauthorized admin action`,
+      path: req.path,
+      method: req.method,
+      actorId: user.id,
+      actorLabel: user.email,
+    });
+    void dispatchWebhookEvent(
+      "rbac.access.denied",
+      {
+        email: user.email,
+        path: req.path,
+        method: req.method,
+      },
+      user.id,
+      user.email,
+    );
+    sendForbidden(res, req, "Admin access required");
+    return null;
+  }
+
+  return user;
+}
+
 const app = express();
+app.set("trust proxy", true);
 app.use(express.json());
+
+app.use((req, res, next) => {
+  attachSecurityHeaders(req, res);
+  if (!requireHttpsInProduction(req, res)) {
+    return;
+  }
+  next();
+});
 
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -420,7 +1091,14 @@ app.use((req, res, next) => {
     "Access-Control-Allow-Methods",
     "GET, POST, PUT, PATCH, DELETE, OPTIONS",
   );
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Request-Id",
+  );
+  res.setHeader(
+    "Access-Control-Expose-Headers",
+    "X-Request-Id, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset",
+  );
 
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
@@ -430,22 +1108,163 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use("/api/v1/admin", requireSetupComplete);
+app.use("/api/v1/admin", enforceAdminRateLimit);
+app.use("/api/v1/admin", enforceAdminJsonContentType);
+
 app.get("/health", (_req, res) => {
   const body: HealthResponseDto = {
     ok: true,
     service: "search-api",
     timestamp: new Date().toISOString(),
+    database: {
+      connected: databaseConnected,
+      userCount: databaseConnected ? userCount() : 0,
+    },
   };
   res.json(body);
 });
 
+app.get("/api/v1/setup/status", async (_req, res) => {
+  try {
+    const state = await ensureBootstrapState();
+    res.json(state satisfies BootstrapStateDto);
+  } catch (error) {
+    console.error("Failed to load bootstrap status", error);
+    res
+      .status(500)
+      .json(internalError("Failed to load setup status", undefined, getRequestId(_req)));
+  }
+});
+
+app.post("/api/v1/setup/admin", async (req, res) => {
+  if (!requireJsonContentType(req, res)) {
+    return;
+  }
+
+  if (!isSetupRequired()) {
+    res.status(409).json(
+      conflictError("Initial setup has already been completed", getRequestId(req)),
+    );
+    return;
+  }
+
+  const parsed = createBootstrapAdminSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid bootstrap admin payload")) {
+    return;
+  }
+
+  try {
+    const result = await createBootstrapAdmin(parsed.data);
+    const body: BootstrapAdminResponseDto = result;
+    res.status(201).json(body);
+  } catch (error) {
+    sendBootstrapError(res, req, error);
+  }
+});
+
+app.post("/api/v1/setup/security", async (req, res) => {
+  if (!requireJsonContentType(req, res)) {
+    return;
+  }
+
+  if (!isSetupRequired()) {
+    res.status(409).json(
+      conflictError("Initial setup has already been completed", getRequestId(req)),
+    );
+    return;
+  }
+
+  const user = requireAuthenticatedUser(req, res);
+  if (!user || user.role !== "admin") {
+    if (user) {
+      sendForbidden(res, req, "Admin access required for setup");
+    }
+    return;
+  }
+
+  const parsed = configureBootstrapSecuritySchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid bootstrap security payload")) {
+    return;
+  }
+
+  try {
+    const state = await configureBootstrapSecurity(parsed.data);
+    res.json(state);
+  } catch (error) {
+    sendBootstrapError(res, req, error);
+  }
+});
+
+app.post("/api/v1/setup/platform", async (req, res) => {
+  if (!requireJsonContentType(req, res)) {
+    return;
+  }
+
+  if (!isSetupRequired()) {
+    res.status(409).json(
+      conflictError("Initial setup has already been completed", getRequestId(req)),
+    );
+    return;
+  }
+
+  const user = requireAuthenticatedUser(req, res);
+  if (!user || user.role !== "admin") {
+    if (user) {
+      sendForbidden(res, req, "Admin access required for setup");
+    }
+    return;
+  }
+
+  const parsed = configureBootstrapPlatformSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid bootstrap platform payload")) {
+    return;
+  }
+
+  try {
+    const state = await configureBootstrapPlatform(parsed.data);
+    res.json(state);
+  } catch (error) {
+    sendBootstrapError(res, req, error);
+  }
+});
+
+app.post("/api/v1/setup/complete", async (req, res) => {
+  if (!requireJsonContentType(req, res)) {
+    return;
+  }
+
+  if (!isSetupRequired()) {
+    res.status(409).json(
+      conflictError("Initial setup has already been completed", getRequestId(req)),
+    );
+    return;
+  }
+
+  const user = requireAuthenticatedUser(req, res);
+  if (!user || user.role !== "admin") {
+    if (user) {
+      sendForbidden(res, req, "Admin access required for setup");
+    }
+    return;
+  }
+
+  const parsed = completeBootstrapSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid bootstrap completion payload")) {
+    return;
+  }
+
+  try {
+    const state = await completeBootstrap(user);
+    res.json(state);
+  } catch (error) {
+    sendBootstrapError(res, req, error);
+  }
+});
+
 app.get("/api/v1/search", (req, res) => {
   const parsed = searchQuerySchema.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "Invalid query parameters",
-      details: parsed.error.flatten(),
-    });
+  if (!assertValidBody(parsed, res, req, "Invalid query parameters")) {
     return;
   }
 
@@ -466,15 +1285,1078 @@ app.get("/api/v1/search", (req, res) => {
 
 app.get("/api/v1/autocomplete", (req, res) => {
   const parsed = autocompleteQuerySchema.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "Invalid query parameters",
-      details: parsed.error.flatten(),
-    });
+  if (!assertValidBody(parsed, res, req, "Invalid query parameters")) {
     return;
   }
 
   res.json(getAutocompleteSuggestions(seedProducts, parsed.data.query));
+});
+
+app.post("/api/v1/auth/login", (req, res) => {
+  if (!requireJsonContentType(req, res)) {
+    return;
+  }
+
+  const parsed = loginBodySchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid login payload")) {
+    return;
+  }
+
+  const loginPolicy = createAuthLoginRateLimitPolicy(parsed.data.email);
+  const rateLimitResult = applyRateLimit(req, loginPolicy);
+  attachRateLimitHeaders(res, rateLimitResult.status);
+
+  if (!rateLimitResult.allowed) {
+    recordRateLimitExceeded({
+      summary: `Login rate limit exceeded for ${parsed.data.email}`,
+      path: req.path,
+      method: req.method,
+      policyName: loginPolicy.name,
+      actorLabel: parsed.data.email,
+      metadata: {
+        email: parsed.data.email,
+        resetAt: rateLimitResult.status.resetAt,
+      },
+    });
+    recordAuditLog({
+      actionType: "user_login",
+      entityType: "user",
+      outcome: "failure",
+      summary: `Login rate limit exceeded for ${parsed.data.email}`,
+      metadata: { email: parsed.data.email, reason: "rate_limited" },
+    });
+    res.status(429).json(
+      rateLimitedError(
+        "Too many login attempts. Please wait and try again.",
+        { resetAt: rateLimitResult.status.resetAt },
+        getRequestId(req),
+      ),
+    );
+    return;
+  }
+
+  const user = findUserByEmail(parsed.data.email);
+  if (!user || !validatePassword(user, parsed.data.password)) {
+    if (isSetupRequired()) {
+      sendSetupRequired(
+        res,
+        req,
+        "This instance requires initial setup before sign-in.",
+      );
+      return;
+    }
+
+    recordAuditLog({
+      actionType: "user_login",
+      entityType: "user",
+      outcome: "failure",
+      summary: `Failed login attempt for ${parsed.data.email}`,
+    });
+    void dispatchWebhookEvent("auth.login.failed", {
+      email: parsed.data.email,
+      reason: "invalid_credentials",
+    });
+    const body: LoginResponseDto = {
+      success: false,
+      message: "Invalid email or password",
+    };
+    res.status(401).json(body);
+    return;
+  }
+
+  if (isSetupRequired() && !isLoginAllowedDuringSetup(user)) {
+    sendSetupRequired(
+      res,
+      req,
+      "Only the bootstrap admin can sign in until initial setup is complete.",
+    );
+    return;
+  }
+
+  const session = createSession(user);
+  recordAuditLog({
+    actionType: "user_login",
+    entityType: "user",
+    entityId: user.id,
+    actorId: user.id,
+    actorLabel: user.email,
+    outcome: "success",
+    summary: `User ${user.email} logged in`,
+  });
+  void dispatchWebhookEvent(
+    "auth.login.succeeded",
+    { email: user.email, userId: user.id },
+    user.id,
+    user.email,
+  );
+
+  const body: LoginResponseDto = {
+    success: true,
+    session,
+  };
+  res.json(body);
+});
+
+app.post("/api/v1/auth/logout", (req, res) => {
+  const header = req.headers.authorization;
+  const user = getCurrentUserFromAuthHeader(header);
+  const token = header?.startsWith("Bearer ")
+    ? header.slice("Bearer ".length).trim()
+    : "";
+
+  if (token) {
+    deleteSession(token);
+  }
+
+  if (user) {
+    recordAuditLog({
+      actionType: "user_logout",
+      entityType: "user",
+      entityId: user.id,
+      actorId: user.id,
+      actorLabel: user.email,
+      outcome: "success",
+      summary: `User ${user.email} logged out`,
+    });
+  }
+
+  res.json({ success: true });
+});
+
+app.get("/api/v1/auth/me", (req, res) => {
+  syncJitAccess();
+  const user = getCurrentUserFromAuthHeader(req.headers.authorization);
+  if (!user) {
+    const body: CurrentUserResponseDto = { authenticated: false };
+    res.json(body);
+    return;
+  }
+
+  const context = getAuthenticatedContext(user);
+  const activePrivilege = getActivePrivilegeForUser(user);
+
+  const body: CurrentUserResponseDto = {
+    authenticated: true,
+    user,
+    standingRole: context.standingRole,
+    effectiveRole: context.effectiveRole,
+    activePrivilege,
+    permissions: getPermissionsForUser(user, context.effectiveRole),
+  };
+  res.json(body);
+});
+
+app.get("/api/v1/admin/access-requests", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const allRequests = listAccessRequests();
+  const requests =
+    user.role === "admin"
+      ? allRequests.requests
+      : allRequests.requests.filter(
+          (request) => request.requesterUserId === user.id,
+        );
+
+  const body: AccessRequestListResponseDto = {
+    total: requests.length,
+    requests,
+  };
+  res.json(body);
+});
+
+app.post("/api/v1/admin/access-requests", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const parsed = createAccessRequestSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid access request payload")) {
+    return;
+  }
+
+  const result = createAccessRequest(user, parsed.data);
+  if (!result.success || !result.request) {
+    recordAuditLog({
+      actionType: "create_access_request",
+      entityType: "access_request",
+      outcome: "failure",
+      actorId: user.id,
+      actorLabel: user.email,
+      summary: `Failed access request from ${user.email}`,
+      metadata: { error: result.error },
+    });
+    res.status(400).json({ error: result.error ?? "Failed to create access request" });
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "create_access_request",
+    entityType: "access_request",
+    entityId: result.request.id,
+    actorId: user.id,
+    actorLabel: user.email,
+    outcome: "success",
+    summary: `User ${user.email} requested role ${result.request.requestedRole}`,
+    metadata: {
+      requestedRole: result.request.requestedRole,
+      justification: result.request.justification,
+    },
+  });
+
+  res.status(201).json(result.request);
+});
+
+app.post("/api/v1/admin/access-requests/:id/resolve", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const parsed = resolveAccessRequestSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid access request resolution payload")) {
+    return;
+  }
+
+  const existing = getAccessRequestById(req.params.id);
+  if (!existing) {
+    res.status(404).json({ error: "Access request not found" });
+    return;
+  }
+
+  const result = resolveAccessRequest(
+    req.params.id,
+    parsed.data.decision,
+    user,
+    parsed.data.reviewerNote,
+  );
+
+  if (!result.success || !result.request) {
+    recordAuditLog({
+      actionType: "resolve_access_request",
+      entityType: "access_request",
+      entityId: req.params.id,
+      actorId: user.id,
+      actorLabel: user.email,
+      outcome: "failure",
+      summary: `Failed to ${parsed.data.decision} access request ${req.params.id}`,
+      metadata: { error: result.error, decision: parsed.data.decision },
+    });
+    res.status(400).json({ error: result.error ?? "Failed to resolve access request" });
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "resolve_access_request",
+    entityType: "access_request",
+    entityId: result.request.id,
+    actorId: user.id,
+    actorLabel: user.email,
+    outcome: "success",
+    summary:
+      parsed.data.decision === "approved"
+        ? `Admin approved access request ${result.request.id} for role ${result.request.requestedRole}`
+        : parsed.data.decision === "denied"
+          ? `Admin denied access request ${result.request.id}`
+          : `Access request ${result.request.id} cancelled`,
+    metadata: {
+      decision: parsed.data.decision,
+      reviewerNote: parsed.data.reviewerNote,
+      requestedRole: result.request.requestedRole,
+    },
+  });
+
+  if (parsed.data.decision === "approved") {
+    recordAuditLog({
+      actionType: "update_user_role",
+      entityType: "user",
+      entityId: result.request.requesterUserId,
+      actorId: user.id,
+      actorLabel: user.email,
+      outcome: "success",
+      summary: `Updated ${result.request.requesterEmail} role to ${result.request.requestedRole}`,
+      metadata: {
+        requestedRole: result.request.requestedRole,
+        accessRequestId: result.request.id,
+      },
+    });
+  }
+
+  res.json(result.request);
+});
+
+app.get("/api/v1/admin/access-reviews", (req, res) => {
+  const user = requireAdminUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const body: AccessReviewListResponseDto = listAccessReviewRuns();
+  res.json(body);
+});
+
+app.post("/api/v1/admin/access-reviews", (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const parsed = createAccessReviewRunSchema.safeParse(req.body ?? {});
+  if (!assertValidBody(parsed, res, req, "Invalid access review payload")) {
+    return;
+  }
+
+  const users = listUsers().users;
+  const run = createAccessReviewRun(admin, users, parsed.data.roles);
+
+  const scopeLabel =
+    run.scope.roles.length === 5
+      ? "all roles"
+      : run.scope.roles.join(", ");
+
+  recordAuditLog({
+    actionType: "create_access_review",
+    entityType: "access_review",
+    entityId: run.id,
+    actorId: admin.id,
+    actorLabel: admin.email,
+    outcome: "success",
+    summary: `Started access review run for roles ${scopeLabel}`,
+    metadata: {
+      roles: run.scope.roles,
+      totalUsers: run.items.length,
+    },
+  });
+
+  res.status(201).json(run);
+});
+
+app.get("/api/v1/admin/access-reviews/:id", (req, res) => {
+  const user = requireAdminUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const run = getAccessReviewRunById(req.params.id);
+  if (!run) {
+    res.status(404).json({ error: "Access review run not found" });
+    return;
+  }
+
+  res.json(run);
+});
+
+app.post("/api/v1/admin/access-reviews/:id/items/resolve", (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const parsed = resolveAccessReviewItemSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid access review item payload")) {
+    return;
+  }
+
+  const result = resolveAccessReviewItem(
+    req.params.id,
+    parsed.data.userId,
+    parsed.data.action,
+    parsed.data.note,
+  );
+
+  if (!result.success || !result.run) {
+    recordAuditLog({
+      actionType: "resolve_access_review_item",
+      entityType: "access_review",
+      entityId: req.params.id,
+      actorId: admin.id,
+      actorLabel: admin.email,
+      outcome: "failure",
+      summary: `Failed access review item action for user ${parsed.data.userId}`,
+      metadata: { error: result.error, action: parsed.data.action },
+    });
+    res.status(400).json({ error: result.error ?? "Failed to resolve review item" });
+    return;
+  }
+
+  const item = result.run.items.find((entry) => entry.userId === parsed.data.userId);
+  const itemEmail = item?.userEmail ?? parsed.data.userId;
+
+  recordAuditLog({
+    actionType: "resolve_access_review_item",
+    entityType: "access_review",
+    entityId: req.params.id,
+    actorId: admin.id,
+    actorLabel: admin.email,
+    outcome: "success",
+    summary:
+      parsed.data.action === "disable"
+        ? `Disabled inactive user ${itemEmail} during access review`
+        : parsed.data.action === "downgrade"
+          ? `Downgraded ${itemEmail} from ${result.previousRole} to ${result.nextRole} during access review`
+          : `Kept access for ${itemEmail} during access review`,
+    metadata: {
+      userId: parsed.data.userId,
+      action: parsed.data.action,
+      note: parsed.data.note,
+      previousRole: result.previousRole,
+      nextRole: result.nextRole,
+    },
+  });
+
+  if (parsed.data.action === "disable") {
+    recordAuditLog({
+      actionType: "disable_user",
+      entityType: "user",
+      entityId: parsed.data.userId,
+      actorId: admin.id,
+      actorLabel: admin.email,
+      outcome: "success",
+      summary: `Disabled user ${itemEmail} during access review`,
+      metadata: { accessReviewRunId: req.params.id },
+    });
+  } else if (
+    parsed.data.action === "downgrade" &&
+    result.previousRole &&
+    result.nextRole &&
+    result.previousRole !== result.nextRole
+  ) {
+    recordAuditLog({
+      actionType: "update_user_role",
+      entityType: "user",
+      entityId: parsed.data.userId,
+      actorId: admin.id,
+      actorLabel: admin.email,
+      outcome: "success",
+      summary: `Updated ${itemEmail} role to ${result.nextRole} during access review`,
+      metadata: {
+        previousRole: result.previousRole,
+        nextRole: result.nextRole,
+        accessReviewRunId: req.params.id,
+      },
+    });
+  }
+
+  res.json(result.run);
+});
+
+app.post("/api/v1/admin/access-reviews/:id/complete", (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const result = completeAccessReviewRun(req.params.id);
+  if (!result.success || !result.run) {
+    recordAuditLog({
+      actionType: "complete_access_review",
+      entityType: "access_review",
+      entityId: req.params.id,
+      actorId: admin.id,
+      actorLabel: admin.email,
+      outcome: "failure",
+      summary: `Failed to complete access review ${req.params.id}`,
+      metadata: { error: result.error },
+    });
+    res.status(400).json({ error: result.error ?? "Failed to complete access review" });
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "complete_access_review",
+    entityType: "access_review",
+    entityId: result.run.id,
+    actorId: admin.id,
+    actorLabel: admin.email,
+    outcome: "success",
+    summary: `Completed access review run ${result.run.id}`,
+    metadata: result.run.summary,
+  });
+  void dispatchWebhookEvent(
+    "audit.review.completed",
+    {
+      reviewRunId: result.run.id,
+      totalUsers: result.run.summary?.totalUsers,
+      createdByName: result.run.createdByName,
+    },
+    admin.id,
+    admin.email,
+  );
+
+  res.json(result.run);
+});
+
+app.get("/api/v1/admin/jit-policy", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const body: JitPolicyDto = getJitPolicy();
+  res.json(body);
+});
+
+app.post("/api/v1/admin/jit-policy", (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const parsed = updateJitPolicySchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid JIT policy payload")) {
+    return;
+  }
+
+  try {
+    const policy = updateJitPolicy(parsed.data);
+    recordAuditLog({
+      actionType: "update_jit_policy",
+      entityType: "jit_policy",
+      entityId: "default",
+      actorId: admin.id,
+      actorLabel: admin.email,
+      outcome: "success",
+      summary: "Updated JIT elevation policy",
+      metadata: { ...policy },
+    });
+    res.json(policy);
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : "Failed to update JIT policy",
+    });
+  }
+});
+
+app.get("/api/v1/admin/jit-requests", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const allRequests = listJitElevationRequests();
+  const requests =
+    user.role === "admin"
+      ? allRequests.requests
+      : allRequests.requests.filter(
+          (request) => request.requesterUserId === user.id,
+        );
+
+  const body: JitElevationRequestListResponseDto = {
+    total: requests.length,
+    requests,
+  };
+  res.json(body);
+});
+
+app.post("/api/v1/admin/jit-requests", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const parsed = createJitElevationRequestSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid JIT elevation request payload")) {
+    return;
+  }
+
+  const result = createJitElevationRequest(parsed.data, user);
+  if (!result.success || !result.request) {
+    recordAuditLog({
+      actionType: "create_jit_elevation_request",
+      entityType: "jit_elevation_request",
+      outcome: "failure",
+      actorId: user.id,
+      actorLabel: user.email,
+      summary: `Failed JIT elevation request from ${user.email}`,
+      metadata: { error: result.error },
+    });
+    res.status(400).json({ error: result.error ?? "Failed to create JIT elevation request" });
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "create_jit_elevation_request",
+    entityType: "jit_elevation_request",
+    entityId: result.request.id,
+    actorId: user.id,
+    actorLabel: user.email,
+    outcome: "success",
+    summary: `User ${user.email} requested temporary role ${result.request.requestedRole} for ${result.request.requestedDurationMinutes} minutes`,
+    metadata: {
+      requestedRole: result.request.requestedRole,
+      requestedDurationMinutes: result.request.requestedDurationMinutes,
+      status: result.request.status,
+      justification: result.request.justification,
+    },
+  });
+
+  if (result.request.status === "active") {
+    recordAuditLog({
+      actionType: "resolve_jit_elevation_request",
+      entityType: "jit_elevation_request",
+      entityId: result.request.id,
+      actorId: user.id,
+      actorLabel: user.email,
+      outcome: "success",
+      summary: `JIT elevation ${result.request.id} auto-activated for ${user.email}`,
+      metadata: {
+        requestedRole: result.request.requestedRole,
+        expiresAt: result.request.expiresAt,
+      },
+    });
+    void dispatchWebhookEvent(
+      "jit.request.approved",
+      {
+        requestId: result.request.id,
+        requesterEmail: result.request.requesterEmail,
+        requestedRole: result.request.requestedRole,
+        expiresAt: result.request.expiresAt,
+        autoActivated: true,
+      },
+      user.id,
+      user.email,
+    );
+  }
+
+  res.status(201).json(result.request);
+});
+
+app.post("/api/v1/admin/jit-requests/:id/resolve", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const parsed = resolveJitElevationRequestSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid JIT elevation resolution payload")) {
+    return;
+  }
+
+  const existing = getJitElevationRequestById(req.params.id);
+  if (!existing) {
+    res.status(404).json({ error: "JIT elevation request not found" });
+    return;
+  }
+
+  const result = resolveJitElevationRequest(
+    req.params.id,
+    parsed.data.decision,
+    user,
+    parsed.data.reviewerNote,
+  );
+
+  if (!result.success || !result.request) {
+    recordAuditLog({
+      actionType: "resolve_jit_elevation_request",
+      entityType: "jit_elevation_request",
+      entityId: req.params.id,
+      actorId: user.id,
+      actorLabel: user.email,
+      outcome: "failure",
+      summary: `Failed to ${parsed.data.decision} JIT elevation ${req.params.id}`,
+      metadata: { error: result.error, decision: parsed.data.decision },
+    });
+    res.status(400).json({ error: result.error ?? "Failed to resolve JIT elevation request" });
+    return;
+  }
+
+  const decisionSummary: Record<string, string> = {
+    approve: `Admin approved JIT elevation ${result.request.id} for ${result.request.requesterEmail}`,
+    deny: `Admin denied JIT elevation ${result.request.id} for ${result.request.requesterEmail}`,
+    cancel: `JIT elevation ${result.request.id} cancelled`,
+  };
+
+  recordAuditLog({
+    actionType: "resolve_jit_elevation_request",
+    entityType: "jit_elevation_request",
+    entityId: result.request.id,
+    actorId: user.id,
+    actorLabel: user.email,
+    outcome: "success",
+    summary: decisionSummary[parsed.data.decision],
+    metadata: {
+      decision: parsed.data.decision,
+      reviewerNote: parsed.data.reviewerNote,
+      requestedRole: result.request.requestedRole,
+      expiresAt: result.request.expiresAt,
+    },
+  });
+
+  if (parsed.data.decision === "approve" && result.request.status === "active") {
+    void dispatchWebhookEvent(
+      "jit.request.approved",
+      {
+        requestId: result.request.id,
+        requesterEmail: result.request.requesterEmail,
+        requestedRole: result.request.requestedRole,
+        expiresAt: result.request.expiresAt,
+      },
+      user.id,
+      user.email,
+    );
+  }
+
+  res.json(result.request);
+});
+
+app.post("/api/v1/admin/jit-requests/:id/revoke", (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const existing = getJitElevationRequestById(req.params.id);
+  if (!existing) {
+    res.status(404).json({ error: "JIT elevation request not found" });
+    return;
+  }
+
+  const result = revokeJitAccess(req.params.id, admin);
+  if (!result.success || !result.request) {
+    recordAuditLog({
+      actionType: "revoke_jit_elevation",
+      entityType: "jit_elevation_request",
+      entityId: req.params.id,
+      actorId: admin.id,
+      actorLabel: admin.email,
+      outcome: "failure",
+      summary: `Failed to revoke JIT elevation ${req.params.id}`,
+      metadata: { error: result.error },
+    });
+    res.status(400).json({ error: result.error ?? "Failed to revoke JIT elevation" });
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "revoke_jit_elevation",
+    entityType: "jit_elevation_request",
+    entityId: result.request.id,
+    actorId: admin.id,
+    actorLabel: admin.email,
+    outcome: "success",
+    summary: `Admin revoked active JIT elevation ${result.request.id}`,
+    metadata: {
+      requesterEmail: result.request.requesterEmail,
+      requestedRole: result.request.requestedRole,
+    },
+  });
+  void dispatchWebhookEvent(
+    "jit.request.revoked",
+    {
+      requestId: result.request.id,
+      requesterEmail: result.request.requesterEmail,
+      requestedRole: result.request.requestedRole,
+    },
+    admin.id,
+    admin.email,
+  );
+
+  res.json(result.request);
+});
+
+app.get("/api/v1/admin/active-privileges", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  syncJitAccess();
+  const privileges = getActivePrivileges();
+
+  const body: ActivePrivilegeListResponseDto = {
+    total: privileges.length,
+    privileges:
+      user.role === "admin"
+        ? privileges
+        : privileges.filter((privilege) => privilege.userId === user.id),
+  };
+  res.json(body);
+});
+
+app.get("/api/v1/admin/security-timeline", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const effectiveRole = getEffectiveRoleForUser(user);
+  if (!hasPermissionForUser(user, "view_audit_logs", effectiveRole)) {
+    recordForbiddenAccess({
+      summary: `User ${user.email} attempted unauthorized security timeline access`,
+      path: req.path,
+      method: req.method,
+      actorId: user.id,
+      actorLabel: user.email,
+    });
+    sendForbidden(
+      res,
+      req,
+      getPermissionDeniedMessage("view_audit_logs"),
+    );
+    return;
+  }
+
+  const filters: Record<string, unknown> = {};
+  if (typeof req.query.category === "string") {
+    filters.category = req.query.category;
+  }
+  if (typeof req.query.severity === "string") {
+    filters.severity = req.query.severity;
+  }
+
+  const entries = buildSecurityTimelineEntries(filters);
+  const body: SecurityTimelineResponseDto = {
+    total: entries.length,
+    entries,
+  };
+  res.json(body);
+});
+
+app.get("/api/v1/admin/exports", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const body: ExportJobListResponseDto = listExportJobs();
+  res.json(body);
+});
+
+app.post("/api/v1/admin/exports", (req, res) => {
+  const parsed = createExportJobSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid export job payload")) {
+    return;
+  }
+
+  const user = requireExportAccess(req, res, parsed.data.targetType);
+  if (!user) {
+    return;
+  }
+
+  const job = createExportJob(parsed.data, user);
+
+  if (job.status === "generated") {
+    recordAuditLog({
+      actionType: "create_export_job",
+      entityType: "export_job",
+      entityId: job.id,
+      actorId: user.id,
+      actorLabel: user.email,
+      outcome: "success",
+      summary: `User ${user.email} exported ${job.targetType} as ${job.format.toUpperCase()}`,
+      metadata: {
+        targetType: job.targetType,
+        format: job.format,
+        fileName: job.fileName,
+        recordCount: job.recordCount,
+        filters: job.filters,
+      },
+    });
+    res.status(201).json(job);
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "create_export_job",
+    entityType: "export_job",
+    entityId: job.id,
+    actorId: user.id,
+    actorLabel: user.email,
+    outcome: "failure",
+    summary: `Failed export of ${job.targetType} for ${user.email}`,
+    metadata: { errorMessage: job.errorMessage },
+  });
+  res.status(400).json({ error: job.errorMessage ?? "Failed to create export job" });
+});
+
+app.get("/api/v1/admin/exports/:id/download", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const job = getExportJobById(req.params.id);
+  if (!job) {
+    res.status(404).json({ error: "Export job not found" });
+    return;
+  }
+
+  if (
+    job.createdByUserId !== user.id &&
+    user.role !== "admin" &&
+    getEffectiveRoleForUser(user) !== "admin"
+  ) {
+    res.status(403).json({ error: "You do not have permission to download this export" });
+    return;
+  }
+
+  if (job.status !== "generated") {
+    res.status(400).json({ error: job.errorMessage ?? "Export job did not generate successfully" });
+    return;
+  }
+
+  try {
+    const generated = generateExportData(
+      job.targetType,
+      job.format,
+      job.filters ?? {},
+    );
+
+    recordAuditLog({
+      actionType: "download_export",
+      entityType: "export_job",
+      entityId: job.id,
+      actorId: user.id,
+      actorLabel: user.email,
+      outcome: "success",
+      summary: `User ${user.email} downloaded export ${job.id}`,
+      metadata: {
+        fileName: job.fileName,
+        targetType: job.targetType,
+        format: job.format,
+        recordCount: generated.recordCount,
+      },
+    });
+
+    res.setHeader("Content-Type", generated.mimeType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${job.fileName ?? `${job.targetType}.${job.format}`}"`,
+    );
+    res.send(generated.content);
+  } catch (error) {
+    recordAuditLog({
+      actionType: "download_export",
+      entityType: "export_job",
+      entityId: job.id,
+      actorId: user.id,
+      actorLabel: user.email,
+      outcome: "failure",
+      summary: `Failed download of export ${job.id} for ${user.email}`,
+      metadata: {
+        error: error instanceof Error ? error.message : "Download failed",
+      },
+    });
+    res.status(500).json({ error: "Failed to generate export download" });
+  }
+});
+
+app.get("/api/v1/admin/webhooks", (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const body: WebhookEndpointListResponseDto = listWebhookEndpoints();
+  res.json(body);
+});
+
+app.post("/api/v1/admin/webhooks", (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const parsed = createWebhookEndpointSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid webhook endpoint payload")) {
+    return;
+  }
+
+  const endpoint = createWebhookEndpoint(parsed.data);
+  recordAuditLog({
+    actionType: "create_webhook_endpoint",
+    entityType: "webhook_endpoint",
+    entityId: endpoint.id,
+    actorId: admin.id,
+    actorLabel: admin.email,
+    outcome: "success",
+    summary: `Created webhook endpoint ${endpoint.name}`,
+    metadata: {
+      url: endpoint.url,
+      subscribedEvents: endpoint.subscribedEvents,
+    },
+  });
+  res.status(201).json(endpoint);
+});
+
+app.post("/api/v1/admin/webhooks/:id/toggle", (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const parsed = toggleWebhookEndpointSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid webhook toggle payload")) {
+    return;
+  }
+
+  const endpoint = setWebhookEndpointActive(req.params.id, parsed.data.active);
+  if (!endpoint) {
+    res.status(404).json({ error: "Webhook endpoint not found" });
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "toggle_webhook_endpoint",
+    entityType: "webhook_endpoint",
+    entityId: endpoint.id,
+    actorId: admin.id,
+    actorLabel: admin.email,
+    outcome: "success",
+    summary: `${parsed.data.active ? "Activated" : "Deactivated"} webhook endpoint ${endpoint.name}`,
+    metadata: { active: endpoint.active },
+  });
+  res.json(endpoint);
+});
+
+app.get("/api/v1/admin/webhook-deliveries", (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const body: WebhookDeliveryLogListResponseDto = listWebhookDeliveryLogs();
+  res.json(body);
+});
+
+app.post("/api/v1/admin/webhooks/test-fire", (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const parsed = testWebhookFireSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid webhook test payload")) {
+    return;
+  }
+
+  const payload =
+    parsed.data.payload ?? getDefaultTestPayload(parsed.data.eventType);
+
+  void dispatchWebhookEvent(
+    parsed.data.eventType,
+    payload,
+    admin.id,
+    admin.email,
+  );
+
+  recordAuditLog({
+    actionType: "webhook_test_fire",
+    entityType: "webhook_endpoint",
+    actorId: admin.id,
+    actorLabel: admin.email,
+    outcome: "success",
+    summary: `Triggered webhook test-fire for event ${parsed.data.eventType}`,
+    metadata: { eventType: parsed.data.eventType, payload },
+  });
+
+  res.json({
+    success: true,
+    message: `Test event ${parsed.data.eventType} dispatched to active subscribers`,
+  });
 });
 
 app.get("/api/v1/admin/environments", (_req, res) => {
@@ -985,11 +2867,7 @@ app.post("/api/v1/admin/snapshots", (req, res) => {
 
 app.get("/api/v1/admin/snapshots/diff", (req, res) => {
   const parsed = snapshotDiffQuerySchema.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "Invalid diff query parameters",
-      details: parsed.error.flatten(),
-    });
+  if (!assertValidBody(parsed, res, req, "Invalid diff query parameters")) {
     return;
   }
 
@@ -1122,11 +3000,7 @@ app.get("/api/v1/admin/reviewers", (_req, res) => {
 
 app.post("/api/v1/admin/reviewers", (req, res) => {
   const parsed = createReviewerSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "Invalid reviewer payload",
-      details: parsed.error.flatten(),
-    });
+  if (!assertValidBody(parsed, res, req, "Invalid reviewer payload")) {
     return;
   }
 
@@ -1136,11 +3010,7 @@ app.post("/api/v1/admin/reviewers", (req, res) => {
 
 app.post("/api/v1/admin/reviewers/:id/active", (req, res) => {
   const parsed = reviewerActiveSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "Invalid reviewer active payload",
-      details: parsed.error.flatten(),
-    });
+  if (!assertValidBody(parsed, res, req, "Invalid reviewer active payload")) {
     return;
   }
 
@@ -1160,11 +3030,7 @@ app.get("/api/v1/admin/approval-policy", (_req, res) => {
 
 app.post("/api/v1/admin/approval-policy", (req, res) => {
   const parsed = updateApprovalPolicySchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "Invalid approval policy payload",
-      details: parsed.error.flatten(),
-    });
+  if (!assertValidBody(parsed, res, req, "Invalid approval policy payload")) {
     return;
   }
 
@@ -1194,11 +3060,7 @@ app.get("/api/v1/admin/approvals/:id/eligibility", (req, res) => {
 
 app.post("/api/v1/admin/approvals/:id/assign-reviewers", (req, res) => {
   const parsed = assignReviewersSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "Invalid assign reviewers payload",
-      details: parsed.error.flatten(),
-    });
+  if (!assertValidBody(parsed, res, req, "Invalid assign reviewers payload")) {
     return;
   }
 
@@ -1266,6 +3128,14 @@ app.post("/api/v1/admin/approvals", (req, res) => {
       linkedExperimentId: request.linkedExperimentId,
       reason: request.reason,
     },
+  });
+
+  void dispatchWebhookEvent("approval.created", {
+    approvalRequestId: request.id,
+    snapshotId: request.snapshotId,
+    snapshotName: request.snapshotName,
+    requestedBy: request.requestedBy.actorLabel,
+    reason: request.reason,
   });
 
   const requestedNotifications = notifyApprovalRequested(request);
@@ -1380,6 +3250,12 @@ app.post("/api/v1/admin/approvals/:id/resolve", (req, res) => {
   });
 
   if (parsed.data.decision === "approved" && request.status === "approved") {
+    void dispatchWebhookEvent("approval.approved", {
+      approvalRequestId: request.id,
+      snapshotName: request.snapshotName,
+      snapshotId: request.snapshotId,
+      decisionNote: parsed.data.decisionNote,
+    });
     const notification = notifyApprovalApproved(request);
     if (notification) {
       recordAuditLog({
@@ -1392,6 +3268,12 @@ app.post("/api/v1/admin/approvals/:id/resolve", (req, res) => {
       });
     }
   } else if (parsed.data.decision === "rejected") {
+    void dispatchWebhookEvent("approval.rejected", {
+      approvalRequestId: request.id,
+      snapshotName: request.snapshotName,
+      snapshotId: request.snapshotId,
+      decisionNote: parsed.data.decisionNote,
+    });
     const notification = notifyApprovalRejected(request);
     if (notification) {
       recordAuditLog({
@@ -1415,11 +3297,7 @@ app.post("/api/v1/admin/approvals/:id/resolve", (req, res) => {
 
 app.post("/api/v1/admin/approvals/:id/execute", (req, res) => {
   const parsed = executeApprovalRequestSchema.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "Invalid execute approval payload",
-      details: parsed.error.flatten(),
-    });
+  if (!assertValidBody(parsed, res, req, "Invalid execute approval payload")) {
     return;
   }
 
@@ -1531,6 +3409,13 @@ app.post("/api/v1/admin/approvals/:id/execute", (req, res) => {
     },
   });
 
+  void dispatchWebhookEvent("promotion.executed", {
+    approvalRequestId: executed.id,
+    snapshotId: executed.snapshotId,
+    snapshotName: executed.snapshotName,
+    activeConfigurationSnapshotId: promotion.activeConfiguration.snapshotId,
+  });
+
   const executedNotification = notifyApprovalExecuted(executed);
   if (executedNotification) {
     recordAuditLog({
@@ -1571,11 +3456,7 @@ function auditGeneratedApprovalNotifications(
 
 app.get("/api/v1/admin/notifications", (req, res) => {
   const parsed = notificationListQuerySchema.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "Invalid notification query parameters",
-      details: parsed.error.flatten(),
-    });
+  if (!assertValidBody(parsed, res, req, "Invalid notification query parameters")) {
     return;
   }
 
@@ -1677,6 +3558,448 @@ app.post("/api/v1/admin/approval-sla/policy", (req, res) => {
   res.json(body);
 });
 
+app.get("/api/v1/admin/delegations", (_req, res) => {
+  const body: DelegationListResponseDto = listDelegationRules();
+  res.json(body);
+});
+
+app.post("/api/v1/admin/delegations", (req, res) => {
+  const parsed = createDelegationRuleSchema.safeParse(req.body);
+  if (!parsed.success) {
+    recordAuditLog({
+      actionType: "create_delegation_rule",
+      entityType: "delegation_rule",
+      outcome: "failure",
+      summary: "Failed to create delegation rule: invalid payload",
+      metadata: { errors: parsed.error.flatten() },
+    });
+    res.status(400).json({
+      error: "Invalid delegation rule payload",
+      details: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  const rule = createDelegationRule(parsed.data);
+  if (!rule) {
+    recordAuditLog({
+      actionType: "create_delegation_rule",
+      entityType: "delegation_rule",
+      outcome: "failure",
+      summary: "Failed to create delegation rule: invalid reviewers",
+      metadata: parsed.data,
+    });
+    res.status(400).json({
+      error: "Reviewers must be active, distinct, and valid.",
+    });
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "create_delegation_rule",
+    entityType: "delegation_rule",
+    entityId: rule.id,
+    outcome: "success",
+    summary: `Delegated reviewer ${rule.fromReviewerId} to ${rule.toReviewerId} for live approvals`,
+    metadata: {
+      mode: rule.mode,
+      startAt: rule.startAt,
+      endAt: rule.endAt,
+      reason: rule.reason,
+    },
+  });
+
+  createNotification({
+    type: "approval_delegated",
+    title: "Reviewer delegation rule created",
+    message: `${rule.mode === "delegate" ? "Backup delegation" : "Reassignment rule"} from ${rule.fromReviewerId} to ${rule.toReviewerId} is active.`,
+    recipientActorId: rule.toReviewerId,
+  });
+
+  res.status(201).json(rule);
+});
+
+app.post("/api/v1/admin/delegations/:id/deactivate", (req, res) => {
+  const rule = deactivateDelegationRule(req.params.id);
+  if (!rule) {
+    res.status(404).json({ error: "Delegation rule not found" });
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "deactivate_delegation_rule",
+    entityType: "delegation_rule",
+    entityId: rule.id,
+    outcome: "success",
+    summary: `Deactivated delegation rule ${rule.id} from ${rule.fromReviewerId} to ${rule.toReviewerId}`,
+    metadata: { mode: rule.mode },
+  });
+
+  res.json(rule);
+});
+
+app.post("/api/v1/admin/approvals/:id/reassign", (req, res) => {
+  const parsed = reassignApprovalSchema.safeParse(req.body);
+  if (!parsed.success) {
+    recordAuditLog({
+      actionType: "reassign_approval_request",
+      entityType: "approval_request",
+      entityId: req.params.id,
+      outcome: "failure",
+      summary: "Failed to reassign approval request: invalid payload",
+      metadata: { errors: parsed.error.flatten() },
+    });
+    res.status(400).json({
+      error: "Invalid reassignment payload",
+      details: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  const result = manuallyReassignApprovalRequest(
+    req.params.id,
+    parsed.data.nextReviewerIds,
+    parsed.data.reason,
+  );
+
+  if (!result.request) {
+    recordAuditLog({
+      actionType: "reassign_approval_request",
+      entityType: "approval_request",
+      entityId: req.params.id,
+      outcome: "failure",
+      summary: `Failed to reassign approval ${req.params.id}`,
+      metadata: { error: result.error },
+    });
+    res.status(400).json({ error: result.error ?? "Reassignment failed" });
+    return;
+  }
+
+  const fromLabel = result.change?.previousReviewerIds.join(", ") ?? "unknown";
+  const toLabel = result.change?.nextReviewerIds.join(", ") ?? "unknown";
+
+  recordAuditLog({
+    actionType: "reassign_approval_request",
+    entityType: "approval_request",
+    entityId: result.request.id,
+    entityLabel: result.request.snapshotName,
+    outcome: "success",
+    summary: `Reassigned approval ${result.request.id} from ${fromLabel} to ${toLabel}`,
+    metadata: {
+      reason: parsed.data.reason,
+      previousReviewerIds: result.change?.previousReviewerIds,
+      nextReviewerIds: result.change?.nextReviewerIds,
+    },
+  });
+
+  const body: ApprovalOperationResponseDto = {
+    success: true,
+    message: `Reassigned approval request to ${toLabel}.`,
+    request: result.request,
+  };
+  res.json(body);
+});
+
+app.get("/api/v1/admin/approvals/:id/assignment-history", (req, res) => {
+  const body = listApprovalAssignmentHistory(req.params.id);
+  if (!body) {
+    res.status(404).json({ error: "Approval request not found" });
+    return;
+  }
+
+  res.json(body satisfies ApprovalAssignmentHistoryResponseDto);
+});
+
+app.get("/api/v1/admin/approval-exceptions", (_req, res) => {
+  const body: ApprovalExceptionListResponseDto = listOpenApprovalExceptions();
+  res.json(body);
+});
+
+app.post("/api/v1/admin/approval-exceptions/:id/resolve", (req, res) => {
+  const parsed = resolveApprovalExceptionSchema.safeParse(req.body ?? {});
+  if (!assertValidBody(parsed, res, req, "Invalid resolve exception payload")) {
+    return;
+  }
+
+  const exception = resolveApprovalException(req.params.id, parsed.data.note);
+  if (!exception) {
+    res.status(404).json({ error: "Open approval exception not found" });
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "resolve_approval_exception",
+    entityType: "approval_exception",
+    entityId: exception.id,
+    outcome: "success",
+    summary: `Resolved exception ${exception.id} for approval ${exception.approvalRequestId}`,
+    metadata: {
+      note: parsed.data.note,
+      type: exception.type,
+    },
+  });
+
+  res.json(exception satisfies ApprovalExceptionDto);
+});
+
+app.get("/api/v1/admin/collaboration/thread", (req, res) => {
+  const parsed = collaborationThreadQuerySchema.safeParse(req.query);
+  if (!assertValidBody(parsed, res, req, "Invalid collaboration thread query")) {
+    return;
+  }
+
+  const body: CollaborationThreadDto = getCollaborationThread(
+    parsed.data.targetType,
+    parsed.data.targetId,
+  );
+  res.json(body);
+});
+
+app.post("/api/v1/admin/collaboration/comments", (req, res) => {
+  const parsed = createCommentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    recordAuditLog({
+      actionType: "add_collaboration_comment",
+      entityType: "collaboration_comment",
+      outcome: "failure",
+      summary: "Failed to add collaboration comment: invalid payload",
+      metadata: { errors: parsed.error.flatten() },
+    });
+    res.status(400).json({
+      error: "Invalid comment payload",
+      details: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  const result = addComment(parsed.data);
+  if (!result.comment) {
+    recordAuditLog({
+      actionType: "add_collaboration_comment",
+      entityType: "collaboration_comment",
+      outcome: "failure",
+      summary: `Failed to add comment to ${parsed.data.targetType} ${parsed.data.targetId}`,
+      metadata: { error: result.error },
+    });
+    res.status(400).json({ error: result.error ?? "Failed to add comment" });
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "add_collaboration_comment",
+    entityType: "collaboration_comment",
+    entityId: result.comment.id,
+    outcome: "success",
+    summary: `Added comment to ${parsed.data.targetType} ${parsed.data.targetId}`,
+    metadata: {
+      targetType: parsed.data.targetType,
+      targetId: parsed.data.targetId,
+      parentCommentId: parsed.data.parentCommentId,
+    },
+  });
+
+  res.status(201).json(result.comment);
+});
+
+app.post("/api/v1/admin/collaboration/comments/:id/status", (req, res) => {
+  const parsed = resolveCommentSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid comment status payload")) {
+    return;
+  }
+
+  const existing = getCommentById(req.params.id);
+  if (!existing) {
+    res.status(404).json({ error: "Comment not found" });
+    return;
+  }
+
+  const comment = updateCommentStatus(req.params.id, parsed.data.status);
+  if (!comment) {
+    res.status(404).json({ error: "Comment not found" });
+    return;
+  }
+
+  const actionLabel =
+    parsed.data.status === "resolved" ? "Resolved" : "Reopened";
+
+  recordAuditLog({
+    actionType: "update_collaboration_comment_status",
+    entityType: "collaboration_comment",
+    entityId: comment.id,
+    outcome: "success",
+    summary: `${actionLabel} collaboration comment ${comment.id}`,
+    metadata: {
+      status: parsed.data.status,
+      targetType: comment.targetType,
+      targetId: comment.targetId,
+    },
+  });
+
+  res.json(comment satisfies CollaborationCommentDto);
+});
+
+app.post("/api/v1/admin/collaboration/annotations", (req, res) => {
+  const parsed = createAnnotationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    recordAuditLog({
+      actionType: "add_collaboration_annotation",
+      entityType: "collaboration_annotation",
+      outcome: "failure",
+      summary: "Failed to add collaboration annotation: invalid payload",
+      metadata: { errors: parsed.error.flatten() },
+    });
+    res.status(400).json({
+      error: "Invalid annotation payload",
+      details: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  const result = addAnnotation(parsed.data);
+  if (!result.annotation) {
+    recordAuditLog({
+      actionType: "add_collaboration_annotation",
+      entityType: "collaboration_annotation",
+      outcome: "failure",
+      summary: `Failed to add annotation to ${parsed.data.targetType} ${parsed.data.targetId}`,
+      metadata: { error: result.error },
+    });
+    res.status(400).json({ error: result.error ?? "Failed to add annotation" });
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "add_collaboration_annotation",
+    entityType: "collaboration_annotation",
+    entityId: result.annotation.id,
+    outcome: "success",
+    summary: `Added annotation to ${parsed.data.targetType} ${parsed.data.targetId}`,
+    metadata: {
+      targetType: parsed.data.targetType,
+      targetId: parsed.data.targetId,
+      anchorLabel: parsed.data.anchorLabel,
+    },
+  });
+
+  res.status(201).json(result.annotation);
+});
+
+app.get("/api/v1/admin/workspaces", (req, res) => {
+  const parsed = workspaceQuerySchema.safeParse(req.query);
+  if (!assertValidBody(parsed, res, req, "Invalid workspace query")) {
+    return;
+  }
+
+  const body: WorkspaceStateDto = getWorkspaceState(
+    parsed.data.activeRole ?? "merchandiser",
+  );
+  res.json(body);
+});
+
+app.get("/api/v1/admin/saved-views", (req, res) => {
+  const parsed = savedViewsQuerySchema.safeParse(req.query);
+  if (!assertValidBody(parsed, res, req, "Invalid saved views query")) {
+    return;
+  }
+
+  const body: SavedViewListResponseDto = listSavedViews(parsed.data.role);
+  res.json(body);
+});
+
+app.post("/api/v1/admin/saved-views", (req, res) => {
+  const parsed = createSavedViewSchema.safeParse(req.body);
+  if (!parsed.success) {
+    recordAuditLog({
+      actionType: "create_saved_view",
+      entityType: "saved_view",
+      outcome: "failure",
+      summary: "Failed to create saved view: invalid payload",
+      metadata: { errors: parsed.error.flatten() },
+    });
+    res.status(400).json({
+      error: "Invalid saved view payload",
+      details: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  const view = createSavedView(parsed.data);
+
+  recordAuditLog({
+    actionType: "create_saved_view",
+    entityType: "saved_view",
+    entityId: view.id,
+    entityLabel: view.name,
+    outcome: "success",
+    summary: `Created saved view '${view.name}' for role ${view.role}`,
+    metadata: { role: view.role, filters: view.filters },
+  });
+
+  res.status(201).json(view);
+});
+
+app.post("/api/v1/admin/saved-views/:id", (req, res) => {
+  const parsed = updateSavedViewSchema.safeParse(req.body);
+  if (!parsed.success) {
+    recordAuditLog({
+      actionType: "update_saved_view",
+      entityType: "saved_view",
+      entityId: req.params.id,
+      outcome: "failure",
+      summary: "Failed to update saved view: invalid payload",
+      metadata: { errors: parsed.error.flatten() },
+    });
+    res.status(400).json({
+      error: "Invalid saved view update payload",
+      details: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  const view = updateSavedView(req.params.id, parsed.data);
+  if (!view) {
+    res.status(404).json({ error: "Saved view not found" });
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "update_saved_view",
+    entityType: "saved_view",
+    entityId: view.id,
+    entityLabel: view.name,
+    outcome: "success",
+    summary: `Updated saved view '${view.name}' for role ${view.role}`,
+    metadata: { role: view.role, filters: view.filters },
+  });
+
+  res.json(view);
+});
+
+app.post("/api/v1/admin/saved-views/:id/default", (req, res) => {
+  const parsed = setDefaultSavedViewSchema.safeParse(req.body ?? {});
+  if (!assertValidBody(parsed, res, req, "Invalid set default saved view payload")) {
+    return;
+  }
+
+  const view = setDefaultSavedView(parsed.data.role, req.params.id);
+  if (!view) {
+    res.status(404).json({ error: "Saved view not found for this role" });
+    return;
+  }
+
+  recordAuditLog({
+    actionType: "set_default_saved_view",
+    entityType: "saved_view",
+    entityId: view.id,
+    entityLabel: view.name,
+    outcome: "success",
+    summary: `Set default saved view '${view.name}' for role ${view.role}`,
+    metadata: { role: view.role },
+  });
+
+  res.json(view);
+});
+
 app.post("/api/v1/admin/promote-snapshot", (req, res) => {
   const parsed = promoteSnapshotSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -1747,6 +4070,13 @@ app.post("/api/v1/admin/promote-snapshot", (req, res) => {
       counts: restored.counts,
       warning,
     },
+  });
+
+  void dispatchWebhookEvent("promotion.executed", {
+    snapshotId: restored.id,
+    snapshotName: restored.name,
+    environment: "live",
+    sourceExperimentId: parsed.data.sourceExperimentId,
   });
 
   const message = warning
@@ -2059,11 +4389,7 @@ app.post("/api/v1/admin/experiments/:id/run", (req, res) => {
 
 app.get("/api/v1/admin/audit-logs", (req, res) => {
   const parsed = auditLogFilterSchema.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "Invalid audit log filters",
-      details: parsed.error.flatten(),
-    });
+  if (!assertValidBody(parsed, res, req, "Invalid audit log filters")) {
     return;
   }
 
@@ -2073,11 +4399,7 @@ app.get("/api/v1/admin/audit-logs", (req, res) => {
 
 app.post("/api/v1/events/search", (req, res) => {
   const parsed = searchEventBodySchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "Invalid search event payload",
-      details: parsed.error.flatten(),
-    });
+  if (!assertValidBody(parsed, res, req, "Invalid search event payload")) {
     return;
   }
 
@@ -2087,11 +4409,7 @@ app.post("/api/v1/events/search", (req, res) => {
 
 app.post("/api/v1/events/click", (req, res) => {
   const parsed = clickEventBodySchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({
-      error: "Invalid click event payload",
-      details: parsed.error.flatten(),
-    });
+  if (!assertValidBody(parsed, res, req, "Invalid click event payload")) {
     return;
   }
 
@@ -2103,8 +4421,67 @@ app.get("/api/v1/analytics/summary", (_req, res) => {
   res.json(getAnalyticsSummary());
 });
 
-app.listen(env.SEARCH_API_PORT, env.SEARCH_API_HOST, () => {
-  console.log(
-    `search-api listening on http://${env.SEARCH_API_HOST}:${env.SEARCH_API_PORT}`,
-  );
-});
+app.use(
+  (
+    error: unknown,
+    req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    console.error(`[${getRequestId(req)}]`, error);
+    if (res.headersSent) {
+      return;
+    }
+
+    res
+      .status(500)
+      .json(internalError(undefined, undefined, getRequestId(req)));
+  },
+);
+
+let databaseConnected = false;
+
+async function hydratePersistentStores(): Promise<void> {
+  await hydrateBootstrapStore();
+  await ensureBootstrapState();
+  await hydrateAuthStore();
+  await hydrateAuditTrailStore();
+  await hydrateApprovalStore();
+  await hydrateAccessGovernanceStore();
+  await hydrateJitAccessStore();
+  await hydrateCollaborationStore();
+  await hydrateNotificationStore();
+  await hydrateExportStore();
+}
+
+async function startServer(): Promise<void> {
+  try {
+    await connectDatabase();
+    await hydratePersistentStores();
+    databaseConnected = true;
+
+    if (userCount() === 0 && !isSetupRequired()) {
+      console.warn(
+        "Database connected but has no users. Run: pnpm prisma:seed (from repo root)",
+      );
+    } else if (isSetupRequired()) {
+      console.log(
+        "Initial setup required. Open the admin app at /setup to configure this instance.",
+      );
+    }
+  } catch (error) {
+    databaseConnected = false;
+    console.warn(
+      "Database unavailable; governance data will be empty until migrate + seed.",
+      error,
+    );
+  }
+
+  app.listen(env.SEARCH_API_PORT, env.SEARCH_API_HOST, () => {
+    console.log(
+      `search-api listening on http://${env.SEARCH_API_HOST}:${env.SEARCH_API_PORT}`,
+    );
+  });
+}
+
+void startServer();

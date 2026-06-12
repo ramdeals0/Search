@@ -21,6 +21,9 @@ const TYPE_LABELS: Record<NotificationType, string> = {
   approval_approved: "Approved",
   approval_rejected: "Rejected",
   approval_executed: "Executed",
+  approval_delegated: "Delegated",
+  approval_reassigned: "Reassigned",
+  approval_exception_opened: "Exception",
 };
 
 export function NotificationInboxPanel() {

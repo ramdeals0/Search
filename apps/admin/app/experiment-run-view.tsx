@@ -4,10 +4,18 @@ import { useCallback, useEffect, useState } from "react";
 import type {
   ExperimentDetailResponseDto,
   ExperimentRunSummaryDto,
+  ReviewerListResponseDto,
 } from "@retailer-search/shared-types";
+import { AnnotationPanel } from "./annotation-panel";
+import { CommentsPanel } from "./comments-panel";
+import { ADMIN_REVIEWER_STORAGE_KEY } from "./reviewer-management-panel";
 
 const SEARCH_API_URL =
   process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
+
+function getExperimentRunTargetId(run: ExperimentRunSummaryDto): string {
+  return `${run.experimentId}::${run.runAt}`;
+}
 
 const OUTCOME_COLORS: Record<string, string> = {
   improved: "#15803d",
@@ -62,6 +70,38 @@ export function ExperimentRunView() {
   const [experimentDetail, setExperimentDetail] =
     useState<ExperimentDetailResponseDto | null>(null);
   const [checkingShip, setCheckingShip] = useState(false);
+  const [actorId, setActorId] = useState("local-reviewer");
+  const [actorLabel, setActorLabel] = useState("Local Reviewer");
+  const [selectedQueryAnchor, setSelectedQueryAnchor] = useState("query: rice");
+
+  useEffect(() => {
+    const loadActor = async () => {
+      try {
+        const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/reviewers`, {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          return;
+        }
+
+        const body = (await response.json()) as ReviewerListResponseDto;
+        const storedActorId = window.localStorage.getItem(ADMIN_REVIEWER_STORAGE_KEY);
+        const reviewer =
+          body.reviewers.find(
+            (entry) => entry.id === storedActorId && entry.active,
+          ) ?? body.reviewers.find((entry) => entry.active);
+
+        if (reviewer) {
+          setActorId(reviewer.id);
+          setActorLabel(reviewer.name);
+        }
+      } catch {
+        // keep defaults
+      }
+    };
+
+    void loadActor();
+  }, []);
 
   const loadExperimentDetail = useCallback(async (experimentId: string) => {
     setCheckingShip(true);
@@ -345,10 +385,60 @@ export function ExperimentRunView() {
                   {result.notes}
                 </p>
               )}
+
+              <button
+                type="button"
+                onClick={() => setSelectedQueryAnchor(`query: ${result.query}`)}
+                style={{
+                  marginTop: "0.5rem",
+                  padding: "0.25rem 0.5rem",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 6,
+                  background: "#fff",
+                  cursor: "pointer",
+                  fontSize: 11,
+                }}
+              >
+                Annotate this query
+              </button>
             </li>
           );
         })}
       </ul>
+
+      <div
+        style={{
+          marginTop: "1rem",
+          paddingTop: "1rem",
+          borderTop: "1px solid #e2e8f0",
+        }}
+      >
+        <h3 style={{ margin: "0 0 0.75rem", fontSize: 14 }}>
+          Experiment collaboration
+        </h3>
+        <CommentsPanel
+          targetType="experiment"
+          targetId={run.experimentId}
+          actorId={actorId}
+          actorLabel={actorLabel}
+          title="Experiment discussion"
+        />
+        <CommentsPanel
+          targetType="experiment_run"
+          targetId={getExperimentRunTargetId(run)}
+          actorId={actorId}
+          actorLabel={actorLabel}
+          title="Run discussion"
+        />
+        <AnnotationPanel
+          targetType="experiment_run"
+          targetId={getExperimentRunTargetId(run)}
+          actorId={actorId}
+          actorLabel={actorLabel}
+          title="Run annotations"
+          defaultAnchorLabel={selectedQueryAnchor}
+        />
+      </div>
     </section>
   );
 }

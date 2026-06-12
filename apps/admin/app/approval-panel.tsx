@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type {
+  ApprovalAssignmentHistoryResponseDto,
   ApprovalEligibilityResponseDto,
   ApprovalListResponseDto,
   ApprovalRequestDto,
@@ -16,8 +17,12 @@ import {
   ADMIN_REVIEWER_CHANGED_EVENT,
   ADMIN_REVIEWER_STORAGE_KEY,
 } from "./reviewer-management-panel";
+import { AnnotationPanel } from "./annotation-panel";
+import { CommentsPanel } from "./comments-panel";
 
 const ADMIN_NOTIFICATIONS_CHANGED_EVENT = "admin:notifications-changed";
+const ADMIN_DELEGATION_CHANGED_EVENT = "admin:delegation-changed";
+const ADMIN_EXCEPTIONS_CHANGED_EVENT = "admin:exceptions-changed";
 
 const SEARCH_API_URL =
   process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
@@ -89,6 +94,18 @@ export function ApprovalPanel() {
   const [slaByRequestId, setSlaByRequestId] = useState<
     Record<string, ApprovalSlaStatusDto>
   >({});
+  const [assignmentHistoryByRequest, setAssignmentHistoryByRequest] = useState<
+    Record<string, ApprovalAssignmentHistoryResponseDto>
+  >({});
+  const [reassignSelections, setReassignSelections] = useState<
+    Record<string, string[]>
+  >({});
+  const [reassignReasons, setReassignReasons] = useState<Record<string, string>>(
+    {},
+  );
+  const [openCollaborationByRequest, setOpenCollaborationByRequest] = useState<
+    Record<string, boolean>
+  >({});
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [actingOnId, setActingOnId] = useState<string | null>(null);
@@ -119,6 +136,32 @@ export function ApprovalPanel() {
       );
 
       setEligibilityByRequest(Object.fromEntries(entries));
+    },
+    [],
+  );
+
+  const loadAssignmentHistory = useCallback(
+    async (requestList: ApprovalRequestDto[]) => {
+      const entries = await Promise.all(
+        requestList.map(async (request) => {
+          const response = await fetch(
+            `${SEARCH_API_URL}/api/v1/admin/approvals/${request.id}/assignment-history`,
+            { cache: "no-store" },
+          );
+
+          if (!response.ok) {
+            return null;
+          }
+
+          const body =
+            (await response.json()) as ApprovalAssignmentHistoryResponseDto;
+          return [request.id, body] as const;
+        }),
+      );
+
+      setAssignmentHistoryByRequest(
+        Object.fromEntries(entries.filter((entry): entry is readonly [string, ApprovalAssignmentHistoryResponseDto] => entry !== null)),
+      );
     },
     [],
   );
@@ -166,6 +209,7 @@ export function ApprovalPanel() {
             "");
       setActorId(currentActorId);
       await loadEligibility(approvalsData.requests, currentActorId);
+      await loadAssignmentHistory(approvalsData.requests);
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -175,7 +219,7 @@ export function ApprovalPanel() {
     } finally {
       setLoading(false);
     }
-  }, [loadEligibility]);
+  }, [loadEligibility, loadAssignmentHistory]);
 
   useEffect(() => {
     void loadPanelData();
@@ -187,11 +231,15 @@ export function ApprovalPanel() {
     window.addEventListener(ADMIN_APPROVALS_CHANGED_EVENT, handler);
     window.addEventListener(ADMIN_REVIEWER_CHANGED_EVENT, handler);
     window.addEventListener(ADMIN_NOTIFICATIONS_CHANGED_EVENT, handler);
+    window.addEventListener(ADMIN_DELEGATION_CHANGED_EVENT, handler);
+    window.addEventListener(ADMIN_EXCEPTIONS_CHANGED_EVENT, handler);
     window.addEventListener("admin:promote-prefill", handler);
     return () => {
       window.removeEventListener(ADMIN_APPROVALS_CHANGED_EVENT, handler);
       window.removeEventListener(ADMIN_REVIEWER_CHANGED_EVENT, handler);
       window.removeEventListener(ADMIN_NOTIFICATIONS_CHANGED_EVENT, handler);
+      window.removeEventListener(ADMIN_DELEGATION_CHANGED_EVENT, handler);
+      window.removeEventListener(ADMIN_EXCEPTIONS_CHANGED_EVENT, handler);
       window.removeEventListener("admin:promote-prefill", handler);
     };
   }, [loadPanelData]);
@@ -219,7 +267,13 @@ export function ApprovalPanel() {
   const notifyChanged = () => {
     window.dispatchEvent(new CustomEvent(ADMIN_APPROVALS_CHANGED_EVENT));
     window.dispatchEvent(new CustomEvent(ADMIN_NOTIFICATIONS_CHANGED_EVENT));
+    window.dispatchEvent(new CustomEvent(ADMIN_EXCEPTIONS_CHANGED_EVENT));
     window.dispatchEvent(new CustomEvent("admin:active-config-changed"));
+  };
+
+  const reviewerLabel = (reviewerId: string) => {
+    const reviewer = reviewers.find((entry) => entry.id === reviewerId);
+    return reviewer ? `${reviewer.name} (${reviewer.id})` : reviewerId;
   };
 
   const createRequest = async (event: React.FormEvent) => {
@@ -313,6 +367,59 @@ export function ApprovalPanel() {
         assignError instanceof Error
           ? assignError.message
           : "Failed to assign reviewers",
+      );
+    } finally {
+      setActingOnId(null);
+    }
+  };
+
+  const reassignRequest = async (requestId: string) => {
+    const nextReviewerIds = reassignSelections[requestId] ?? [];
+    const reassignReason = (reassignReasons[requestId] ?? "").trim();
+
+    if (nextReviewerIds.length === 0) {
+      setError("Select at least one reviewer for reassignment.");
+      return;
+    }
+
+    if (!reassignReason) {
+      setError("Reassignment reason is required.");
+      return;
+    }
+
+    setActingOnId(requestId);
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `${SEARCH_API_URL}/api/v1/admin/approvals/${requestId}/reassign`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nextReviewerIds, reason: reassignReason }),
+        },
+      );
+
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+        message?: string;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(
+          body?.error ?? `Reassign failed with HTTP ${response.status}`,
+        );
+      }
+
+      setFeedback(body?.message ?? "Approval reassigned.");
+      setReassignReasons((current) => ({ ...current, [requestId]: "" }));
+      await loadPanelData();
+      notifyChanged();
+    } catch (reassignError) {
+      setError(
+        reassignError instanceof Error
+          ? reassignError.message
+          : "Failed to reassign approval",
       );
     } finally {
       setActingOnId(null);
@@ -557,6 +664,7 @@ export function ApprovalPanel() {
           {requests.map((request) => {
             const eligibility = eligibilityByRequest[request.id];
             const sla = slaByRequestId[request.id];
+            const assignment = assignmentHistoryByRequest[request.id];
             return (
               <li
                 key={request.id}
@@ -637,12 +745,51 @@ export function ApprovalPanel() {
                   </ul>
                 )}
 
-                {request.assignedReviewerIds &&
-                  request.assignedReviewerIds.length > 0 && (
-                    <p style={{ margin: "0 0 0.35rem", color: "#64748b", fontSize: 12 }}>
-                      Assigned reviewers: {request.assignedReviewerIds.join(", ")}
+                {assignment && (
+                  <div
+                    style={{
+                      margin: "0 0 0.35rem",
+                      padding: "0.55rem",
+                      borderRadius: 6,
+                      background: "#f8fafc",
+                      fontSize: 12,
+                      color: "#475569",
+                    }}
+                  >
+                    <p style={{ margin: "0 0 0.25rem" }}>
+                      <strong>Assigned reviewers:</strong>{" "}
+                      {assignment.assignedReviewerIds.length > 0
+                        ? assignment.assignedReviewerIds.map(reviewerLabel).join(", ")
+                        : "none"}
                     </p>
-                  )}
+                    <p style={{ margin: "0 0 0.25rem" }}>
+                      <strong>Effective reviewers:</strong>{" "}
+                      {assignment.effectiveReviewerIds.map(reviewerLabel).join(", ")}
+                    </p>
+                    {assignment.delegatedReviewerIds.length > 0 && (
+                      <p style={{ margin: "0 0 0.25rem", color: "#1d4ed8" }}>
+                        <strong>Delegated backup:</strong>{" "}
+                        {assignment.delegatedReviewerIds.map(reviewerLabel).join(", ")}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {assignment && assignment.changes.length > 0 && (
+                  <details style={{ margin: "0 0 0.35rem", fontSize: 12, color: "#64748b" }}>
+                    <summary style={{ cursor: "pointer" }}>
+                      Assignment history ({assignment.total})
+                    </summary>
+                    <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.1rem" }}>
+                      {assignment.changes.map((change, index) => (
+                        <li key={`${change.changedAt}-${index}`}>
+                          {change.changeType}: {change.previousReviewerIds.join(", ") || "none"} →{" "}
+                          {change.nextReviewerIds.join(", ")} · {change.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
 
                 {eligibility && (
                   <p style={{ margin: "0 0 0.35rem", color: "#475569", fontSize: 12 }}>
@@ -695,6 +842,60 @@ export function ApprovalPanel() {
                       }}
                     >
                       Save assigned reviewers
+                    </button>
+
+                    <label style={{ display: "grid", gap: 4, fontSize: 12 }}>
+                      Manual reassignment
+                      <select
+                        multiple
+                        value={reassignSelections[request.id] ?? []}
+                        onChange={(event) => {
+                          const selected = Array.from(
+                            event.target.selectedOptions,
+                            (option) => option.value,
+                          );
+                          setReassignSelections((current) => ({
+                            ...current,
+                            [request.id]: selected,
+                          }));
+                        }}
+                        style={{ ...inputStyle, minHeight: 72 }}
+                      >
+                        {reviewers
+                          .filter((reviewer) => reviewer.active)
+                          .map((reviewer) => (
+                            <option key={reviewer.id} value={reviewer.id}>
+                              {reviewer.name} ({reviewer.role})
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <input
+                      value={reassignReasons[request.id] ?? ""}
+                      onChange={(event) =>
+                        setReassignReasons((current) => ({
+                          ...current,
+                          [request.id]: event.target.value,
+                        }))
+                      }
+                      placeholder="Reassignment reason (required)"
+                      style={inputStyle}
+                    />
+                    <button
+                      type="button"
+                      disabled={actingOnId === request.id}
+                      onClick={() => void reassignRequest(request.id)}
+                      style={{
+                        justifySelf: "start",
+                        padding: "0.4rem 0.7rem",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: 6,
+                        background: "#fff",
+                        cursor: "pointer",
+                        fontSize: 12,
+                      }}
+                    >
+                      Reassign ownership
                     </button>
 
                     <textarea
@@ -791,6 +992,53 @@ export function ApprovalPanel() {
                   <p style={{ margin: "0.5rem 0 0", color: "#64748b", fontSize: 12 }}>
                     Executed by {request.executedBy.actorLabel}
                   </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenCollaborationByRequest((current) => ({
+                      ...current,
+                      [request.id]: !current[request.id],
+                    }))
+                  }
+                  style={{
+                    marginTop: "0.65rem",
+                    padding: "0.35rem 0.65rem",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: 6,
+                    background: "#fff",
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                >
+                  {openCollaborationByRequest[request.id]
+                    ? "Hide review notes"
+                    : "Show review notes"}
+                </button>
+
+                {openCollaborationByRequest[request.id] && (
+                  <>
+                    <CommentsPanel
+                      targetType="approval_request"
+                      targetId={request.id}
+                      actorId={actorId}
+                      actorLabel={
+                        activeReviewer?.name ?? request.requestedBy.actorLabel
+                      }
+                      title="Approval comments"
+                    />
+                    <AnnotationPanel
+                      targetType="approval_request"
+                      targetId={request.id}
+                      actorId={actorId}
+                      actorLabel={
+                        activeReviewer?.name ?? request.requestedBy.actorLabel
+                      }
+                      title="Approval annotations"
+                      defaultAnchorLabel="release rationale"
+                    />
+                  </>
                 )}
               </li>
             );

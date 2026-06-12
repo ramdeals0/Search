@@ -125,6 +125,98 @@ export interface HealthResponseDto {
   ok: boolean;
   service: string;
   timestamp: ISODateString;
+  database?: {
+    connected: boolean;
+    userCount: number;
+  };
+}
+
+export type ApiErrorCode =
+  | "unauthenticated"
+  | "forbidden"
+  | "validation_error"
+  | "not_found"
+  | "conflict"
+  | "rate_limited"
+  | "internal_error";
+
+export interface ApiErrorResponseDto {
+  success: false;
+  code: ApiErrorCode;
+  message: string;
+  details?: Record<string, unknown>;
+  requestId?: string;
+}
+
+export interface RateLimitStatusDto {
+  key: string;
+  limit: number;
+  remaining: number;
+  resetAt: ISODateString;
+  windowSeconds: number;
+}
+
+export type BootstrapStatus =
+  | "not_started"
+  | "admin_created"
+  | "security_configured"
+  | "platform_configured"
+  | "completed";
+
+export type BootstrapNextStep =
+  | "welcome"
+  | "create_admin"
+  | "security"
+  | "platform"
+  | "review"
+  | "done";
+
+export interface BootstrapStateDto {
+  status: BootstrapStatus;
+  setupRequired: boolean;
+  initializedAt?: ISODateString;
+  initializedByUserId?: string;
+  initializedByEmail?: string;
+  instanceName?: string;
+  firstAdminEmail?: string;
+  securityDefaultsApplied: boolean;
+  governanceDefaultsApplied: boolean;
+  nextStep: BootstrapNextStep;
+}
+
+export interface CreateBootstrapAdminRequestDto {
+  name: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+}
+
+export interface ConfigureBootstrapSecurityRequestDto {
+  passwordMinLength: number;
+  loginAttemptLimit: number;
+  lockoutWindowMinutes: number;
+  sessionTtlHours: number;
+  auditLoggingEnabled: boolean;
+}
+
+export interface ConfigureBootstrapPlatformRequestDto {
+  instanceName: string;
+  stagingEnvironmentLabel: string;
+  liveEnvironmentLabel: string;
+  requireApprovalForLivePromotion: boolean;
+  jitEnabled: boolean;
+  defaultJitDurationMinutes: number;
+  accessReviewCadenceDays: number;
+  defaultWorkspaceRole: "admin";
+}
+
+export interface CompleteBootstrapRequestDto {
+  confirm: boolean;
+}
+
+export interface BootstrapAdminResponseDto {
+  user: UserDto;
+  session: SessionDto;
 }
 
 export interface SearchEventDto {
@@ -259,7 +351,43 @@ export type AuditActionType =
   | "execute_approval_request"
   | "update_approval_sla_policy"
   | "generate_approval_notification"
-  | "mark_notification_read";
+  | "mark_notification_read"
+  | "create_delegation_rule"
+  | "deactivate_delegation_rule"
+  | "reassign_approval_request"
+  | "create_approval_exception"
+  | "resolve_approval_exception"
+  | "add_collaboration_comment"
+  | "update_collaboration_comment_status"
+  | "add_collaboration_annotation"
+  | "create_saved_view"
+  | "update_saved_view"
+  | "set_default_saved_view"
+  | "user_login"
+  | "user_logout"
+  | "authorization_denied"
+  | "create_access_request"
+  | "resolve_access_request"
+  | "create_access_review"
+  | "resolve_access_review_item"
+  | "complete_access_review"
+  | "update_user_role"
+  | "disable_user"
+  | "create_jit_elevation_request"
+  | "resolve_jit_elevation_request"
+  | "expire_jit_elevation"
+  | "revoke_jit_elevation"
+  | "update_jit_policy"
+  | "create_export_job"
+  | "download_export"
+  | "create_webhook_endpoint"
+  | "toggle_webhook_endpoint"
+  | "webhook_delivery"
+  | "webhook_test_fire"
+  | "bootstrap_admin_created"
+  | "bootstrap_security_configured"
+  | "bootstrap_platform_configured"
+  | "bootstrap_completed";
 
 export type AuditEntityType =
   | "merchandising_rule"
@@ -271,7 +399,21 @@ export type AuditEntityType =
   | "experiment"
   | "environment"
   | "approval_request"
-  | "notification";
+  | "notification"
+  | "delegation_rule"
+  | "approval_exception"
+  | "collaboration_comment"
+  | "collaboration_annotation"
+  | "saved_view"
+  | "user"
+  | "access_request"
+  | "access_review"
+  | "jit_elevation_request"
+  | "jit_policy"
+  | "export_job"
+  | "webhook_endpoint"
+  | "webhook_delivery"
+  | "bootstrap";
 
 export type AuditOutcome = "success" | "failure";
 
@@ -697,7 +839,10 @@ export type NotificationType =
   | "approval_overdue"
   | "approval_approved"
   | "approval_rejected"
-  | "approval_executed";
+  | "approval_executed"
+  | "approval_delegated"
+  | "approval_reassigned"
+  | "approval_exception_opened";
 
 export interface NotificationDto {
   id: string;
@@ -754,4 +899,551 @@ export interface UpdateApprovalSlaPolicyRequestDto {
   reminderAfterHours: number;
   overdueAfterHours: number;
   escalationAfterHours?: number;
+}
+
+export type DelegationMode = "delegate" | "reassign";
+
+export type ExceptionType =
+  | "reviewer_unavailable"
+  | "request_overdue"
+  | "role_mismatch"
+  | "manual_intervention";
+
+export type ExceptionStatus = "open" | "resolved";
+
+export interface DelegationRuleDto {
+  id: string;
+  fromReviewerId: string;
+  toReviewerId: string;
+  mode: DelegationMode;
+  startAt?: ISODateString;
+  endAt?: ISODateString;
+  active: boolean;
+  reason?: string;
+  createdAt: ISODateString;
+}
+
+export interface CreateDelegationRuleRequestDto {
+  fromReviewerId: string;
+  toReviewerId: string;
+  mode: DelegationMode;
+  startAt?: ISODateString;
+  endAt?: ISODateString;
+  reason?: string;
+}
+
+export interface DelegationListResponseDto {
+  total: number;
+  rules: DelegationRuleDto[];
+}
+
+export interface ApprovalAssignmentChangeDto {
+  approvalRequestId: string;
+  previousReviewerIds: string[];
+  nextReviewerIds: string[];
+  reason: string;
+  changedAt: ISODateString;
+  changeType: "delegated" | "reassigned" | "escalated";
+}
+
+export interface ApprovalAssignmentHistoryResponseDto {
+  approvalRequestId: string;
+  assignedReviewerIds: string[];
+  effectiveReviewerIds: string[];
+  delegatedReviewerIds: string[];
+  total: number;
+  changes: ApprovalAssignmentChangeDto[];
+}
+
+export interface ReassignApprovalRequestDto {
+  nextReviewerIds: string[];
+  reason: string;
+}
+
+export interface ApprovalExceptionDto {
+  id: string;
+  approvalRequestId: string;
+  type: ExceptionType;
+  status: ExceptionStatus;
+  summary: string;
+  createdAt: ISODateString;
+  resolvedAt?: ISODateString;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ApprovalExceptionListResponseDto {
+  total: number;
+  exceptions: ApprovalExceptionDto[];
+}
+
+export interface ResolveApprovalExceptionRequestDto {
+  note?: string;
+}
+
+export type CollaborationTargetType =
+  | "approval_request"
+  | "experiment"
+  | "experiment_run"
+  | "snapshot"
+  | "promotion"
+  | "exception";
+
+export type CommentStatus = "open" | "resolved";
+
+export interface CollaborationCommentDto {
+  id: string;
+  targetType: CollaborationTargetType;
+  targetId: string;
+  author: {
+    actorId: string;
+    actorLabel: string;
+  };
+  message: string;
+  createdAt: ISODateString;
+  status?: CommentStatus;
+  parentCommentId?: string;
+  tags?: string[];
+}
+
+export interface CollaborationAnnotationDto {
+  id: string;
+  targetType: CollaborationTargetType;
+  targetId: string;
+  author: {
+    actorId: string;
+    actorLabel: string;
+  };
+  anchorLabel: string;
+  note: string;
+  createdAt: ISODateString;
+  tags?: string[];
+}
+
+export interface CollaborationThreadDto {
+  targetType: CollaborationTargetType;
+  targetId: string;
+  comments: CollaborationCommentDto[];
+  annotations: CollaborationAnnotationDto[];
+}
+
+export interface CreateCommentRequestDto {
+  targetType: CollaborationTargetType;
+  targetId: string;
+  actorId: string;
+  actorLabel: string;
+  message: string;
+  parentCommentId?: string;
+  tags?: string[];
+}
+
+export interface CreateAnnotationRequestDto {
+  targetType: CollaborationTargetType;
+  targetId: string;
+  actorId: string;
+  actorLabel: string;
+  anchorLabel: string;
+  note: string;
+  tags?: string[];
+}
+
+export interface ResolveCommentRequestDto {
+  status: CommentStatus;
+}
+
+export type WorkspaceRole =
+  | "merchandiser"
+  | "reviewer"
+  | "approver"
+  | "release_manager"
+  | "admin";
+
+export interface SavedViewDto {
+  id: string;
+  name: string;
+  role: WorkspaceRole;
+  description?: string;
+  filters: Record<string, unknown>;
+  createdAt: ISODateString;
+  updatedAt: ISODateString;
+  isDefault?: boolean;
+}
+
+export interface WorkspacePresetDto {
+  role: WorkspaceRole;
+  title: string;
+  description: string;
+  visibleSections: string[];
+  defaultFilters: Record<string, unknown>;
+}
+
+export interface WorkspaceStateDto {
+  activeRole: WorkspaceRole;
+  availableRoles: WorkspaceRole[];
+  presets: WorkspacePresetDto[];
+  savedViews: SavedViewDto[];
+}
+
+export interface CreateSavedViewRequestDto {
+  name: string;
+  role: WorkspaceRole;
+  description?: string;
+  filters: Record<string, unknown>;
+  isDefault?: boolean;
+}
+
+export interface UpdateSavedViewRequestDto {
+  name?: string;
+  description?: string;
+  filters?: Record<string, unknown>;
+  isDefault?: boolean;
+}
+
+export interface SavedViewListResponseDto {
+  total: number;
+  savedViews: SavedViewDto[];
+}
+
+export type UserRole =
+  | "merchandiser"
+  | "reviewer"
+  | "approver"
+  | "release_manager"
+  | "admin";
+
+export interface UserDto {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  active: boolean;
+  createdAt: ISODateString;
+  lastLoginAt?: ISODateString;
+}
+
+export interface SessionDto {
+  token: string;
+  user: UserDto;
+  createdAt: ISODateString;
+  expiresAt: ISODateString;
+}
+
+export interface LoginRequestDto {
+  email: string;
+  password: string;
+}
+
+export interface LoginResponseDto {
+  success: boolean;
+  session?: SessionDto;
+  message?: string;
+}
+
+export interface CurrentUserResponseDto {
+  authenticated: boolean;
+  user?: UserDto;
+  standingRole?: UserRole;
+  effectiveRole?: UserRole;
+  activePrivilege?: ActivePrivilegeDto;
+  permissions?: PermissionKey[];
+}
+
+export type PermissionKey =
+  | "view_dashboard"
+  | "manage_rules"
+  | "manage_synonyms"
+  | "view_approvals"
+  | "approve_release"
+  | "execute_release"
+  | "manage_reviewers"
+  | "manage_policy"
+  | "manage_snapshots"
+  | "promote_live"
+  | "view_audit_logs"
+  | "manage_saved_views"
+  | "comment"
+  | "annotate";
+
+export interface RolePermissionsDto {
+  role: UserRole;
+  permissions: PermissionKey[];
+}
+
+export interface UserListResponseDto {
+  total: number;
+  users: UserDto[];
+}
+
+export type AccessRequestStatus = "pending" | "approved" | "denied" | "cancelled";
+
+export type AccessReviewStatus = "open" | "completed";
+
+export interface AccessRequestDto {
+  id: string;
+  createdAt: ISODateString;
+  updatedAt: ISODateString;
+  requesterUserId: string;
+  requesterEmail: string;
+  requesterName: string;
+  requestedRole: UserRole;
+  justification: string;
+  status: AccessRequestStatus;
+  reviewerUserId?: string;
+  reviewerName?: string;
+  reviewerNote?: string;
+}
+
+export interface CreateAccessRequestDto {
+  requestedRole: UserRole;
+  justification: string;
+}
+
+export interface ResolveAccessRequestDto {
+  decision: "approved" | "denied" | "cancelled";
+  reviewerNote?: string;
+}
+
+export interface AccessReviewItemDto {
+  userId: string;
+  userEmail: string;
+  userName: string;
+  currentRole: UserRole;
+  active: boolean;
+  lastLoginAt?: ISODateString;
+  recommendedAction?: "keep" | "downgrade" | "disable" | "review";
+  note?: string;
+}
+
+export interface AccessReviewRunDto {
+  id: string;
+  createdAt: ISODateString;
+  createdByUserId: string;
+  createdByName: string;
+  status: AccessReviewStatus;
+  scope: {
+    roles: UserRole[];
+  };
+  items: AccessReviewItemDto[];
+  completedAt?: ISODateString;
+  summary?: {
+    totalUsers: number;
+    adminsReviewed: number;
+    inactiveUsersFlagged: number;
+  };
+}
+
+export interface CreateAccessReviewRunDto {
+  roles?: UserRole[];
+}
+
+export interface ResolveAccessReviewItemDto {
+  userId: string;
+  action: "keep" | "downgrade" | "disable";
+  note?: string;
+}
+
+export interface AccessRequestListResponseDto {
+  total: number;
+  requests: AccessRequestDto[];
+}
+
+export interface AccessReviewListResponseDto {
+  total: number;
+  runs: AccessReviewRunDto[];
+}
+
+export type JitAccessStatus =
+  | "pending"
+  | "active"
+  | "denied"
+  | "expired"
+  | "cancelled"
+  | "revoked";
+
+export interface JitElevationRequestDto {
+  id: string;
+  createdAt: ISODateString;
+  updatedAt: ISODateString;
+  requesterUserId: string;
+  requesterEmail: string;
+  requesterName: string;
+  baseRole: UserRole;
+  requestedRole: UserRole;
+  justification: string;
+  requestedDurationMinutes: number;
+  status: JitAccessStatus;
+  approvedByUserId?: string;
+  approvedByName?: string;
+  reviewerNote?: string;
+  activatedAt?: ISODateString;
+  expiresAt?: ISODateString;
+  revokedAt?: ISODateString;
+}
+
+export interface CreateJitElevationRequestDto {
+  requestedRole: UserRole;
+  justification: string;
+  requestedDurationMinutes: number;
+}
+
+export interface ResolveJitElevationRequestDto {
+  decision: "approve" | "deny" | "cancel";
+  reviewerNote?: string;
+}
+
+export interface ActivePrivilegeDto {
+  userId: string;
+  email: string;
+  baseRole: UserRole;
+  effectiveRole: UserRole;
+  source: "standing" | "jit";
+  elevatedByRequestId?: string;
+  activatedAt?: ISODateString;
+  expiresAt?: ISODateString;
+}
+
+export interface JitPolicyDto {
+  enabled: boolean;
+  defaultDurationMinutes: number;
+  maxDurationMinutes: number;
+  approvalRequiredRoles: UserRole[];
+  elevatableRoles: UserRole[];
+}
+
+export interface UpdateJitPolicyRequestDto {
+  enabled: boolean;
+  defaultDurationMinutes: number;
+  maxDurationMinutes: number;
+  approvalRequiredRoles: UserRole[];
+  elevatableRoles: UserRole[];
+}
+
+export interface JitElevationRequestListResponseDto {
+  total: number;
+  requests: JitElevationRequestDto[];
+}
+
+export interface ActivePrivilegeListResponseDto {
+  total: number;
+  privileges: ActivePrivilegeDto[];
+}
+
+export type ExportFormat = "json" | "csv";
+
+export type ExportTargetType =
+  | "audit_trail"
+  | "approvals"
+  | "access_reviews"
+  | "security_timeline"
+  | "audit_review_findings";
+
+export type ExportJobStatus = "generated" | "failed";
+
+export interface ExportJobDto {
+  id: string;
+  createdAt: ISODateString;
+  createdByUserId: string;
+  createdByName: string;
+  targetType: ExportTargetType;
+  format: ExportFormat;
+  status: ExportJobStatus;
+  filters?: Record<string, unknown>;
+  fileName?: string;
+  recordCount?: number;
+  errorMessage?: string;
+}
+
+export interface CreateExportJobRequestDto {
+  targetType: ExportTargetType;
+  format: ExportFormat;
+  filters?: Record<string, unknown>;
+}
+
+export interface ExportJobListResponseDto {
+  total: number;
+  jobs: ExportJobDto[];
+}
+
+export type WebhookEventType =
+  | "auth.login.succeeded"
+  | "auth.login.failed"
+  | "rbac.access.denied"
+  | "approval.created"
+  | "approval.approved"
+  | "approval.rejected"
+  | "promotion.executed"
+  | "jit.request.approved"
+  | "jit.request.revoked"
+  | "audit.review.completed";
+
+export interface WebhookEndpointDto {
+  id: string;
+  createdAt: ISODateString;
+  name: string;
+  url: string;
+  active: boolean;
+  subscribedEvents: WebhookEventType[];
+  secret?: string;
+  lastDeliveryAt?: ISODateString;
+  lastDeliveryStatus?: "succeeded" | "failed";
+}
+
+export interface CreateWebhookEndpointRequestDto {
+  name: string;
+  url: string;
+  subscribedEvents: WebhookEventType[];
+  secret?: string;
+}
+
+export interface WebhookEndpointListResponseDto {
+  total: number;
+  endpoints: WebhookEndpointDto[];
+}
+
+export interface WebhookDeliveryLogDto {
+  id: string;
+  createdAt: ISODateString;
+  endpointId: string;
+  eventType: WebhookEventType;
+  status: "succeeded" | "failed";
+  responseStatusCode?: number;
+  errorMessage?: string;
+  attemptNumber: number;
+}
+
+export interface WebhookDeliveryLogListResponseDto {
+  total: number;
+  deliveries: WebhookDeliveryLogDto[];
+}
+
+export interface EmitWebhookEventDto {
+  type: WebhookEventType;
+  payload: Record<string, unknown>;
+}
+
+export interface TestWebhookFireRequestDto {
+  eventType: WebhookEventType;
+  payload?: Record<string, unknown>;
+}
+
+export interface TestWebhookFireRequestDto {
+  eventType: WebhookEventType;
+  payload?: Record<string, unknown>;
+}
+
+export interface SecurityTimelineEntryDto {
+  id: string;
+  occurredAt: ISODateString;
+  category: string;
+  severity: "info" | "warning" | "critical";
+  summary: string;
+  actorLabel: string;
+  entityType: string;
+  entityId?: string;
+  actionType: string;
+  outcome: AuditOutcome;
+}
+
+export interface SecurityTimelineResponseDto {
+  total: number;
+  entries: SecurityTimelineEntryDto[];
 }

@@ -4,9 +4,13 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import type {
   MerchandisingConfigSnapshotDto,
+  ReviewerListResponseDto,
   SnapshotListResponseDto,
 } from "@retailer-search/shared-types";
+import { AnnotationPanel } from "./annotation-panel";
+import { CommentsPanel } from "./comments-panel";
 import { SnapshotDiffPreview } from "./snapshot-diff-preview";
+import { ADMIN_REVIEWER_STORAGE_KEY } from "./reviewer-management-panel";
 
 const SEARCH_API_URL =
   process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
@@ -33,6 +37,11 @@ export function SnapshotsPanel() {
   const [fromSnapshotId, setFromSnapshotId] = useState("");
   const [toSnapshotId, setToSnapshotId] = useState("");
   const [rollingBackId, setRollingBackId] = useState<string | null>(null);
+  const [openCollaborationBySnapshot, setOpenCollaborationBySnapshot] = useState<
+    Record<string, boolean>
+  >({});
+  const [actorId, setActorId] = useState("local-requester");
+  const [actorLabel, setActorLabel] = useState("Local Requester");
 
   const loadSnapshots = useCallback(async () => {
     setLoading(true);
@@ -64,6 +73,35 @@ export function SnapshotsPanel() {
   useEffect(() => {
     void loadSnapshots();
   }, [loadSnapshots]);
+
+  useEffect(() => {
+    const loadActor = async () => {
+      try {
+        const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/reviewers`, {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          return;
+        }
+
+        const body = (await response.json()) as ReviewerListResponseDto;
+        const storedActorId = window.localStorage.getItem(ADMIN_REVIEWER_STORAGE_KEY);
+        const reviewer =
+          body.reviewers.find(
+            (entry) => entry.id === storedActorId && entry.active,
+          ) ?? body.reviewers.find((entry) => entry.active);
+
+        if (reviewer) {
+          setActorId(reviewer.id);
+          setActorLabel(reviewer.name);
+        }
+      } catch {
+        // keep defaults
+      }
+    };
+
+    void loadActor();
+  }, []);
 
   const createSnapshot = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -312,6 +350,49 @@ export function SnapshotsPanel() {
                 >
                   {rollingBackId === snapshot.id ? "Rolling back..." : "Rollback"}
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenCollaborationBySnapshot((current) => ({
+                      ...current,
+                      [snapshot.id]: !current[snapshot.id],
+                    }))
+                  }
+                  style={{
+                    marginLeft: "0.5rem",
+                    padding: "0.4rem 0.7rem",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: 6,
+                    background: "#fff",
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                >
+                  {openCollaborationBySnapshot[snapshot.id]
+                    ? "Hide notes"
+                    : "Review notes"}
+                </button>
+
+                {openCollaborationBySnapshot[snapshot.id] && (
+                  <>
+                    <CommentsPanel
+                      targetType="snapshot"
+                      targetId={snapshot.id}
+                      actorId={actorId}
+                      actorLabel={actorLabel}
+                      title="Snapshot comments"
+                    />
+                    <AnnotationPanel
+                      targetType="snapshot"
+                      targetId={snapshot.id}
+                      actorId={actorId}
+                      actorLabel={actorLabel}
+                      title="Snapshot annotations"
+                      defaultAnchorLabel="snapshot baseline"
+                    />
+                  </>
+                )}
               </li>
             ))}
           </ul>

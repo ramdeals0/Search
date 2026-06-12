@@ -7,7 +7,11 @@
     "dev": "turbo run dev",
     "test": "turbo run test",
     "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "prisma:generate": "pnpm --filter @retailer-search/search-api exec prisma generate",
+    "prisma:migrate": "pnpm --filter @retailer-search/search-api exec prisma migrate dev",
+    "prisma:seed": "pnpm --filter @retailer-search/search-api exec prisma db seed",
+    "dev:db": "pnpm prisma:generate && pnpm prisma:migrate && pnpm prisma:seed"
   },
   "devDependencies": {
     "turbo": "^2.3.3",
