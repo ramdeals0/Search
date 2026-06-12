@@ -4,7 +4,16 @@ const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
-  SEARCH_API_PORT: z.coerce.number().int().positive().default(4001),
+  SEARCH_API_PORT: z.preprocess(
+    (value) => {
+      if (value !== undefined && value !== "") {
+        return value;
+      }
+
+      return process.env.PORT;
+    },
+    z.coerce.number().int().positive().default(4001),
+  ),
   SEARCH_API_HOST: z.string().default("0.0.0.0"),
   NEXT_PUBLIC_SEARCH_API_URL: z
     .string()

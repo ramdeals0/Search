@@ -1,0 +1,16 @@
+[variables]
+NIXPACKS_NODE_VERSION = "20"
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "pnpm"]
+
+[phases.install]
+dependsOn = ["setup"]
+cmds = ["pnpm install --frozen-lockfile"]
+
+[phases.build]
+dependsOn = ["install"]
+cmds = ["pnpm --filter @retailer-search/search-api... build"]
+
+[start]
+cmd = "pnpm --filter @retailer-search/search-api start"
