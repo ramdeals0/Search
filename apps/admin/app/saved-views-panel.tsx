@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -10,9 +11,6 @@ import {
   WORKSPACE_ROLE_CHANGED_EVENT,
   WORKSPACE_ROLE_STORAGE_KEY,
 } from "./workspace-switcher";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export const WORKSPACE_VIEW_CHANGED_EVENT = "admin:workspace-view-changed";
 
@@ -52,7 +50,7 @@ export function SavedViewsPanel({
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/saved-views?role=${encodeURIComponent(activeRole)}`,
+        `${getSearchApiUrl()}/api/v1/admin/saved-views?role=${encodeURIComponent(activeRole)}`,
         { cache: "no-store" },
       );
 
@@ -103,7 +101,7 @@ export function SavedViewsPanel({
     setFeedback(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/saved-views`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/saved-views`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -144,7 +142,7 @@ export function SavedViewsPanel({
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/saved-views/${selectedViewId}`,
+        `${getSearchApiUrl()}/api/v1/admin/saved-views/${selectedViewId}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -176,7 +174,7 @@ export function SavedViewsPanel({
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/saved-views/${viewId}/default`,
+        `${getSearchApiUrl()}/api/v1/admin/saved-views/${viewId}/default`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

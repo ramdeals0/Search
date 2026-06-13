@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -9,9 +10,6 @@ import type {
   ResolveAccessRequestDto,
   UserRole,
 } from "@retailer-search/shared-types";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 import { AUTH_TOKEN_STORAGE_KEY } from "./auth-session";
 
@@ -81,11 +79,11 @@ export function AccessRequestPanel({
 
     try {
       const [meRes, requestsRes] = await Promise.all([
-        fetch(`${SEARCH_API_URL}/api/v1/auth/me`, {
+        fetch(`${getSearchApiUrl()}/api/v1/auth/me`, {
           headers: getAuthHeaders(),
           cache: "no-store",
         }),
-        fetch(`${SEARCH_API_URL}/api/v1/admin/access-requests`, {
+        fetch(`${getSearchApiUrl()}/api/v1/admin/access-requests`, {
           headers: getAuthHeaders(),
           cache: "no-store",
         }),
@@ -142,7 +140,7 @@ export function AccessRequestPanel({
     };
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/access-requests`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/access-requests`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),
@@ -183,7 +181,7 @@ export function AccessRequestPanel({
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/access-requests/${requestId}/resolve`,
+        `${getSearchApiUrl()}/api/v1/admin/access-requests/${requestId}/resolve`,
         {
           method: "POST",
           headers: getAuthHeaders(),

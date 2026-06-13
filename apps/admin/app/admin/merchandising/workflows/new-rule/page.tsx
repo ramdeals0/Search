@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "../../../../lib/search-api-url";
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -14,9 +15,6 @@ import {
   workflowButtonStyle,
   workflowInputStyle,
 } from "../../../admin-page-header";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const STEPS = [
   "Scope",
@@ -94,7 +92,7 @@ export default function NewRuleWorkflowPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch(`${SEARCH_API_URL}/api/v1/admin/catalog/vocabulary`)
+    void fetch(`${getSearchApiUrl()}/api/v1/admin/catalog/vocabulary`)
       .then((response) => (response.ok ? response.json() : EMPTY_VOCABULARY))
       .then((payload: CatalogVocabularyDto) => {
         if (!cancelled) {
@@ -145,7 +143,7 @@ export default function NewRuleWorkflowPage() {
     };
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/rules`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/rules`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -9,9 +10,6 @@ import type {
   SuggestionsResponseDto,
 } from "@retailer-search/shared-types";
 import { ActionPreview } from "./action-preview";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const PRIORITY_COLORS: Record<string, string> = {
   high: "#b91c1c",
@@ -102,7 +100,7 @@ export function SuggestionsPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/suggestions`,
+        `${getSearchApiUrl()}/api/v1/admin/suggestions`,
         { cache: "no-store" },
       );
 

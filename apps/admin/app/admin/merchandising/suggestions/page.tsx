@@ -2,12 +2,10 @@ import Link from "next/link";
 import type { SuggestionsResponseDto } from "@retailer-search/shared-types";
 import { SuggestionsPanel } from "../../../suggestions-panel";
 import { AdminMetricCard, AdminPageHeader } from "../../admin-page-header";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
+import { getSearchApiUrl } from "../../../lib/search-api-url";
 
 async function fetchSuggestions(): Promise<SuggestionsResponseDto | null> {
-  const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/suggestions`, {
+  const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/suggestions`, {
     cache: "no-store",
   });
   if (!response.ok) {

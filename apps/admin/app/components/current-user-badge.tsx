@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "../lib/search-api-url";
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -8,9 +9,6 @@ import {
 } from "../access-request-panel";
 import { AUTH_TOKEN_STORAGE_KEY, clearAuthSession, persistAuthSession } from "../auth-session";
 import { JIT_ACCESS_CHANGED_EVENT } from "../jit-access-panel";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 function getAuthHeaders(): HeadersInit {
   const token =
@@ -50,7 +48,7 @@ export function CurrentUserBadge({
     setError(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/auth/me`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/auth/me`, {
         headers: getAuthHeaders(),
         cache: "no-store",
       });
@@ -97,7 +95,7 @@ export function CurrentUserBadge({
     setError(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/auth/login`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -130,7 +128,7 @@ export function CurrentUserBadge({
     setError(null);
 
     try {
-      await fetch(`${SEARCH_API_URL}/api/v1/auth/logout`, {
+      await fetch(`${getSearchApiUrl()}/api/v1/auth/logout`, {
         method: "POST",
         headers: getAuthHeaders(),
       });

@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -6,9 +7,6 @@ import type {
   ExperimentDecisionStatus,
   ExperimentRunSummaryDto,
 } from "@retailer-search/shared-types";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const DECISION_OPTIONS: {
   value: ExperimentDecisionStatus;
@@ -65,7 +63,7 @@ export function DecisionPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/experiments/${id}/decision`,
+        `${getSearchApiUrl()}/api/v1/admin/experiments/${id}/decision`,
         { cache: "no-store" },
       );
 
@@ -128,7 +126,7 @@ export function DecisionPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/experiments/${experimentId}/decision`,
+        `${getSearchApiUrl()}/api/v1/admin/experiments/${experimentId}/decision`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

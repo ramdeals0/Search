@@ -1,11 +1,9 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useState } from "react";
 import type { QueryPreviewResponseDto } from "@retailer-search/shared-types";
 import { RankingScoreBreakdown } from "./ranking-score-breakdown";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export function QueryPreview() {
   const [query, setQuery] = useState("cordless drill");
@@ -23,7 +21,7 @@ export function QueryPreview() {
     setError(null);
 
     try {
-      const url = new URL("/api/v1/admin/query-preview", SEARCH_API_URL);
+      const url = new URL("/api/v1/admin/query-preview", getSearchApiUrl());
       url.searchParams.set("query", trimmed);
       url.searchParams.set("pageSize", "10");
 

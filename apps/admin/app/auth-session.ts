@@ -12,7 +12,9 @@ export function persistAuthSession(
   }
 
   window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
-  document.cookie = `${AUTH_TOKEN_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax`;
+  const secure =
+    window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${AUTH_TOKEN_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax${secure}`;
 }
 
 export function clearAuthSession(): void {

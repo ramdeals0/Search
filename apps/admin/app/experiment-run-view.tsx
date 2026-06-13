@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -9,9 +10,6 @@ import type {
 import { AnnotationPanel } from "./annotation-panel";
 import { CommentsPanel } from "./comments-panel";
 import { ADMIN_REVIEWER_STORAGE_KEY } from "./reviewer-management-panel";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 function getExperimentRunTargetId(run: ExperimentRunSummaryDto): string {
   return `${run.experimentId}::${run.runAt}`;
@@ -77,7 +75,7 @@ export function ExperimentRunView() {
   useEffect(() => {
     const loadActor = async () => {
       try {
-        const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/reviewers`, {
+        const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/reviewers`, {
           cache: "no-store",
         });
         if (!response.ok) {
@@ -108,7 +106,7 @@ export function ExperimentRunView() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/experiments/${experimentId}`,
+        `${getSearchApiUrl()}/api/v1/admin/experiments/${experimentId}`,
         { cache: "no-store" },
       );
 

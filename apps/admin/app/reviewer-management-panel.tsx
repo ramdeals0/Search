@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -7,9 +8,6 @@ import type {
   ReviewerListResponseDto,
   ReviewerRole,
 } from "@retailer-search/shared-types";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export const ADMIN_REVIEWER_STORAGE_KEY = "admin-selected-reviewer-id";
 export const ADMIN_REVIEWER_CHANGED_EVENT = "admin:reviewer-changed";
@@ -44,7 +42,7 @@ export function ReviewerManagementPanel() {
     setError(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/reviewers`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/reviewers`, {
         cache: "no-store",
       });
 
@@ -101,7 +99,7 @@ export function ReviewerManagementPanel() {
         role,
       };
 
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/reviewers`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/reviewers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -131,7 +129,7 @@ export function ReviewerManagementPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/reviewers/${reviewer.id}/active`,
+        `${getSearchApiUrl()}/api/v1/admin/reviewers/${reviewer.id}/active`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

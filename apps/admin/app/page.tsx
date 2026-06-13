@@ -1,12 +1,10 @@
 import type { BootstrapStateDto } from "@retailer-search/shared-types";
 import { redirect } from "next/navigation";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 async function fetchSetupStatus(): Promise<BootstrapStateDto | null> {
   try {
-    const response = await fetch(`${SEARCH_API_URL}/api/v1/setup/status`, {
+    const response = await fetch(`${getSearchApiUrl()}/api/v1/setup/status`, {
       cache: "no-store",
     });
     if (!response.ok) {

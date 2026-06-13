@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -8,9 +9,6 @@ import type {
   UpdateApprovalSlaPolicyRequestDto,
 } from "@retailer-search/shared-types";
 import { ADMIN_APPROVALS_CHANGED_EVENT } from "./approval-panel";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export const ADMIN_SLA_CHANGED_EVENT = "admin:approval-sla-changed";
 
@@ -43,8 +41,8 @@ export function ApprovalSlaPanel() {
 
     try {
       const [overviewRes, policyRes] = await Promise.all([
-        fetch(`${SEARCH_API_URL}/api/v1/admin/approval-sla`, { cache: "no-store" }),
-        fetch(`${SEARCH_API_URL}/api/v1/admin/approval-sla/policy`, {
+        fetch(`${getSearchApiUrl()}/api/v1/admin/approval-sla`, { cache: "no-store" }),
+        fetch(`${getSearchApiUrl()}/api/v1/admin/approval-sla/policy`, {
           cache: "no-store",
         }),
       ]);
@@ -97,7 +95,7 @@ export function ApprovalSlaPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/approval-sla/policy`,
+        `${getSearchApiUrl()}/api/v1/admin/approval-sla/policy`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

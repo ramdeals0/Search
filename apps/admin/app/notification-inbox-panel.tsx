@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -8,9 +9,6 @@ import type {
 } from "@retailer-search/shared-types";
 import { ADMIN_APPROVALS_CHANGED_EVENT } from "./approval-panel";
 import { ADMIN_SLA_CHANGED_EVENT } from "./approval-sla-panel";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export const ADMIN_NOTIFICATIONS_CHANGED_EVENT = "admin:notifications-changed";
 
@@ -39,7 +37,7 @@ export function NotificationInboxPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/notifications`,
+        `${getSearchApiUrl()}/api/v1/admin/notifications`,
         { cache: "no-store" },
       );
 
@@ -84,7 +82,7 @@ export function NotificationInboxPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/notifications/${id}/read`,
+        `${getSearchApiUrl()}/api/v1/admin/notifications/${id}/read`,
         { method: "POST" },
       );
 
@@ -109,7 +107,7 @@ export function NotificationInboxPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/notifications/read-all`,
+        `${getSearchApiUrl()}/api/v1/admin/notifications/read-all`,
         { method: "POST" },
       );
 

@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -24,9 +25,6 @@ import { ADMIN_SNAPSHOTS_CHANGED_EVENT } from "./snapshot-events";
 const ADMIN_NOTIFICATIONS_CHANGED_EVENT = "admin:notifications-changed";
 const ADMIN_DELEGATION_CHANGED_EVENT = "admin:delegation-changed";
 const ADMIN_EXCEPTIONS_CHANGED_EVENT = "admin:exceptions-changed";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export const ADMIN_APPROVALS_CHANGED_EVENT = "admin:approvals-changed";
 
@@ -123,7 +121,7 @@ export function ApprovalPanel() {
       const entries = await Promise.all(
         requestList.map(async (request) => {
           const response = await fetch(
-            `${SEARCH_API_URL}/api/v1/admin/approvals/${request.id}/eligibility?actorId=${encodeURIComponent(currentActorId)}`,
+            `${getSearchApiUrl()}/api/v1/admin/approvals/${request.id}/eligibility?actorId=${encodeURIComponent(currentActorId)}`,
             { cache: "no-store" },
           );
 
@@ -146,7 +144,7 @@ export function ApprovalPanel() {
       const entries = await Promise.all(
         requestList.map(async (request) => {
           const response = await fetch(
-            `${SEARCH_API_URL}/api/v1/admin/approvals/${request.id}/assignment-history`,
+            `${getSearchApiUrl()}/api/v1/admin/approvals/${request.id}/assignment-history`,
             { cache: "no-store" },
           );
 
@@ -173,10 +171,10 @@ export function ApprovalPanel() {
 
     try {
       const [approvalsRes, snapshotsRes, reviewersRes, slaRes] = await Promise.all([
-        fetch(`${SEARCH_API_URL}/api/v1/admin/approvals`, { cache: "no-store" }),
-        fetch(`${SEARCH_API_URL}/api/v1/admin/snapshots`, { cache: "no-store" }),
-        fetch(`${SEARCH_API_URL}/api/v1/admin/reviewers`, { cache: "no-store" }),
-        fetch(`${SEARCH_API_URL}/api/v1/admin/approval-sla`, { cache: "no-store" }),
+        fetch(`${getSearchApiUrl()}/api/v1/admin/approvals`, { cache: "no-store" }),
+        fetch(`${getSearchApiUrl()}/api/v1/admin/snapshots`, { cache: "no-store" }),
+        fetch(`${getSearchApiUrl()}/api/v1/admin/reviewers`, { cache: "no-store" }),
+        fetch(`${getSearchApiUrl()}/api/v1/admin/approval-sla`, { cache: "no-store" }),
       ]);
 
       if (!approvalsRes.ok || !reviewersRes.ok || !slaRes.ok) {
@@ -299,7 +297,7 @@ export function ApprovalPanel() {
     setFeedback(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/approvals`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/approvals`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -350,7 +348,7 @@ export function ApprovalPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/approvals/${requestId}/assign-reviewers`,
+        `${getSearchApiUrl()}/api/v1/admin/approvals/${requestId}/assign-reviewers`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -402,7 +400,7 @@ export function ApprovalPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/approvals/${requestId}/reassign`,
+        `${getSearchApiUrl()}/api/v1/admin/approvals/${requestId}/reassign`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -451,7 +449,7 @@ export function ApprovalPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/approvals/${requestId}/resolve`,
+        `${getSearchApiUrl()}/api/v1/admin/approvals/${requestId}/resolve`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -508,7 +506,7 @@ export function ApprovalPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/approvals/${request.id}/execute`,
+        `${getSearchApiUrl()}/api/v1/admin/approvals/${request.id}/execute`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

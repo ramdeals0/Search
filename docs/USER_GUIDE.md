@@ -24,6 +24,7 @@ This guide covers both the **customer storefront** (where shoppers search) and t
 14. [Common workflows](#14-common-workflows)
 15. [Demo data and sample queries](#15-demo-data-and-sample-queries)
 16. [Tips and troubleshooting](#16-tips-and-troubleshooting)
+17. [Production deployment (Railway)](#17-production-deployment-railway)
 
 ---
 
@@ -31,10 +32,11 @@ This guide covers both the **customer storefront** (where shoppers search) and t
 
 ### What you need
 
-- A running local or deployed instance of the platform
+- A running instance of the platform (local development or Railway deployment)
 - A web browser (Chrome, Edge, Firefox, or Safari)
+- For **ForgeOps admin**: your sign-in credentials (or a demo account on seeded environments)
 
-### Default URLs (local development)
+### URLs — local development
 
 | Application | URL |
 |-------------|-----|
@@ -42,20 +44,46 @@ This guide covers both the **customer storefront** (where shoppers search) and t
 | ForgeOps admin | http://localhost:3001 |
 | Search API (backend) | http://localhost:4001 |
 
+### URLs — production (Railway)
+
+When the platform is deployed on [Railway](https://railway.app), each component gets its own public URL from the Railway dashboard (**Settings → Networking → Generate Domain**).
+
+| Application | Typical Railway URL pattern |
+|-------------|----------------------------|
+| Storefront | `https://<storefront-service>.up.railway.app` |
+| ForgeOps admin | `https://<admin-service>.up.railway.app` |
+| Search API | `https://<search-api-service>.up.railway.app` |
+
+Replace the placeholders with your actual generated domains. The admin and storefront apps call the search API using `NEXT_PUBLIC_SEARCH_API_URL`, which your team configures at deploy time (see [Production deployment (Railway)](#17-production-deployment-railway)).
+
+**Health checks (for operators):**
+
+| Service | Path | Healthy response |
+|---------|------|------------------|
+| Search API | `/health` | JSON with `"ok": true` and `"database": { "connected": true, ... }` |
+| ForgeOps admin | `/health` | JSON with `"ok": true`, `"service": "admin"` |
+| Storefront | `/` | Storefront home page loads (HTTP 200) |
+
 ### First-time setup (fresh instance)
 
 If the database has never been configured:
 
-1. Open **http://localhost:3001/setup**
+1. Open the setup wizard:
+   - **Local:** http://localhost:3001/setup
+   - **Production:** `https://<your-admin-domain>/setup`
 2. Complete the setup wizard in order:
    - **Welcome** — overview of the instance
    - **Create admin account** — first administrator user
    - **Security defaults** — session and policy basics
    - **Platform defaults** — environment labels and defaults
    - **Review and complete** — confirm and finish
-3. Sign in at **http://localhost:3001/login**
+3. Sign in:
+   - **Local:** http://localhost:3001/login
+   - **Production:** `https://<your-admin-domain>/login`
 
 Until setup completes, admin features return a “setup required” message. Public search and setup endpoints remain available.
+
+**Note:** If your team ran `pnpm prisma:seed` against the production database, setup may already be complete and you can sign in with a demo account (see below) instead of running `/setup`.
 
 ### Demo environment (pre-seeded)
 
@@ -71,7 +99,7 @@ If your team ran the demo seed (`pnpm prisma:seed`), setup is already complete. 
 
 ### Signing in
 
-1. Go to **http://localhost:3001/login**
+1. Go to the login page (local or production URL above)
 2. Enter your email and password
 3. Click **Sign in**
 
@@ -121,7 +149,9 @@ Use the **environment switcher** on the Dashboard or Settings page to see which 
 
 ## 3. Customer storefront
 
-The storefront is the shopper-facing search experience at **http://localhost:3000**.
+The storefront is the shopper-facing search experience. Locally it runs at **http://localhost:3000**; in production use your Railway storefront domain.
+
+**Important:** Shoppers only see **live** merchandising configuration. Staging rule changes in ForgeOps do not affect the storefront until they are promoted to live.
 
 ### Searching for products
 
@@ -590,7 +620,44 @@ Clear the field completely and save. Empty condition fields are removed on save 
 
 ### Autocomplete empty in rule form
 
-The catalog vocabulary loads from the API on page open. Confirm the search API is running at http://localhost:4001.
+The catalog vocabulary loads from the API on page open. Confirm the search API is running:
+
+- **Local:** http://localhost:4001/health
+- **Production:** `https://<search-api-domain>/health`
+
+### Admin or storefront cannot reach the API (production)
+
+Symptoms: blank panels, failed login, storefront search errors, or browser requests going to `localhost:4001`.
+
+**Cause:** The admin service cannot reach the search API (wrong `SEARCH_API_URL`, API down, or mixed-content blocking).
+
+**Fix (platform team):**
+
+1. Set `SEARCH_API_URL=https://<search-api-domain>` on the **admin** Railway service (runtime — redeploy to apply).
+2. For **storefront**, set `NEXT_PUBLIC_SEARCH_API_URL` before build and redeploy (client bundle).
+3. Verify the API: `curl https://<search-api-domain>/health`
+4. In the browser devtools **Network** tab on `/login`, confirm requests go to `/search-api/api/v1/auth/login` (not `localhost:4001`).
+
+### Admin health check failing on Railway
+
+Symptoms: admin service deploy succeeds but Railway reports the service unhealthy.
+
+**Common causes:**
+
+| Cause | Fix |
+|-------|-----|
+| Wrong config file | Admin service must use `apps/admin/railway.toml` (not root `railway.toml`, which targets search-api). |
+| Wrong start command | Must be `pnpm --filter @retailer-search/admin start` |
+| Healthcheck path | Should be `/health` (root `/` always redirects to `/admin` or `/setup`). |
+| `SEARCH_API_PORT` or fixed port set | Remove `SEARCH_API_PORT` on Railway; the platform injects `PORT` automatically. |
+
+After fixes, `curl https://<admin-domain>/health` should return `{"ok":true,"service":"admin",...}`.
+
+### Search API health check failing on Railway
+
+1. Confirm `DATABASE_URL=${{Postgres.DATABASE_URL}}` is linked on the search-api service.
+2. Do **not** set `SEARCH_API_PORT` — the API binds to Railway’s `PORT`.
+3. Check `/health` for `"connected": true` and `"productCount" > 0` (run seed or complete setup if zero).
 
 ### Cannot access Settings or Integrations
 
@@ -598,7 +665,7 @@ These pages require **Admin** workspace role (or an admin account with JIT eleva
 
 ### Sign-in says “setup required”
 
-Complete **http://localhost:3001/setup** or run the demo seed for a pre-configured instance.
+Complete the setup wizard (`/setup`) or ask your platform team to run the demo seed for a pre-configured instance.
 
 ### Rate limiting (HTTP 429)
 
@@ -607,6 +674,110 @@ The API limits login attempts and admin mutations. Wait for the reset time shown
 ### Session expired
 
 Sign out and sign in again at `/login`. Default session length is 24 hours.
+
+---
+
+## 17. Production deployment (Railway)
+
+This section is for **platform operators** deploying the Retailer Search Platform from GitHub to [Railway](https://railway.app). End users of ForgeOps only need the public URLs from their team.
+
+### Architecture
+
+Three Railway services run from the **same GitHub repository** (root directory `/` for each):
+
+| Service | Config file | Purpose |
+|---------|-------------|---------|
+| **search-api** | `railway.toml` (repo root) | Search, auth, governance APIs, PostgreSQL via Prisma |
+| **admin** | `apps/admin/railway.toml` | ForgeOps console (Next.js) |
+| **storefront** | `apps/storefront/railway.toml` | Shopper search UI (Next.js) |
+
+Add a **PostgreSQL** plugin in the same Railway project. Only **search-api** needs `DATABASE_URL`.
+
+### Deploy order
+
+1. **PostgreSQL** — create the database plugin.
+2. **search-api** — deploy first; run migrations at container start; seed if needed.
+3. **admin** and **storefront** — deploy after search-api has a public URL.
+
+### search-api service
+
+| Setting | Value |
+|---------|--------|
+| Root directory | `/` |
+| Config file | `railway.toml` (default at repo root) |
+| Start command | `pnpm --filter @retailer-search/search-api start:prod` |
+
+**Required variables:**
+
+| Variable | Value |
+|----------|--------|
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
+| `NODE_ENV` | `production` |
+| `SEARCH_API_HOST` | `0.0.0.0` |
+
+Do **not** set `SEARCH_API_PORT` on Railway.
+
+**Verify:** `GET /health` returns `"ok": true`, `"database.connected": true`, and `"productCount" > 0` after migrate/seed.
+
+### ForgeOps admin service
+
+| Setting | Value |
+|---------|--------|
+| Root directory | `/` |
+| Config file | `apps/admin/railway.toml` |
+| Start command | `pnpm --filter @retailer-search/admin start` |
+| Healthcheck path | `/health` |
+
+**Required variables:**
+
+| Variable | Value |
+|----------|--------|
+| `SEARCH_API_URL` | `https://<search-api-domain>` |
+| `NODE_ENV` | `production` |
+
+The admin app proxies API calls through `/search-api` on the same origin. `SEARCH_API_URL` is read at **runtime** on the server (no rebuild needed when the API URL changes). Optional: `NEXT_PUBLIC_SEARCH_API_URL` for local dev fallback only.
+
+**Verify:** `GET /health` on the admin domain returns `"service": "admin"`. Open `/login` and sign in.
+
+### Storefront service
+
+| Setting | Value |
+|---------|--------|
+| Root directory | `/` |
+| Config file | `apps/storefront/railway.toml` |
+| Start command | `pnpm --filter @retailer-search/storefront start` |
+| Healthcheck path | `/` |
+
+**Required variables (set before the first build):**
+
+| Variable | Value |
+|----------|--------|
+| `NEXT_PUBLIC_SEARCH_API_URL` | `https://<search-api-domain>` |
+| `NODE_ENV` | `production` |
+
+Redeploy storefront whenever `NEXT_PUBLIC_SEARCH_API_URL` changes.
+
+**Verify:** Open the storefront URL and run a sample query (e.g. `cordless drill`).
+
+### Database seed (demo data)
+
+From a machine with repo access and `DATABASE_URL` pointing at Railway Postgres:
+
+```bash
+cd services/search-api
+pnpm exec prisma migrate deploy
+pnpm exec prisma db seed
+```
+
+This loads ~1,000 demo products and the demo user accounts listed in [Demo environment](#demo-environment-pre-seeded). Seeding marks setup as complete so `/setup` is skipped.
+
+### Operator checklist after deploy
+
+- [ ] Search API `/health` shows database connected and products loaded
+- [ ] Admin `/health` returns OK
+- [ ] Admin `SEARCH_API_URL` points at the search-api public URL
+- [ ] Storefront `NEXT_PUBLIC_SEARCH_API_URL` matches the search-api public URL
+- [ ] Generate public domains for all three services in Railway **Networking**
 
 ---
 
@@ -628,6 +799,9 @@ Sign out and sign in again at `/login`. Default session length is 24 hours.
 | `/admin/settings` | Environment and policy defaults |
 | `/login` | Sign in |
 | `/setup` | First-run instance setup |
+| `/health` | Admin service health (production ops) |
+
+**Search API (backend):** `/health` — JSON status and catalog counts.
 
 ---
 

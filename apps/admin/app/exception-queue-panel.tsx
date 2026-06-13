@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -8,9 +9,6 @@ import type {
 } from "@retailer-search/shared-types";
 import { ADMIN_APPROVALS_CHANGED_EVENT } from "./approval-panel";
 import { ADMIN_DELEGATION_CHANGED_EVENT } from "./delegation-panel";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export const ADMIN_EXCEPTIONS_CHANGED_EVENT = "admin:exceptions-changed";
 
@@ -34,7 +32,7 @@ export function ExceptionQueuePanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/approval-exceptions`,
+        `${getSearchApiUrl()}/api/v1/admin/approval-exceptions`,
         { cache: "no-store" },
       );
 
@@ -77,7 +75,7 @@ export function ExceptionQueuePanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/approval-exceptions/${id}/resolve`,
+        `${getSearchApiUrl()}/api/v1/admin/approval-exceptions/${id}/resolve`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -12,9 +13,6 @@ import {
   AUTH_TOKEN_STORAGE_KEY,
   ACCESS_GOVERNANCE_CHANGED_EVENT,
 } from "./access-request-panel";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export const INTEGRATIONS_CHANGED_EVENT = "admin:integrations-changed";
 
@@ -72,7 +70,7 @@ export function ExportCenterPanel() {
     setError(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/exports`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/exports`, {
         headers: getAuthHeaders(),
         cache: "no-store",
       });
@@ -142,7 +140,7 @@ export function ExportCenterPanel() {
     };
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/exports`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/exports`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),
@@ -179,7 +177,7 @@ export function ExportCenterPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/exports/${job.id}/download`,
+        `${getSearchApiUrl()}/api/v1/admin/exports/${job.id}/download`,
         {
           headers: getAuthHeaders(),
         },

@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useEffect, useMemo, useState } from "react";
 import type {
@@ -37,9 +38,6 @@ import {
   WORKSPACE_ROLE_STORAGE_KEY,
 } from "./workspace-switcher";
 import { WorkspaceSummaryCards } from "./workspace-summary-cards";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const ADMIN_SECTION_ORDER = [
   "environment",
@@ -98,7 +96,7 @@ export function RoleDashboard({
     const loadWorkspace = async () => {
       try {
         const response = await fetch(
-          `${SEARCH_API_URL}/api/v1/admin/workspaces?activeRole=${encodeURIComponent(activeRole)}`,
+          `${getSearchApiUrl()}/api/v1/admin/workspaces?activeRole=${encodeURIComponent(activeRole)}`,
           { cache: "no-store" },
         );
         if (!response.ok) {
@@ -203,7 +201,7 @@ export function RoleDashboard({
             fontSize: 14,
           }}
         >
-          {loadError}. Make sure search-api is running on {SEARCH_API_URL}.
+          {loadError}. Make sure search-api is running on {getSearchApiUrl()}.
         </p>
       )}
 

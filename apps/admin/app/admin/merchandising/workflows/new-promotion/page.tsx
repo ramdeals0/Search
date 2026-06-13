@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "../../../../lib/search-api-url";
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -11,9 +12,6 @@ import {
   workflowButtonStyle,
   workflowInputStyle,
 } from "../../../admin-page-header";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const STEPS = [
   "Campaign basics",
@@ -46,10 +44,10 @@ export default function NewPromotionWorkflowPage() {
 
     try {
       const [activeRes, snapshotsRes] = await Promise.all([
-        fetch(`${SEARCH_API_URL}/api/v1/admin/active-configuration`, {
+        fetch(`${getSearchApiUrl()}/api/v1/admin/active-configuration`, {
           cache: "no-store",
         }),
-        fetch(`${SEARCH_API_URL}/api/v1/admin/snapshots`, { cache: "no-store" }),
+        fetch(`${getSearchApiUrl()}/api/v1/admin/snapshots`, { cache: "no-store" }),
       ]);
 
       if (activeRes.ok) {
@@ -98,7 +96,7 @@ export default function NewPromotionWorkflowPage() {
     setFeedback(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/approvals`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/approvals`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -137,7 +135,7 @@ export default function NewPromotionWorkflowPage() {
     setFeedback(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/promote-snapshot`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/promote-snapshot`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

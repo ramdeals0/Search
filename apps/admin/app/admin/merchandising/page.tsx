@@ -5,16 +5,14 @@ import type {
   PromotionHistoryResponseDto,
   SuggestionsResponseDto,
 } from "@retailer-search/shared-types";
+import { getSearchApiUrl } from "../../lib/search-api-url";
 import { ActiveConfigBadge } from "../../active-config-badge";
 import { EnvironmentSwitcher } from "../../environment-switcher";
 import { AdminMetricCard, AdminPageHeader } from "../admin-page-header";
 
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
-
 async function fetchRules(environment: "staging" | "live"): Promise<MerchandisingRule[]> {
   const response = await fetch(
-    `${SEARCH_API_URL}/api/v1/admin/rules?environment=${environment}`,
+    `${getSearchApiUrl()}/api/v1/admin/rules?environment=${environment}`,
     { cache: "no-store" },
   );
   if (!response.ok) {
@@ -24,7 +22,7 @@ async function fetchRules(environment: "staging" | "live"): Promise<Merchandisin
 }
 
 async function fetchEnvironments(): Promise<EnvironmentConfigurationDto[]> {
-  const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/environments`, {
+  const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/environments`, {
     cache: "no-store",
   });
   if (!response.ok) {
@@ -35,7 +33,7 @@ async function fetchEnvironments(): Promise<EnvironmentConfigurationDto[]> {
 }
 
 async function fetchSuggestionsCount(): Promise<number> {
-  const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/suggestions`, {
+  const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/suggestions`, {
     cache: "no-store",
   });
   if (!response.ok) {
@@ -46,7 +44,7 @@ async function fetchSuggestionsCount(): Promise<number> {
 }
 
 async function fetchPromotions(): Promise<PromotionHistoryResponseDto> {
-  const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/promotions`, {
+  const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/promotions`, {
     cache: "no-store",
   });
   if (!response.ok) {

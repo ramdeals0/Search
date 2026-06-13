@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -12,9 +13,6 @@ import { CommentsPanel } from "./comments-panel";
 import { SnapshotDiffPreview } from "./snapshot-diff-preview";
 import { notifySnapshotsChanged } from "./snapshot-events";
 import { ADMIN_REVIEWER_STORAGE_KEY } from "./reviewer-management-panel";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const inputStyle = {
   padding: "0.5rem 0.65rem",
@@ -49,7 +47,7 @@ export function SnapshotsPanel() {
     setError(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/snapshots`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/snapshots`, {
         cache: "no-store",
       });
 
@@ -78,7 +76,7 @@ export function SnapshotsPanel() {
   useEffect(() => {
     const loadActor = async () => {
       try {
-        const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/reviewers`, {
+        const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/reviewers`, {
           cache: "no-store",
         });
         if (!response.ok) {
@@ -115,7 +113,7 @@ export function SnapshotsPanel() {
     setFeedback(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/snapshots`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/snapshots`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -158,7 +156,7 @@ export function SnapshotsPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/snapshots/rollback`,
+        `${getSearchApiUrl()}/api/v1/admin/snapshots/rollback`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

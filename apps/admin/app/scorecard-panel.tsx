@@ -1,13 +1,11 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
   ExperimentRunSummaryDto,
   ExperimentScorecardDto,
 } from "@retailer-search/shared-types";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const HEADLINE_COLORS: Record<ExperimentScorecardDto["headlineStatus"], string> =
   {
@@ -49,7 +47,7 @@ export function ScorecardPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/experiments/${id}/scorecard`,
+        `${getSearchApiUrl()}/api/v1/admin/experiments/${id}/scorecard`,
         { cache: "no-store" },
       );
 
@@ -99,7 +97,7 @@ export function ScorecardPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/experiments/${experimentId}/scorecard/generate`,
+        `${getSearchApiUrl()}/api/v1/admin/experiments/${experimentId}/scorecard/generate`,
         { method: "POST" },
       );
 

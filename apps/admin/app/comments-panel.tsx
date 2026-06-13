@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
@@ -7,9 +8,6 @@ import type {
   CollaborationThreadDto,
   CommentStatus,
 } from "@retailer-search/shared-types";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export const ADMIN_COLLABORATION_CHANGED_EVENT = "admin:collaboration-changed";
 
@@ -62,7 +60,7 @@ export function CommentsPanel({
         targetId,
       });
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/collaboration/thread?${params.toString()}`,
+        `${getSearchApiUrl()}/api/v1/admin/collaboration/thread?${params.toString()}`,
         { cache: "no-store" },
       );
 
@@ -145,7 +143,7 @@ export function CommentsPanel({
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/collaboration/comments`,
+        `${getSearchApiUrl()}/api/v1/admin/collaboration/comments`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -186,7 +184,7 @@ export function CommentsPanel({
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/collaboration/comments/${commentId}/status`,
+        `${getSearchApiUrl()}/api/v1/admin/collaboration/comments/${commentId}/status`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

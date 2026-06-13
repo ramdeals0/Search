@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -9,9 +10,6 @@ import type {
   UpdateMerchandisingRuleDto,
 } from "@retailer-search/shared-types";
 import { RuleForm } from "./rule-form";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const EMPTY_VOCABULARY: CatalogVocabularyDto = {
   brands: [],
@@ -33,7 +31,7 @@ export function RulesTable({ initialRules }: RulesTableProps) {
   useEffect(() => {
     let cancelled = false;
 
-    void fetch(`${SEARCH_API_URL}/api/v1/admin/catalog/vocabulary`)
+    void fetch(`${getSearchApiUrl()}/api/v1/admin/catalog/vocabulary`)
       .then((response) => (response.ok ? response.json() : EMPTY_VOCABULARY))
       .then((payload: CatalogVocabularyDto) => {
         if (!cancelled) {
@@ -56,7 +54,7 @@ export function RulesTable({ initialRules }: RulesTableProps) {
   };
 
   const createRule = async (payload: CreateMerchandisingRuleDto) => {
-    const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/rules`, {
+    const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/rules`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -74,7 +72,7 @@ export function RulesTable({ initialRules }: RulesTableProps) {
     id: string,
     payload: UpdateMerchandisingRuleDto,
   ) => {
-    const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/rules/${id}`, {
+    const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/rules/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -94,7 +92,7 @@ export function RulesTable({ initialRules }: RulesTableProps) {
     }
 
     setError(null);
-    const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/rules/${id}`, {
+    const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/rules/${id}`, {
       method: "DELETE",
     });
 
@@ -109,7 +107,7 @@ export function RulesTable({ initialRules }: RulesTableProps) {
   const toggleActive = async (rule: MerchandisingRule) => {
     setError(null);
     const response = await fetch(
-      `${SEARCH_API_URL}/api/v1/admin/rules/${rule.id}`,
+      `${getSearchApiUrl()}/api/v1/admin/rules/${rule.id}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

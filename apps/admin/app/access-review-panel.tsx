@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -13,9 +14,6 @@ import {
   ACCESS_GOVERNANCE_CHANGED_EVENT,
   AUTH_TOKEN_STORAGE_KEY,
 } from "./access-request-panel";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const ALL_ROLES: UserRole[] = [
   "merchandiser",
@@ -93,7 +91,7 @@ export function AccessReviewPanel() {
       return;
     }
 
-    const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/access-reviews`, {
+    const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/access-reviews`, {
       headers: getAuthHeaders(),
       cache: "no-store",
     });
@@ -111,7 +109,7 @@ export function AccessReviewPanel() {
     setError(null);
 
     try {
-      const meRes = await fetch(`${SEARCH_API_URL}/api/v1/auth/me`, {
+      const meRes = await fetch(`${getSearchApiUrl()}/api/v1/auth/me`, {
         headers: getAuthHeaders(),
         cache: "no-store",
       });
@@ -144,7 +142,7 @@ export function AccessReviewPanel() {
     }
 
     const response = await fetch(
-      `${SEARCH_API_URL}/api/v1/admin/access-reviews/${runId}`,
+      `${getSearchApiUrl()}/api/v1/admin/access-reviews/${runId}`,
       {
         headers: getAuthHeaders(),
         cache: "no-store",
@@ -211,7 +209,7 @@ export function AccessReviewPanel() {
     };
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/access-reviews`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/access-reviews`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),
@@ -267,7 +265,7 @@ export function AccessReviewPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/access-reviews/${selectedRun.id}/items/resolve`,
+        `${getSearchApiUrl()}/api/v1/admin/access-reviews/${selectedRun.id}/items/resolve`,
         {
           method: "POST",
           headers: getAuthHeaders(),
@@ -306,7 +304,7 @@ export function AccessReviewPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/access-reviews/${selectedRun.id}/complete`,
+        `${getSearchApiUrl()}/api/v1/admin/access-reviews/${selectedRun.id}/complete`,
         {
           method: "POST",
           headers: getAuthHeaders(),

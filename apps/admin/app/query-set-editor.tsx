@@ -1,10 +1,8 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useState } from "react";
 import type { EvaluationQueryDto } from "@retailer-search/shared-types";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const inputStyle = {
   padding: "0.5rem 0.65rem",
@@ -83,7 +81,7 @@ export function QuerySetEditor() {
     setFeedback(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/query-sets`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/query-sets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

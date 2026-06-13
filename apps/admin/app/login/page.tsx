@@ -10,10 +10,8 @@ import {
   persistAuthSession,
 } from "../auth-session";
 import { ForgeOpsLogo } from "../admin/admin-page-header";
+import { getSearchApiUrl } from "../lib/search-api-url";
 import "../globals.css";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -39,7 +37,7 @@ export default function LoginPage() {
 
     void (async () => {
       try {
-        const response = await fetch(`${SEARCH_API_URL}/api/v1/setup/status`, {
+        const response = await fetch(`${getSearchApiUrl()}/api/v1/setup/status`, {
           cache: "no-store",
         });
         if (response.ok) {
@@ -59,7 +57,7 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/auth/login`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),

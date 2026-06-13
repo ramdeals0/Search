@@ -1,10 +1,8 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type { ActiveConfigurationDto } from "@retailer-search/shared-types";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export function ActiveConfigBadge() {
   const [activeConfiguration, setActiveConfiguration] =
@@ -16,7 +14,7 @@ export function ActiveConfigBadge() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/active-configuration`,
+        `${getSearchApiUrl()}/api/v1/admin/active-configuration`,
         { cache: "no-store" },
       );
 

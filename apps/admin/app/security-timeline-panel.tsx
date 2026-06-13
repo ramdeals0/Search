@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type { SecurityTimelineEntryDto, SecurityTimelineResponseDto } from "@retailer-search/shared-types";
@@ -6,9 +7,6 @@ import {
   AUTH_TOKEN_STORAGE_KEY,
   ACCESS_GOVERNANCE_CHANGED_EVENT,
 } from "./access-request-panel";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const panelStyle = {
   border: "1px solid #cbd5e1",
@@ -68,7 +66,7 @@ export function SecurityTimelinePanel() {
       }
 
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/security-timeline?${params.toString()}`,
+        `${getSearchApiUrl()}/api/v1/admin/security-timeline?${params.toString()}`,
         {
           headers: getAuthHeaders(),
           cache: "no-store",

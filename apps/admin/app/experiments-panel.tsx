@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -7,9 +8,6 @@ import type {
   ExperimentRunSummaryDto,
   MerchandisingConfigSnapshotDto,
 } from "@retailer-search/shared-types";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const inputStyle = {
   padding: "0.5rem 0.65rem",
@@ -42,9 +40,9 @@ export function ExperimentsPanel() {
 
     try {
       const [experimentsRes, snapshotsRes, querySetsRes] = await Promise.all([
-        fetch(`${SEARCH_API_URL}/api/v1/admin/experiments`, { cache: "no-store" }),
-        fetch(`${SEARCH_API_URL}/api/v1/admin/snapshots`, { cache: "no-store" }),
-        fetch(`${SEARCH_API_URL}/api/v1/admin/query-sets`, { cache: "no-store" }),
+        fetch(`${getSearchApiUrl()}/api/v1/admin/experiments`, { cache: "no-store" }),
+        fetch(`${getSearchApiUrl()}/api/v1/admin/snapshots`, { cache: "no-store" }),
+        fetch(`${getSearchApiUrl()}/api/v1/admin/query-sets`, { cache: "no-store" }),
       ]);
 
       if (!experimentsRes.ok || !snapshotsRes.ok || !querySetsRes.ok) {
@@ -96,7 +94,7 @@ export function ExperimentsPanel() {
     setError(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/experiments`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/experiments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -134,7 +132,7 @@ export function ExperimentsPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/experiments/${experiment.id}/run`,
+        `${getSearchApiUrl()}/api/v1/admin/experiments/${experiment.id}/run`,
         { method: "POST" },
       );
 

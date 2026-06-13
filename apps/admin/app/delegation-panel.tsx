@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -10,9 +11,6 @@ import type {
   ReviewerListResponseDto,
 } from "@retailer-search/shared-types";
 import { ADMIN_APPROVALS_CHANGED_EVENT } from "./approval-panel";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export const ADMIN_DELEGATION_CHANGED_EVENT = "admin:delegation-changed";
 
@@ -45,8 +43,8 @@ export function DelegationPanel() {
 
     try {
       const [delegationsRes, reviewersRes] = await Promise.all([
-        fetch(`${SEARCH_API_URL}/api/v1/admin/delegations`, { cache: "no-store" }),
-        fetch(`${SEARCH_API_URL}/api/v1/admin/reviewers`, { cache: "no-store" }),
+        fetch(`${getSearchApiUrl()}/api/v1/admin/delegations`, { cache: "no-store" }),
+        fetch(`${getSearchApiUrl()}/api/v1/admin/reviewers`, { cache: "no-store" }),
       ]);
 
       if (!delegationsRes.ok || !reviewersRes.ok) {
@@ -100,7 +98,7 @@ export function DelegationPanel() {
     };
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/delegations`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/delegations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -134,7 +132,7 @@ export function DelegationPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/delegations/${id}/deactivate`,
+        `${getSearchApiUrl()}/api/v1/admin/delegations/${id}/deactivate`,
         { method: "POST" },
       );
 

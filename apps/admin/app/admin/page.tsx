@@ -3,17 +3,15 @@ import type {
   MerchandisingRule,
   SearchAnalyticsSummaryDto,
 } from "@retailer-search/shared-types";
+import { getSearchApiUrl } from "../lib/search-api-url";
 import { ActiveConfigBadge } from "../active-config-badge";
 import { EnvironmentSwitcher } from "../environment-switcher";
 import { DashboardOverviewWidgets } from "./admin-shell";
 import { AdminPageHeader } from "./admin-page-header";
 
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
-
 async function fetchRules(): Promise<MerchandisingRule[]> {
   const response = await fetch(
-    `${SEARCH_API_URL}/api/v1/admin/rules?environment=staging`,
+    `${getSearchApiUrl()}/api/v1/admin/rules?environment=staging`,
     { cache: "no-store" },
   );
   if (!response.ok) {
@@ -23,7 +21,7 @@ async function fetchRules(): Promise<MerchandisingRule[]> {
 }
 
 async function fetchAnalytics(): Promise<SearchAnalyticsSummaryDto> {
-  const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/analytics/summary`, {
+  const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/analytics/summary`, {
     cache: "no-store",
   });
   if (!response.ok) {

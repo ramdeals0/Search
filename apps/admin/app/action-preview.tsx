@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useEffect, useState } from "react";
 import type {
@@ -7,9 +8,6 @@ import type {
   RuleSuggestionDto,
   SuggestionActionType,
 } from "@retailer-search/shared-types";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 interface ActionPreviewProps {
   suggestion: RuleSuggestionDto;
@@ -41,7 +39,7 @@ export function ActionPreview({
       try {
         const url = new URL(
           `/api/v1/admin/suggestions/${encodeURIComponent(suggestion.id)}/action-preview`,
-          SEARCH_API_URL,
+          getSearchApiUrl(),
         );
         url.searchParams.set("actionType", actionType);
 
@@ -92,7 +90,7 @@ export function ActionPreview({
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/suggestions/apply`,
+        `${getSearchApiUrl()}/api/v1/admin/suggestions/apply`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

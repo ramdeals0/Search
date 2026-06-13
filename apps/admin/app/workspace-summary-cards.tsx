@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -12,9 +13,6 @@ import type {
   WorkspaceRole,
 } from "@retailer-search/shared-types";
 import { WORKSPACE_ROLE_CHANGED_EVENT } from "./workspace-switcher";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 interface SummaryCard {
   label: string;
@@ -137,7 +135,7 @@ export function WorkspaceSummaryCards({
 }
 
 async function fetchJson<T>(path: string): Promise<T | null> {
-  const response = await fetch(`${SEARCH_API_URL}${path}`, { cache: "no-store" });
+  const response = await fetch(`${getSearchApiUrl()}${path}`, { cache: "no-store" });
   if (!response.ok) {
     return null;
   }

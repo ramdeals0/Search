@@ -1,10 +1,8 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useEffect, useState } from "react";
 import type { SnapshotDiffResponseDto } from "@retailer-search/shared-types";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const TYPE_LABELS: Record<string, string> = {
   rule_added: "Rule added",
@@ -50,7 +48,7 @@ export function SnapshotDiffPreview({
       setError(null);
 
       try {
-        const url = new URL("/api/v1/admin/snapshots/diff", SEARCH_API_URL);
+        const url = new URL("/api/v1/admin/snapshots/diff", getSearchApiUrl());
         url.searchParams.set("from", fromSnapshotId);
         url.searchParams.set("to", toSnapshotId);
 

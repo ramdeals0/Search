@@ -2,9 +2,7 @@ import type { CurrentUserResponseDto } from "@retailer-search/shared-types";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AUTH_TOKEN_COOKIE_NAME } from "../auth-session";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
+import { getSearchApiUrl } from "./search-api-url";
 
 export async function requireAdminAuth(): Promise<CurrentUserResponseDto> {
   const cookieStore = await cookies();
@@ -15,7 +13,7 @@ export async function requireAdminAuth(): Promise<CurrentUserResponseDto> {
   }
 
   try {
-    const response = await fetch(`${SEARCH_API_URL}/api/v1/auth/me`, {
+    const response = await fetch(`${getSearchApiUrl()}/api/v1/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });

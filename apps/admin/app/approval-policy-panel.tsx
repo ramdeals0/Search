@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -6,9 +7,6 @@ import type {
   ReviewerRole,
   UpdateApprovalPolicyRequestDto,
 } from "@retailer-search/shared-types";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const ROLE_OPTIONS: ReviewerRole[] = [
   "requester",
@@ -30,7 +28,7 @@ export function ApprovalPolicyPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/approval-policy`,
+        `${getSearchApiUrl()}/api/v1/admin/approval-policy`,
         { cache: "no-store" },
       );
 
@@ -71,7 +69,7 @@ export function ApprovalPolicyPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/approval-policy`,
+        `${getSearchApiUrl()}/api/v1/admin/approval-policy`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

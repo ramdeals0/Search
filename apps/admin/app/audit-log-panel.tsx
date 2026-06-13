@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -7,16 +8,13 @@ import type {
 } from "@retailer-search/shared-types";
 import { AuditLogFilters } from "./audit-log-filters";
 
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
-
 const OUTCOME_COLORS: Record<string, string> = {
   success: "#15803d",
   failure: "#b91c1c",
 };
 
 function buildAuditLogUrl(filters: AuditLogFilterDto): string {
-  const url = new URL("/api/v1/admin/audit-logs", SEARCH_API_URL);
+  const url = new URL("/api/v1/admin/audit-logs", getSearchApiUrl());
 
   if (filters.actionType) {
     url.searchParams.set("actionType", filters.actionType);

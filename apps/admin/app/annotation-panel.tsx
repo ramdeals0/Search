@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -7,9 +8,6 @@ import type {
   CollaborationThreadDto,
 } from "@retailer-search/shared-types";
 import { ADMIN_COLLABORATION_CHANGED_EVENT } from "./comments-panel";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const inputStyle = {
   padding: "0.45rem 0.6rem",
@@ -61,7 +59,7 @@ export function AnnotationPanel({
         targetId,
       });
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/collaboration/thread?${params.toString()}`,
+        `${getSearchApiUrl()}/api/v1/admin/collaboration/thread?${params.toString()}`,
         { cache: "no-store" },
       );
 
@@ -121,7 +119,7 @@ export function AnnotationPanel({
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/collaboration/annotations`,
+        `${getSearchApiUrl()}/api/v1/admin/collaboration/annotations`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

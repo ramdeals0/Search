@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "../lib/search-api-url";
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -9,9 +10,6 @@ import type {
   CreateBootstrapAdminRequestDto,
 } from "@retailer-search/shared-types";
 import { AUTH_TOKEN_STORAGE_KEY, persistAuthSession } from "../auth-session";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const STEPS = [
   { id: "welcome", label: "Welcome" },
@@ -136,7 +134,7 @@ export function SetupWizard({ initialState }: SetupWizardProps) {
     }
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/setup/admin`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/setup/admin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(adminForm),
@@ -154,7 +152,7 @@ export function SetupWizard({ initialState }: SetupWizardProps) {
         persistAuthSession(body.session.token);
       }
 
-      const statusResponse = await fetch(`${SEARCH_API_URL}/api/v1/setup/status`, {
+      const statusResponse = await fetch(`${getSearchApiUrl()}/api/v1/setup/status`, {
         cache: "no-store",
       });
       const nextState = (await statusResponse.json()) as BootstrapStateDto;
@@ -175,7 +173,7 @@ export function SetupWizard({ initialState }: SetupWizardProps) {
     setError(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/setup/security`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/setup/security`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify(securityForm),
@@ -205,7 +203,7 @@ export function SetupWizard({ initialState }: SetupWizardProps) {
     setError(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/setup/platform`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/setup/platform`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify(platformForm),
@@ -234,7 +232,7 @@ export function SetupWizard({ initialState }: SetupWizardProps) {
     setError(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/setup/complete`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/setup/complete`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({ confirm: true }),

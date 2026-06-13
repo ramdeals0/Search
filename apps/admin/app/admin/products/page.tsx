@@ -2,11 +2,9 @@ import type {
   CatalogAnalyticsInsightsDto,
   HealthResponseDto,
 } from "@retailer-search/shared-types";
+import { getSearchApiUrl } from "../../lib/search-api-url";
 import { AdminPageHeader } from "../admin-page-header";
 import { ProductsWorkspace } from "../../products-workspace";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const EMPTY_INSIGHTS: CatalogAnalyticsInsightsDto = {
   topProducts: [],
@@ -17,7 +15,7 @@ const EMPTY_INSIGHTS: CatalogAnalyticsInsightsDto = {
 
 async function fetchCatalogInsights(): Promise<CatalogAnalyticsInsightsDto> {
   const response = await fetch(
-    `${SEARCH_API_URL}/api/v1/admin/analytics/catalog-insights`,
+    `${getSearchApiUrl()}/api/v1/admin/analytics/catalog-insights`,
     { cache: "no-store" },
   );
 
@@ -32,7 +30,7 @@ async function fetchCatalogHealth(): Promise<{
   productCount: number;
   catalogSource: "database" | "generated-json" | "empty";
 }> {
-  const response = await fetch(`${SEARCH_API_URL}/health`, { cache: "no-store" });
+  const response = await fetch(`${getSearchApiUrl()}/health`, { cache: "no-store" });
   if (!response.ok) {
     return { productCount: 0, catalogSource: "empty" };
   }

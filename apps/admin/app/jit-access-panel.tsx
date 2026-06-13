@@ -1,4 +1,5 @@
 "use client";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -17,9 +18,6 @@ import {
   ACCESS_GOVERNANCE_CHANGED_EVENT,
   AUTH_TOKEN_STORAGE_KEY,
 } from "./access-request-panel";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export const JIT_ACCESS_CHANGED_EVENT = "admin:jit-access-changed";
 
@@ -121,19 +119,19 @@ export function JitAccessPanel() {
 
     try {
       const [meRes, policyRes, requestsRes, privilegesRes] = await Promise.all([
-        fetch(`${SEARCH_API_URL}/api/v1/auth/me`, {
+        fetch(`${getSearchApiUrl()}/api/v1/auth/me`, {
           headers: getAuthHeaders(),
           cache: "no-store",
         }),
-        fetch(`${SEARCH_API_URL}/api/v1/admin/jit-policy`, {
+        fetch(`${getSearchApiUrl()}/api/v1/admin/jit-policy`, {
           headers: getAuthHeaders(),
           cache: "no-store",
         }),
-        fetch(`${SEARCH_API_URL}/api/v1/admin/jit-requests`, {
+        fetch(`${getSearchApiUrl()}/api/v1/admin/jit-requests`, {
           headers: getAuthHeaders(),
           cache: "no-store",
         }),
-        fetch(`${SEARCH_API_URL}/api/v1/admin/active-privileges`, {
+        fetch(`${getSearchApiUrl()}/api/v1/admin/active-privileges`, {
           headers: getAuthHeaders(),
           cache: "no-store",
         }),
@@ -208,7 +206,7 @@ export function JitAccessPanel() {
     };
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/jit-requests`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/jit-requests`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),
@@ -261,7 +259,7 @@ export function JitAccessPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/jit-requests/${requestId}/resolve`,
+        `${getSearchApiUrl()}/api/v1/admin/jit-requests/${requestId}/resolve`,
         {
           method: "POST",
           headers: getAuthHeaders(),
@@ -296,7 +294,7 @@ export function JitAccessPanel() {
 
     try {
       const response = await fetch(
-        `${SEARCH_API_URL}/api/v1/admin/jit-requests/${requestId}/revoke`,
+        `${getSearchApiUrl()}/api/v1/admin/jit-requests/${requestId}/revoke`,
         {
           method: "POST",
           headers: getAuthHeaders(),
@@ -330,7 +328,7 @@ export function JitAccessPanel() {
     setFeedback(null);
 
     try {
-      const response = await fetch(`${SEARCH_API_URL}/api/v1/admin/jit-policy`, {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/jit-policy`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify(policyDraft),
