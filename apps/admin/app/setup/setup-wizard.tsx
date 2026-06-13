@@ -592,7 +592,7 @@ export function SetupWizard({ initialState }: SetupWizardProps) {
             </p>
             <div style={summaryBoxStyle}>
               <strong>Admin</strong>
-              <div>{state.firstAdminEmail ?? adminForm.email || "Not set"}</div>
+              <div>{(state.firstAdminEmail ?? adminForm.email) || "Not set"}</div>
             </div>
             <div style={summaryBoxStyle}>
               <strong>Security</strong>
