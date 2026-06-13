@@ -193,7 +193,7 @@ export function ExperimentsPanel() {
             required
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Rice ranking comparison"
+            placeholder="Drill ranking comparison"
             style={inputStyle}
           />
         </label>
@@ -274,7 +274,7 @@ export function ExperimentsPanel() {
             padding: "0.55rem 0.9rem",
             border: "none",
             borderRadius: 6,
-            background: "#0f172a",
+            background: "var(--forge-primary)",
             color: "#fff",
             cursor: "pointer",
             fontSize: 14,

@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
+  CatalogVocabularyDto,
   CreateMerchandisingRuleDto,
   MerchandisingRule,
   UpdateMerchandisingRuleDto,
@@ -11,6 +12,11 @@ import { RuleForm } from "./rule-form";
 
 const SEARCH_API_URL =
   process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
+
+const EMPTY_VOCABULARY: CatalogVocabularyDto = {
+  brands: [],
+  categories: [],
+};
 
 interface RulesTableProps {
   initialRules: MerchandisingRule[];
@@ -21,6 +27,29 @@ export function RulesTable({ initialRules }: RulesTableProps) {
   const [editingRule, setEditingRule] = useState<MerchandisingRule | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [catalogVocabulary, setCatalogVocabulary] =
+    useState<CatalogVocabularyDto>(EMPTY_VOCABULARY);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetch(`${SEARCH_API_URL}/api/v1/admin/catalog/vocabulary`)
+      .then((response) => (response.ok ? response.json() : EMPTY_VOCABULARY))
+      .then((payload: CatalogVocabularyDto) => {
+        if (!cancelled) {
+          setCatalogVocabulary(payload);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCatalogVocabulary(EMPTY_VOCABULARY);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const refresh = () => {
     router.refresh();
@@ -125,7 +154,7 @@ export function RulesTable({ initialRules }: RulesTableProps) {
             padding: "0.5rem 0.85rem",
             border: "none",
             borderRadius: 6,
-            background: "#0f172a",
+            background: "var(--forge-primary)",
             color: "#fff",
             cursor: "pointer",
             fontSize: 14,
@@ -144,6 +173,7 @@ export function RulesTable({ initialRules }: RulesTableProps) {
       {creating && (
         <div style={{ marginBottom: "1rem" }}>
           <RuleForm
+            catalogVocabulary={catalogVocabulary}
             onSubmit={createRule}
             onCancel={() => setCreating(false)}
           />
@@ -154,6 +184,7 @@ export function RulesTable({ initialRules }: RulesTableProps) {
         <div style={{ marginBottom: "1rem" }}>
           <RuleForm
             initialRule={editingRule}
+            catalogVocabulary={catalogVocabulary}
             onSubmit={(payload) => updateRule(editingRule.id, payload)}
             onCancel={() => setEditingRule(null)}
           />

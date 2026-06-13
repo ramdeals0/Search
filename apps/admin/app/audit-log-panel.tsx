@@ -151,7 +151,7 @@ export function AuditLogPanel() {
                   marginBottom: "0.35rem",
                 }}
               >
-                <strong style={{ color: "#0f172a" }}>{entry.summary}</strong>
+                <strong style={{ color: "var(--forge-primary)" }}>{entry.summary}</strong>
                 <span
                   style={{
                     fontSize: 11,

@@ -10,6 +10,7 @@ import type {
 import { AnnotationPanel } from "./annotation-panel";
 import { CommentsPanel } from "./comments-panel";
 import { SnapshotDiffPreview } from "./snapshot-diff-preview";
+import { notifySnapshotsChanged } from "./snapshot-events";
 import { ADMIN_REVIEWER_STORAGE_KEY } from "./reviewer-management-panel";
 
 const SEARCH_API_URL =
@@ -131,6 +132,7 @@ export function SnapshotsPanel() {
       setDescription("");
       setFeedback("Snapshot created.");
       await loadSnapshots();
+      notifySnapshotsChanged();
     } catch (createError) {
       setError(
         createError instanceof Error
@@ -223,7 +225,7 @@ export function SnapshotsPanel() {
             required
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Before rice ranking experiment"
+            placeholder="Before drill ranking experiment"
             style={inputStyle}
           />
         </label>
@@ -244,7 +246,7 @@ export function SnapshotsPanel() {
             padding: "0.55rem 0.9rem",
             border: "none",
             borderRadius: 6,
-            background: "#0f172a",
+            background: "var(--forge-primary)",
             color: "#fff",
             cursor: "pointer",
             fontSize: 14,

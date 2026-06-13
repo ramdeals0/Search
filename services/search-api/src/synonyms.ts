@@ -7,10 +7,14 @@ import {
 } from "./environment-config-store.js";
 
 const PHRASE_SYNONYMS: Array<[string, string]> = [
-  ["paneer cheese", "paneer"],
-  ["basmati rice", "rice"],
-  ["detergent soap", "detergent"],
-  ["soft drink", "beverages"],
+  ["shop vac", "wet dry vacuum"],
+  ["weed eater", "string trimmer"],
+  ["sheet rock", "drywall"],
+  ["gfci outlet", "ground fault outlet"],
+  ["pressure washer", "power washer"],
+  ["drywall screws", "sheetrock screws"],
+  ["pull down faucet", "pull-down faucet"],
+  ["smart thermostat", "wifi thermostat"],
 ];
 
 const DEFAULT_ADMIN_ENVIRONMENT: EnvironmentKey = "staging";

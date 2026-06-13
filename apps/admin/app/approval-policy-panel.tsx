@@ -241,7 +241,7 @@ export function ApprovalPolicyPanel() {
           padding: "0.55rem 0.9rem",
           border: "none",
           borderRadius: 6,
-          background: "#0f172a",
+          background: "var(--forge-primary)",
           color: "#fff",
           cursor: "pointer",
           fontSize: 14,

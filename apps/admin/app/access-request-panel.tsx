@@ -13,7 +13,9 @@ import type {
 const SEARCH_API_URL =
   process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
-export const AUTH_TOKEN_STORAGE_KEY = "admin-auth-token";
+import { AUTH_TOKEN_STORAGE_KEY } from "./auth-session";
+
+export { AUTH_TOKEN_STORAGE_KEY } from "./auth-session";
 export const ACCESS_GOVERNANCE_CHANGED_EVENT = "admin:access-governance-changed";
 
 const ALL_ROLES: UserRole[] = [
@@ -277,7 +279,7 @@ export function AccessRequestPanel({
               padding: "0.45rem 0.85rem",
               borderRadius: 6,
               border: "1px solid #334155",
-              background: "#0f172a",
+              background: "var(--forge-primary)",
               color: "#fff",
               cursor: submitting ? "wait" : "pointer",
               fontSize: 13,

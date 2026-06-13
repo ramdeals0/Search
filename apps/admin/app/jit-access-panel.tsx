@@ -398,7 +398,7 @@ export function JitAccessPanel() {
           </div>
           <div style={{ fontSize: 13 }}>
             Effective role:{" "}
-            <strong style={{ color: isElevated ? "#b45309" : "#0f172a" }}>
+            <strong style={{ color: isElevated ? "#b45309" : "var(--forge-primary)" }}>
               {currentUser.effectiveRole ?? currentUser.user?.role}
             </strong>
             {isElevated ? (
@@ -610,7 +610,7 @@ export function JitAccessPanel() {
                 padding: "0.4rem 0.75rem",
                 borderRadius: 6,
                 border: "1px solid #334155",
-                background: "#0f172a",
+                background: "var(--forge-primary)",
                 color: "#fff",
                 cursor: savingPolicy ? "wait" : "pointer",
                 fontSize: 12,

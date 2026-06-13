@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import type { BootstrapStateDto } from "@retailer-search/shared-types";
+import { ForgeOpsLogo } from "../admin/admin-page-header";
+import "../globals.css";
 import { SetupWizard } from "./setup-wizard";
 
 const SEARCH_API_URL =
@@ -24,14 +26,17 @@ export default async function SetupPage() {
     status = await fetchSetupStatus();
   } catch (error) {
     return (
-      <main style={{ maxWidth: 720, margin: "0 auto", padding: "2rem 1.5rem" }}>
-        <h1 style={{ marginTop: 0 }}>Initial setup</h1>
-        <p style={{ color: "#b91c1c" }}>
-          {error instanceof Error
-            ? error.message
-            : "Unable to reach the search API setup endpoint."}
-        </p>
-      </main>
+      <div className="forge-auth-page">
+        <div className="forge-auth-card forge-auth-card--wide">
+          <ForgeOpsLogo />
+          <h1 className="forge-auth-card__title">Initial setup</h1>
+          <p style={{ color: "var(--forge-error)", fontSize: 14 }}>
+            {error instanceof Error
+              ? error.message
+              : "Unable to reach the search API setup endpoint."}
+          </p>
+        </div>
+      </div>
     );
   }
 
@@ -40,14 +45,17 @@ export default async function SetupPage() {
   }
 
   return (
-    <main style={{ maxWidth: 720, margin: "0 auto", padding: "2rem 1.5rem" }}>
-      <header style={{ marginBottom: 24 }}>
-        <h1 style={{ margin: "0 0 6px", fontSize: 24 }}>Initial setup</h1>
-        <p style={{ margin: 0, color: "#475569", fontSize: 14 }}>
-          Configure this instance before normal admin sign-in is enabled.
-        </p>
-      </header>
-      <SetupWizard initialState={status} />
-    </main>
+    <div className="forge-auth-page" style={{ alignItems: "flex-start", paddingTop: "2.5rem" }}>
+      <div className="forge-auth-card forge-auth-card--wide">
+        <header className="forge-auth-card__header">
+          <ForgeOpsLogo />
+          <h1 className="forge-auth-card__title">Configure ForgeOps</h1>
+          <p className="forge-auth-card__subtitle">
+            Complete first-run setup before normal admin sign-in is enabled.
+          </p>
+        </header>
+        <SetupWizard initialState={status} />
+      </div>
+    </div>
   );
 }

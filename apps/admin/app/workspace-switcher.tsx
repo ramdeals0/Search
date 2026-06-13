@@ -52,10 +52,10 @@ export function WorkspaceSwitcher({
               onClick={() => handleChange(role.id)}
               style={{
                 padding: "0.4rem 0.75rem",
-                border: selected ? "1px solid #0f172a" : "1px solid #cbd5e1",
+                border: selected ? "1px solid var(--forge-primary)" : "1px solid var(--forge-border-strong)",
                 borderRadius: 999,
-                background: selected ? "#0f172a" : "#fff",
-                color: selected ? "#fff" : "#334155",
+                background: selected ? "var(--forge-primary)" : "var(--forge-surface)",
+                color: selected ? "#fff" : "var(--forge-text-muted)",
                 cursor: "pointer",
                 fontSize: 12,
                 fontWeight: selected ? 600 : 500,

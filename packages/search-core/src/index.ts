@@ -32,29 +32,37 @@ interface ScoredProduct {
 const FACET_KEYS: FacetKey[] = ["brand", "category", "inStock"];
 
 const PHRASE_SYNONYMS: Array<[string, string]> = [
-  ["paneer cheese", "paneer"],
-  ["basmati rice", "rice"],
-  ["detergent soap", "detergent"],
-  ["soft drink", "beverages"],
+  ["shop vac", "wet dry vacuum"],
+  ["weed eater", "string trimmer"],
+  ["breaker box", "electrical panel"],
+  ["sheetrock", "drywall"],
+  ["gfci outlet", "ground fault outlet"],
+  ["pressure washer", "power washer"],
+  ["drill driver", "cordless drill"],
+  ["impact driver", "impact drill"],
+  ["smoke detector", "smoke alarm"],
+  ["drywall screws", "sheetrock screws"],
 ];
 
 const TOKEN_SYNONYMS: Record<string, string> = {
-  atta: "flour",
-  soda: "beverages",
-  pop: "beverages",
-  chilli: "chili",
-  paneer: "cheese",
+  receptacle: "outlet",
+  tap: "faucet",
+  mower: "lawn mower",
+  chop: "miter saw",
 };
 
 const TYPO_MAP: Record<string, string> = {
-  basmti: "basmati",
-  rise: "rice",
-  panner: "paneer",
-  chilli: "chili",
-  orgnic: "organic",
-  turmric: "turmeric",
-  milke: "milk",
+  dril: "drill",
   hammr: "hammer",
+  mulsh: "mulch",
+  drywal: "drywall",
+  shopvac: "shop vac",
+  "cordles drill": "cordless drill",
+  "presure washer": "pressure washer",
+  "smoke detecter": "smoke detector",
+  "impct driver": "impact driver",
+  "gfic outlet": "gfci outlet",
+  thermastat: "smart thermostat",
 };
 
 export function normalizeQuery(input: string): string {

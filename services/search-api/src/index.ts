@@ -118,7 +118,14 @@ import {
   listPromotionHistory,
   promoteActiveConfiguration,
 } from "./active-config-store.js";
-import { listAuditLogs, recordAuditLog, recordForbiddenAccess, recordRateLimitExceeded, recordUnauthorizedAccess } from "./audit-trail-store.js";
+import {
+  hydrateAuditTrailStore,
+  listAuditLogs,
+  recordAuditLog,
+  recordForbiddenAccess,
+  recordRateLimitExceeded,
+  recordUnauthorizedAccess,
+} from "./audit-trail-store.js";
 import {
   completeBootstrap,
   configureBootstrapPlatform,
@@ -163,6 +170,8 @@ import {
   recordSearchClick,
   recordSearchEvent,
 } from "./analytics-store.js";
+import { getCatalogAnalyticsInsights } from "./catalog-analytics.js";
+import { getCatalogVocabulary } from "./catalog-vocabulary.js";
 import {
   createExperiment,
   createQuerySet,
@@ -204,7 +213,29 @@ import {
   updateMerchandisingRule,
 } from "./merchandising-rules.js";
 import { replaceAllSynonyms } from "./synonyms.js";
-import { seedProducts } from "./seed-products.js";
+import {
+  getProductCatalog,
+  getProductCatalogCount,
+  getProductCatalogSource,
+  ensureProductCatalogLoaded,
+  hydrateProductCatalog,
+} from "./catalog-store.js";
+import {
+  buildEvalContext,
+  buildSnapshotScopeKey,
+  createCompiledRuleSnapshot,
+  evaluateMerchandisingRules,
+  formatMerchRuntimeBenchmarkReport,
+  formatSnapshotCacheBenchmarkReport,
+  formatSnapshotManagerBenchmarkReport,
+  getDefaultSnapshotManager,
+  getSnapshotMetrics,
+  runMerchRuntimeBenchmark,
+  runSnapshotCacheBenchmark,
+  runSnapshotManagerBenchmark,
+  type CompiledRuleSnapshot,
+  type SearchCandidate,
+} from "./merch-runtime/index.js";
 import {
   completeAccessReviewRun,
   createAccessRequest,
@@ -229,7 +260,7 @@ import {
   userCount,
   validatePassword,
 } from "./auth-store.js";
-import { hydrateAuditTrailStore } from "./audit-trail-store.js";
+import { hydrateEnvironmentConfigStore } from "./environment-config-store.js";
 import { hydrateApprovalStore } from "./approval-store.js";
 import {
   createJitElevationRequest,
@@ -324,6 +355,60 @@ const queryPreviewSchema = z.object({
   pageSize: z.coerce.number().int().positive().max(20).default(10),
   environment: environmentKeySchema.optional(),
 });
+
+const merchRuntimeEvaluateSchema = z.object({
+  query: z.string().min(1),
+  environment: environmentKeySchema.default("staging"),
+  tenantId: z.string().default("default"),
+  candidateLimit: z.coerce.number().int().positive().max(250).default(50),
+});
+
+let demoCompiledMerchSnapshot: CompiledRuleSnapshot | undefined;
+
+function buildDemoCompiledMerchSnapshot(version = "1.0.0"): CompiledRuleSnapshot {
+  return createCompiledRuleSnapshot({
+    snapshotId: "demo-runtime-v1",
+    tenantId: "default",
+    environment: "staging",
+    version,
+    generatedAtEpochMs: Date.now(),
+    queryExactMap: {
+      drill: [
+        {
+          ruleId: "demo-boost-drill",
+          ruleVersionId: "demo-boost-drill-v1",
+          priority: 100,
+          scopeType: "query_exact",
+          stackingMode: "additive",
+        },
+      ],
+    },
+    ruleEffectsMap: {
+      "demo-boost-drill": [
+        {
+          productId: "prod-00821",
+          effectType: "boost",
+          effectValue: 25,
+          reasonCode: "demo_drill_boost",
+        },
+        {
+          productId: "prod-00185",
+          effectType: "pin",
+          effectValue: 0,
+          pinPosition: 1,
+          reasonCode: "demo_drill_pin",
+        },
+      ],
+    },
+  });
+}
+
+function getDemoCompiledMerchSnapshot(): CompiledRuleSnapshot {
+  if (!demoCompiledMerchSnapshot) {
+    demoCompiledMerchSnapshot = buildDemoCompiledMerchSnapshot();
+  }
+  return demoCompiledMerchSnapshot;
+}
 
 const merchandisingRuleConditionSchema = z.object({
   query: z.string().optional(),
@@ -598,11 +683,11 @@ function parseEnvironmentQuery(
   return parsed.success ? parsed.data : defaultEnvironment;
 }
 
-function buildSuggestionParams() {
+async function buildSuggestionParams() {
   return {
     queryAnalytics: getQueryAnalytics(),
     rules: getAllMerchandisingRules("staging"),
-    products: seedProducts,
+    products: await getSearchProductCatalog(),
   };
 }
 
@@ -1112,7 +1197,8 @@ app.use("/api/v1/admin", requireSetupComplete);
 app.use("/api/v1/admin", enforceAdminRateLimit);
 app.use("/api/v1/admin", enforceAdminJsonContentType);
 
-app.get("/health", (_req, res) => {
+app.get("/health", async (_req, res) => {
+  await ensureProductCatalogLoaded();
   const body: HealthResponseDto = {
     ok: true,
     service: "search-api",
@@ -1120,6 +1206,8 @@ app.get("/health", (_req, res) => {
     database: {
       connected: databaseConnected,
       userCount: databaseConnected ? userCount() : 0,
+      productCount: getProductCatalogCount(),
+      catalogSource: getProductCatalogSource(),
     },
   };
   res.json(body);
@@ -1262,7 +1350,7 @@ app.post("/api/v1/setup/complete", async (req, res) => {
   }
 });
 
-app.get("/api/v1/search", (req, res) => {
+app.get("/api/v1/search", async (req, res) => {
   const parsed = searchQuerySchema.safeParse(req.query);
   if (!assertValidBody(parsed, res, req, "Invalid query parameters")) {
     return;
@@ -1275,21 +1363,23 @@ app.get("/api/v1/search", (req, res) => {
     filters: buildFilters(parsed.data),
   };
 
+  const products = await getSearchProductCatalog();
   res.json(
-    searchProducts(seedProducts, request, {
+    searchProducts(products, request, {
       rules: getActiveMerchandisingRules("live"),
       debug: parsed.data.debug ?? false,
     }),
   );
 });
 
-app.get("/api/v1/autocomplete", (req, res) => {
+app.get("/api/v1/autocomplete", async (req, res) => {
   const parsed = autocompleteQuerySchema.safeParse(req.query);
   if (!assertValidBody(parsed, res, req, "Invalid query parameters")) {
     return;
   }
 
-  res.json(getAutocompleteSuggestions(seedProducts, parsed.data.query));
+  const products = await getSearchProductCatalog();
+  res.json(getAutocompleteSuggestions(products, parsed.data.query));
 });
 
 app.post("/api/v1/auth/login", (req, res) => {
@@ -2597,15 +2687,25 @@ app.get("/api/v1/admin/analytics/summary", (_req, res) => {
   res.json(getAnalyticsSummary());
 });
 
-app.get("/api/v1/admin/suggestions", (_req, res) => {
+app.get("/api/v1/admin/analytics/catalog-insights", async (_req, res) => {
+  const products = await getSearchProductCatalog();
+  res.json(getCatalogAnalyticsInsights(products, 10));
+});
+
+app.get("/api/v1/admin/catalog/vocabulary", async (_req, res) => {
+  const products = await getSearchProductCatalog();
+  res.json(getCatalogVocabulary(products));
+});
+
+app.get("/api/v1/admin/suggestions", async (_req, res) => {
   const body: SuggestionsResponseDto = {
     generatedAt: new Date().toISOString(),
-    suggestions: generateRuleSuggestions(buildSuggestionParams()),
+    suggestions: generateRuleSuggestions(await buildSuggestionParams()),
   };
   res.json(body);
 });
 
-app.get("/api/v1/admin/suggestions/:id/action-preview", (req, res) => {
+app.get("/api/v1/admin/suggestions/:id/action-preview", async (req, res) => {
   const parsed = actionPreviewQuerySchema.safeParse(req.query);
   if (!parsed.success) {
     recordAuditLog({
@@ -2626,7 +2726,7 @@ app.get("/api/v1/admin/suggestions/:id/action-preview", (req, res) => {
   const preview = buildActionPreview(
     req.params.id,
     parsed.data.actionType,
-    buildSuggestionParams(),
+    await buildSuggestionParams(),
   );
 
   if (!preview) {
@@ -2660,7 +2760,7 @@ app.get("/api/v1/admin/suggestions/:id/action-preview", (req, res) => {
   res.json(preview);
 });
 
-app.post("/api/v1/admin/suggestions/apply", (req, res) => {
+app.post("/api/v1/admin/suggestions/apply", async (req, res) => {
   const parsed = applySuggestionRequestSchema.safeParse(req.body);
   if (!parsed.success) {
     recordAuditLog({
@@ -2680,7 +2780,7 @@ app.post("/api/v1/admin/suggestions/apply", (req, res) => {
   const result = applySuggestionAction(
     parsed.data.suggestionId,
     parsed.data.actionType,
-    buildSuggestionParams(),
+    await buildSuggestionParams(),
   );
 
   if (!result.success) {
@@ -2752,7 +2852,7 @@ app.post("/api/v1/admin/suggestions/apply", (req, res) => {
   res.json(result);
 });
 
-app.get("/api/v1/admin/query-preview", (req, res) => {
+app.get("/api/v1/admin/query-preview", async (req, res) => {
   const parsed = queryPreviewSchema.safeParse(req.query);
   if (!parsed.success) {
     recordAuditLog({
@@ -2774,14 +2874,15 @@ app.get("/api/v1/admin/query-preview", (req, res) => {
     "staging",
   );
 
+  const products = await getSearchProductCatalog();
   const result = searchProducts(
-    seedProducts,
+    products,
     {
       query: parsed.data.query,
       page: 1,
       pageSize: parsed.data.pageSize,
     },
-    { rules: getActiveMerchandisingRules(previewEnvironment) },
+    { rules: getActiveMerchandisingRules(previewEnvironment), debug: true },
   );
 
   const response: QueryPreviewResponseDto = {
@@ -2795,6 +2896,7 @@ app.get("/api/v1/admin/query-preview", (req, res) => {
       category: hit.category,
       score: hit.score,
       inStock: hit.inStock,
+      rankingDebug: hit.rankingDebug,
     })),
   };
 
@@ -2815,6 +2917,188 @@ app.get("/api/v1/admin/query-preview", (req, res) => {
   });
 
   res.json(response);
+});
+
+app.get("/api/v1/internal/merch-runtime/benchmark", (_req, res) => {
+  const report = runMerchRuntimeBenchmark();
+  res.json({
+    report,
+    formatted: formatMerchRuntimeBenchmarkReport(report),
+  });
+});
+
+app.get("/api/v1/internal/merch-runtime/cache/benchmark", (_req, res) => {
+  const report = runSnapshotCacheBenchmark();
+  res.json({
+    report,
+    formatted: formatSnapshotCacheBenchmarkReport(report),
+  });
+});
+
+app.get("/api/v1/internal/merch-runtime/snapshot/benchmark", (_req, res) => {
+  const report = runSnapshotManagerBenchmark();
+  res.json({
+    report,
+    formatted: formatSnapshotManagerBenchmarkReport(report),
+  });
+});
+
+app.get("/api/v1/internal/merch-runtime/snapshot/stats", (req, res) => {
+  const tenantId = typeof req.query.tenantId === "string" ? req.query.tenantId : "default";
+  const environment =
+    req.query.environment === "live" || req.query.environment === "staging"
+      ? req.query.environment
+      : "staging";
+  const scopeKey = buildSnapshotScopeKey({ tenantId, environment });
+  const manager = getDefaultSnapshotManager();
+  const activeEntry = manager.getActiveEntry(scopeKey);
+
+  res.json({
+    scopeKey,
+    activeVersion: activeEntry?.version ?? null,
+    activeEntryKey: activeEntry?.entryKey ?? null,
+    stats: manager.getStats(),
+    scopeEntries: manager.getScopeEntries(scopeKey).map((entry) => ({
+      entryKey: entry.entryKey,
+      version: entry.version,
+      isActive: entry.isActive,
+      inFlightReaders: entry.inFlightReaders,
+      estimatedBytes: entry.estimatedBytes,
+    })),
+    metrics: getSnapshotMetrics(),
+  });
+});
+
+app.get("/api/v1/internal/merch-runtime/cache/stats", (_req, res) => {
+  const manager = getDefaultSnapshotManager();
+  res.json({
+    stats: manager.getStats(),
+    metrics: getSnapshotMetrics(),
+  });
+});
+
+app.post("/api/v1/internal/merch-runtime/snapshot/publish-demo", (req, res) => {
+  const tenantId = typeof req.query.tenantId === "string" ? req.query.tenantId : "default";
+  const environment =
+    req.query.environment === "live" || req.query.environment === "staging"
+      ? req.query.environment
+      : "staging";
+  const version =
+    typeof req.query.version === "string" ? req.query.version : `demo-${Date.now()}`;
+
+  const manager = getDefaultSnapshotManager();
+  const scopeKey = buildSnapshotScopeKey({ tenantId, environment });
+  const snapshot = buildDemoCompiledMerchSnapshot(version);
+  const result = manager.publish(scopeKey, snapshot);
+
+  res.json({
+    scopeKey,
+    activeVersion: result.nextVersion,
+    publish: result,
+    stats: manager.getStats(),
+    metrics: getSnapshotMetrics(),
+  });
+});
+
+app.post("/api/v1/internal/merch-runtime/cache/publish-demo", (req, res) => {
+  const tenantId = typeof req.query.tenantId === "string" ? req.query.tenantId : "default";
+  const environment =
+    req.query.environment === "live" || req.query.environment === "staging"
+      ? req.query.environment
+      : "staging";
+  const version =
+    typeof req.query.version === "string" ? req.query.version : `demo-${Date.now()}`;
+
+  const manager = getDefaultSnapshotManager();
+  const scopeKey = buildSnapshotScopeKey({ tenantId, environment });
+  const snapshot = buildDemoCompiledMerchSnapshot(version);
+  const result = manager.publish(scopeKey, snapshot);
+
+  res.json({
+    scopeKey,
+    activeVersion: result.nextVersion,
+    publish: result,
+    stats: manager.getStats(),
+  });
+});
+
+app.get("/api/v1/internal/merch-runtime/evaluate", async (req, res) => {
+  const parsed = merchRuntimeEvaluateSchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: "Invalid query parameters",
+      details: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  const scopeKey = buildSnapshotScopeKey({
+    tenantId: parsed.data.tenantId,
+    environment: parsed.data.environment,
+  });
+
+  const manager = getDefaultSnapshotManager();
+  if (!manager.getActiveEntry(scopeKey)) {
+    manager.publish(
+      scopeKey,
+      buildDemoCompiledMerchSnapshot(`demo-${parsed.data.environment}`),
+    );
+  }
+
+  const handle = manager.acquire(scopeKey);
+  if (!handle) {
+    res.status(503).json({ error: "Compiled merchandising snapshot unavailable" });
+    return;
+  }
+
+  const products = await getSearchProductCatalog();
+  const retrieval = searchProducts(
+    products,
+    {
+      query: parsed.data.query,
+      page: 1,
+      pageSize: parsed.data.candidateLimit,
+    },
+    { rules: [] },
+  );
+
+  const candidates: SearchCandidate[] = retrieval.hits.map((hit) => ({
+    productId: hit.id,
+    baseScore: hit.score,
+    inStock: hit.inStock,
+  }));
+
+  const context = buildEvalContext({
+    tenantId: parsed.data.tenantId,
+    environment: parsed.data.environment,
+    query: parsed.data.query,
+  });
+
+  try {
+    const evaluated = evaluateMerchandisingRules(
+      context,
+      candidates,
+      handle.snapshot,
+    );
+
+    res.json({
+      query: parsed.data.query,
+      scopeKey,
+      snapshotId: handle.snapshot.snapshotId,
+      activeVersion: handle.entry.version,
+      candidateCount: candidates.length,
+      results: evaluated.map((row) => ({
+        productId: row.productId,
+        baseScore: row.baseScore,
+        finalScore: row.finalScore,
+        appliedPinPosition: row.appliedPinPosition,
+        matchedRuleIds: row.matchedRuleIds,
+        matchedReasonCodes: row.matchedReasonCodes,
+      })),
+    });
+  } finally {
+    handle.release();
+  }
 });
 
 app.get("/api/v1/admin/snapshots", (_req, res) => {
@@ -4330,7 +4614,7 @@ app.post("/api/v1/admin/experiments/:id/decision", (req, res) => {
   res.json(decision);
 });
 
-app.post("/api/v1/admin/experiments/:id/run", (req, res) => {
+app.post("/api/v1/admin/experiments/:id/run", async (req, res) => {
   const experiment = getExperimentById(req.params.id);
   if (!experiment) {
     recordAuditLog({
@@ -4361,12 +4645,13 @@ app.post("/api/v1/admin/experiments/:id/run", (req, res) => {
     return;
   }
 
+  const products = await getSearchProductCatalog();
   const run = runExperimentEvaluation({
     experimentId: experiment.id,
     baseline,
     candidate,
     querySet,
-    products: seedProducts,
+    products,
   });
 
   saveExperimentRun(run);
@@ -4452,14 +4737,56 @@ async function hydratePersistentStores(): Promise<void> {
   await hydrateCollaborationStore();
   await hydrateNotificationStore();
   await hydrateExportStore();
+  await hydrateEnvironmentConfigStore();
+}
+
+async function loadProductCatalogAtStartup(): Promise<number> {
+  const productCount = await hydrateProductCatalog();
+  if (productCount === 0) {
+    console.warn(
+      "Product catalog is empty. Run: pnpm prisma:seed (from repo root)",
+    );
+  } else {
+    console.log(
+      `Loaded ${productCount} products (${getProductCatalogSource()}).`,
+    );
+  }
+  return productCount;
+}
+
+async function getSearchProductCatalog() {
+  await ensureProductCatalogLoaded();
+  return getProductCatalog();
 }
 
 async function startServer(): Promise<void> {
+  let dbConnected = false;
+
   try {
     await connectDatabase();
-    await hydratePersistentStores();
-    databaseConnected = true;
+    dbConnected = true;
+  } catch (error) {
+    console.warn(
+      "Database connection failed; governance data unavailable until DATABASE_URL is configured.",
+      error,
+    );
+  }
 
+  if (dbConnected) {
+    try {
+      await hydratePersistentStores();
+    } catch (error) {
+      console.warn(
+        "Some persistent stores failed to hydrate; catalog search will still attempt to load products.",
+        error,
+      );
+    }
+  }
+
+  await loadProductCatalogAtStartup();
+  databaseConnected = dbConnected;
+
+  if (dbConnected) {
     if (userCount() === 0 && !isSetupRequired()) {
       console.warn(
         "Database connected but has no users. Run: pnpm prisma:seed (from repo root)",
@@ -4469,12 +4796,6 @@ async function startServer(): Promise<void> {
         "Initial setup required. Open the admin app at /setup to configure this instance.",
       );
     }
-  } catch (error) {
-    databaseConnected = false;
-    console.warn(
-      "Database unavailable; governance data will be empty until migrate + seed.",
-      error,
-    );
   }
 
   app.listen(env.SEARCH_API_PORT, env.SEARCH_API_HOST, () => {

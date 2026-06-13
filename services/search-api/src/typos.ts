@@ -1,15 +1,13 @@
+import { DEMO_TYPO_CORRECTIONS } from "./demo-search-config.js";
 import { normalizeSynonyms } from "./synonyms.js";
 
-const TYPO_MAP: Record<string, string> = {
-  basmti: "basmati",
-  rise: "rice",
-  panner: "paneer",
-  chilli: "chili",
-  orgnic: "organic",
-  turmric: "turmeric",
-  milke: "milk",
-  hammr: "hammer",
-};
+const PHRASE_TYPO_CORRECTIONS: Record<string, string> = Object.fromEntries(
+  Object.entries(DEMO_TYPO_CORRECTIONS).filter(([key]) => key.includes(" ")),
+);
+
+const TOKEN_TYPO_CORRECTIONS: Record<string, string> = Object.fromEntries(
+  Object.entries(DEMO_TYPO_CORRECTIONS).filter(([key]) => !key.includes(" ")),
+);
 
 export function correctQueryTypos(query: string): {
   correctedQuery?: string;
@@ -20,10 +18,19 @@ export function correctQueryTypos(query: string): {
     return { normalizedQuery: "" };
   }
 
-  const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+  let working = normalizedQuery;
   let changed = false;
+
+  for (const [misspelling, correction] of Object.entries(PHRASE_TYPO_CORRECTIONS)) {
+    if (working.includes(misspelling)) {
+      working = working.replaceAll(misspelling, correction);
+      changed = true;
+    }
+  }
+
+  const tokens = working.split(/\s+/).filter(Boolean);
   const correctedTokens = tokens.map((token) => {
-    const replacement = TYPO_MAP[token];
+    const replacement = TOKEN_TYPO_CORRECTIONS[token];
     if (replacement) {
       changed = true;
       return replacement;

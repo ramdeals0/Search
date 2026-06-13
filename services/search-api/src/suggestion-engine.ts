@@ -31,7 +31,8 @@ const SUGGESTED_ACTION_TYPES: Record<SuggestionType, SuggestionActionType[]> = {
   pin_product: ["create_rule", "open_query_preview"],
   boost_brand: ["create_rule", "open_query_preview"],
   review_low_ctr: ["open_query_preview"],
-  improve_zero_results: ["create_synonym", "open_query_preview"],
+  // No create_synonym here: these queries have no close catalog match to map to.
+  improve_zero_results: ["open_query_preview"],
   expand_catalog: ["open_query_preview"],
 };
 

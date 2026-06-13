@@ -72,7 +72,7 @@ export function ExperimentRunView() {
   const [checkingShip, setCheckingShip] = useState(false);
   const [actorId, setActorId] = useState("local-reviewer");
   const [actorLabel, setActorLabel] = useState("Local Reviewer");
-  const [selectedQueryAnchor, setSelectedQueryAnchor] = useState("query: rice");
+  const [selectedQueryAnchor, setSelectedQueryAnchor] = useState("query: drill");
 
   useEffect(() => {
     const loadActor = async () => {

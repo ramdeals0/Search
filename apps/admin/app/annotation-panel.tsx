@@ -246,7 +246,7 @@ export function AnnotationPanel({
         <input
           value={anchorLabel}
           onChange={(event) => setAnchorLabel(event.target.value)}
-          placeholder="Anchor label (e.g. query: rice, release rationale)"
+          placeholder="Anchor label (e.g. query: drill, release rationale)"
           style={inputStyle}
         />
         <textarea

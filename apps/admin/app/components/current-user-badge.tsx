@@ -1,11 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import type { CurrentUserResponseDto } from "@retailer-search/shared-types";
 import {
   ACCESS_GOVERNANCE_CHANGED_EVENT,
-  AUTH_TOKEN_STORAGE_KEY,
 } from "../access-request-panel";
+import { AUTH_TOKEN_STORAGE_KEY, clearAuthSession, persistAuthSession } from "../auth-session";
 import { JIT_ACCESS_CHANGED_EVENT } from "../jit-access-panel";
 
 const SEARCH_API_URL =
@@ -25,9 +26,14 @@ function getAuthHeaders(): HeadersInit {
 
 interface CurrentUserBadgeProps {
   onRequestRoleChange?: () => void;
+  variant?: "header" | "sidebar";
 }
 
-export function CurrentUserBadge({ onRequestRoleChange }: CurrentUserBadgeProps) {
+export function CurrentUserBadge({
+  onRequestRoleChange,
+  variant = "header",
+}: CurrentUserBadgeProps) {
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState<CurrentUserResponseDto | null>(
     null,
   );
@@ -37,6 +43,7 @@ export function CurrentUserBadge({ onRequestRoleChange }: CurrentUserBadgeProps)
   const [signingIn, setSigningIn] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isSidebar = variant === "sidebar";
 
   const loadCurrentUser = useCallback(async () => {
     setLoading(true);
@@ -106,7 +113,7 @@ export function CurrentUserBadge({ onRequestRoleChange }: CurrentUserBadgeProps)
         throw new Error(body.message ?? "Login failed");
       }
 
-      window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, body.session.token);
+      persistAuthSession(body.session.token);
       setPassword("");
       window.dispatchEvent(new CustomEvent(ACCESS_GOVERNANCE_CHANGED_EVENT));
       window.dispatchEvent(new CustomEvent(JIT_ACCESS_CHANGED_EVENT));
@@ -130,11 +137,13 @@ export function CurrentUserBadge({ onRequestRoleChange }: CurrentUserBadgeProps)
     } catch {
       // Logout is best-effort for MVP token storage.
     } finally {
-      window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+      clearAuthSession();
       setCurrentUser({ authenticated: false });
       setSigningOut(false);
       window.dispatchEvent(new CustomEvent(ACCESS_GOVERNANCE_CHANGED_EVENT));
       window.dispatchEvent(new CustomEvent(JIT_ACCESS_CHANGED_EVENT));
+      router.push("/login");
+      router.refresh();
     }
   };
 
@@ -144,22 +153,39 @@ export function CurrentUserBadge({ onRequestRoleChange }: CurrentUserBadgeProps)
 
   if (loading) {
     return (
-      <div
-        style={{
-          border: "1px solid #cbd5e1",
-          borderRadius: 8,
-          padding: "0.75rem 1rem",
-          background: "#fff",
-          fontSize: 13,
-          color: "#64748b",
-        }}
+      <div className={isSidebar ? "forge-account-panel" : undefined}
+        style={
+          isSidebar
+            ? undefined
+            : {
+                border: "1px solid #cbd5e1",
+                borderRadius: 8,
+                padding: "0.75rem 1rem",
+                background: "#fff",
+                fontSize: 13,
+                color: "#64748b",
+              }
+        }
       >
-        Checking session…
+        <span style={{ fontSize: isSidebar ? 13 : undefined, color: "var(--forge-text-subtle)" }}>
+          Checking session…
+        </span>
       </div>
     );
   }
 
   if (!currentUser?.authenticated || !currentUser.user) {
+    if (isSidebar) {
+      return (
+        <div className="forge-account-panel">
+          <div className="forge-account-panel__name">Sign in required</div>
+          <p style={{ margin: "0.25rem 0 0", fontSize: 12, color: "var(--forge-text-subtle)" }}>
+            Use the login page to start a session.
+          </p>
+        </div>
+      );
+    }
+
     return (
       <div
         style={{
@@ -188,12 +214,7 @@ export function CurrentUserBadge({ onRequestRoleChange }: CurrentUserBadgeProps)
             onChange={(event) => setEmail(event.target.value)}
             placeholder="Email"
             required
-            style={{
-              padding: "0.45rem 0.6rem",
-              border: "1px solid #cbd5e1",
-              borderRadius: 6,
-              fontSize: 13,
-            }}
+            className="forge-input"
           />
           <input
             type="password"
@@ -201,30 +222,101 @@ export function CurrentUserBadge({ onRequestRoleChange }: CurrentUserBadgeProps)
             onChange={(event) => setPassword(event.target.value)}
             placeholder="Password"
             required
-            style={{
-              padding: "0.45rem 0.6rem",
-              border: "1px solid #cbd5e1",
-              borderRadius: 6,
-              fontSize: 13,
-            }}
+            className="forge-input"
           />
           <button
             type="submit"
             disabled={signingIn}
-            style={{
-              width: "fit-content",
-              padding: "0.45rem 0.85rem",
-              borderRadius: 6,
-              border: "1px solid #334155",
-              background: "#0f172a",
-              color: "#fff",
-              cursor: signingIn ? "wait" : "pointer",
-              fontSize: 13,
-            }}
+            className="forge-btn forge-btn--primary"
           >
             {signingIn ? "Signing in…" : "Sign in"}
           </button>
         </form>
+      </div>
+    );
+  }
+
+  const requestJit = () => {
+    if (onRequestRoleChange) {
+      onRequestRoleChange();
+      return;
+    }
+    document
+      .getElementById("jit-access")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const requestStandingRoleChange = () => {
+    document
+      .getElementById("access-requests")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  if (isSidebar) {
+    return (
+      <div
+        className={`forge-account-panel${isElevated ? " forge-account-panel--elevated" : ""}`}
+      >
+        <div>
+          <div className="forge-account-panel__name">{currentUser.user.name}</div>
+          <div className="forge-account-panel__email">{currentUser.user.email}</div>
+          <div className="forge-account-panel__meta">
+            <div>
+              Standing role:{" "}
+              <strong>{currentUser.standingRole ?? currentUser.user.role}</strong>
+            </div>
+            <div>
+              Effective role:{" "}
+              <strong style={{ color: isElevated ? "#b45309" : undefined }}>
+                {currentUser.effectiveRole ?? currentUser.user.role}
+              </strong>
+              {isElevated ? (
+                <span
+                  style={{
+                    marginLeft: 6,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: "#b45309",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Temporary
+                </span>
+              ) : null}
+            </div>
+            {currentUser.activePrivilege?.expiresAt ? (
+              <div style={{ color: "#b45309", marginTop: 4 }}>
+                Elevated access expires{" "}
+                {new Date(currentUser.activePrivilege.expiresAt).toLocaleString()}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="forge-account-panel__actions">
+          <button
+            type="button"
+            onClick={requestJit}
+            className="forge-btn forge-btn--secondary"
+          >
+            Request JIT access
+          </button>
+          <button
+            type="button"
+            onClick={requestStandingRoleChange}
+            className="forge-btn forge-btn--secondary"
+          >
+            Standing role change
+          </button>
+          <button
+            type="button"
+            disabled={signingOut}
+            onClick={() => void signOut()}
+            className="forge-btn forge-btn--ghost"
+          >
+            {signingOut ? "Signing out…" : "Sign out"}
+          </button>
+        </div>
       </div>
     );
   }
@@ -251,7 +343,7 @@ export function CurrentUserBadge({ onRequestRoleChange }: CurrentUserBadgeProps)
         </div>
         <div style={{ fontSize: 12, marginTop: 2 }}>
           Effective role:{" "}
-          <strong style={{ color: isElevated ? "#b45309" : "#0f172a" }}>
+          <strong style={{ color: isElevated ? "#b45309" : "var(--forge-primary)" }}>
             {currentUser.effectiveRole ?? currentUser.user.role}
           </strong>
           {isElevated ? (
@@ -277,44 +369,13 @@ export function CurrentUserBadge({ onRequestRoleChange }: CurrentUserBadgeProps)
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          onClick={() => {
-            if (onRequestRoleChange) {
-              onRequestRoleChange();
-              return;
-            }
-
-            document
-              .getElementById("jit-access")
-              ?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-          style={{
-            padding: "0.4rem 0.75rem",
-            borderRadius: 6,
-            border: "1px solid #b45309",
-            background: "#fffbeb",
-            cursor: "pointer",
-            fontSize: 12,
-          }}
-        >
+        <button type="button" onClick={requestJit} className="forge-btn forge-btn--secondary">
           Request JIT access
         </button>
         <button
           type="button"
-          onClick={() => {
-            document
-              .getElementById("access-requests")
-              ?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-          style={{
-            padding: "0.4rem 0.75rem",
-            borderRadius: 6,
-            border: "1px solid #2563eb",
-            background: "#eff6ff",
-            cursor: "pointer",
-            fontSize: 12,
-          }}
+          onClick={requestStandingRoleChange}
+          className="forge-btn forge-btn--secondary"
         >
           Standing role change
         </button>
@@ -322,14 +383,7 @@ export function CurrentUserBadge({ onRequestRoleChange }: CurrentUserBadgeProps)
           type="button"
           disabled={signingOut}
           onClick={() => void signOut()}
-          style={{
-            padding: "0.4rem 0.75rem",
-            borderRadius: 6,
-            border: "1px solid #64748b",
-            background: "#fff",
-            cursor: signingOut ? "wait" : "pointer",
-            fontSize: 12,
-          }}
+          className="forge-btn forge-btn--ghost"
         >
           {signingOut ? "Signing out…" : "Sign out"}
         </button>

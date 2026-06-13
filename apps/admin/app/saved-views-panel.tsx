@@ -255,8 +255,8 @@ export function SavedViewsPanel({
                 padding: "0.6rem",
                 border:
                   selectedViewId === view.id
-                    ? "1px solid #0f172a"
-                    : "1px solid #e2e8f0",
+                    ? "1px solid var(--forge-primary)"
+                    : "1px solid var(--forge-border)",
                 borderRadius: 8,
                 fontSize: 12,
                 background: selectedViewId === view.id ? "#f8fafc" : "#fff",
@@ -347,7 +347,7 @@ export function SavedViewsPanel({
               padding: "0.4rem 0.7rem",
               border: "none",
               borderRadius: 6,
-              background: "#0f172a",
+              background: "var(--forge-primary)",
               color: "#fff",
               cursor: "pointer",
               fontSize: 12,

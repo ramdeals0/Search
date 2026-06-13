@@ -407,7 +407,7 @@ export function CommentsPanel({
             padding: "0.4rem 0.7rem",
             border: "none",
             borderRadius: 6,
-            background: "#0f172a",
+            background: "var(--forge-primary)",
             color: "#fff",
             cursor: "pointer",
             fontSize: 12,

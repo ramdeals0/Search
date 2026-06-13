@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -337,4 +337,49 @@ model SystemConfig {
   updatedAt DateTime @updatedAt
 
   @@index([key])
+}
+
+model Brand {
+  id        String    @id
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+
+  @@index([name])
+}
+
+model Category {
+  id          String    @id
+  department  String
+  subcategory String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+
+  @@unique([department, subcategory])
+  @@index([department])
+}
+
+model Product {
+  id          String   @id
+  sku         String   @unique
+  title       String
+  brandId     String
+  brand       Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  description String
+  price       Float
+  inventory   Int
+  inStock     Boolean
+  imageUrl    String?
+  attributes  Json
+  createdAt   DateTime
+  updatedAt   DateTime
+
+  @@index([brandId])
+  @@index([categoryId])
+  @@index([inStock])
+  @@index([title])
 }

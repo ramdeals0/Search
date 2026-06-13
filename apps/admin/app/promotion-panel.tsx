@@ -5,7 +5,9 @@ import type {
   ActiveConfigurationDto,
   MerchandisingConfigSnapshotDto,
   PromotionHistoryResponseDto,
+  SnapshotListResponseDto,
 } from "@retailer-search/shared-types";
+import { ADMIN_SNAPSHOTS_CHANGED_EVENT } from "./snapshot-events";
 
 const SEARCH_API_URL =
   process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
@@ -76,18 +78,22 @@ export function PromotionPanel() {
         setActiveConfiguration(null);
       }
 
-      if (!snapshotsRes.ok || !historyRes.ok) {
-        throw new Error("Failed to load promotion resources");
+      if (snapshotsRes.ok) {
+        const snapshotsData =
+          (await snapshotsRes.json()) as SnapshotListResponseDto;
+        const nextSnapshots = snapshotsData.snapshots ?? [];
+        setSnapshots(nextSnapshots);
+        setSnapshotId((current) => current || nextSnapshots[0]?.id || "");
+      } else {
+        setSnapshots([]);
+        setError(`Failed to load snapshots: HTTP ${snapshotsRes.status}`);
       }
 
-      const snapshotsData = (await snapshotsRes.json()) as {
-        snapshots: MerchandisingConfigSnapshotDto[];
-      };
-      const historyData =
-        (await historyRes.json()) as PromotionHistoryResponseDto;
-
-      setSnapshots(snapshotsData.snapshots);
-      setHistory(historyData);
+      if (historyRes.ok) {
+        setHistory((await historyRes.json()) as PromotionHistoryResponseDto);
+      } else {
+        setHistory({ total: 0, entries: [] });
+      }
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -121,10 +127,12 @@ export function PromotionPanel() {
     window.addEventListener("admin:promote-prefill", prefillHandler);
     window.addEventListener("admin:active-config-changed", refreshHandler);
     window.addEventListener("admin:approvals-changed", refreshHandler);
+    window.addEventListener(ADMIN_SNAPSHOTS_CHANGED_EVENT, refreshHandler);
     return () => {
       window.removeEventListener("admin:promote-prefill", prefillHandler);
       window.removeEventListener("admin:active-config-changed", refreshHandler);
       window.removeEventListener("admin:approvals-changed", refreshHandler);
+      window.removeEventListener(ADMIN_SNAPSHOTS_CHANGED_EVENT, refreshHandler);
     };
   }, [loadPanelData]);
 
@@ -335,6 +343,13 @@ export function PromotionPanel() {
               </select>
             </label>
 
+            {snapshots.length === 0 ? (
+              <p style={{ margin: 0, fontSize: 12, color: "#b45309" }}>
+                No snapshots yet. Create one in the Snapshots panel above, then return
+                here to promote it.
+              </p>
+            ) : null}
+
             <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
               Source experiment id (optional)
               <input
@@ -364,7 +379,7 @@ export function PromotionPanel() {
                 padding: "0.55rem 0.9rem",
                 border: "none",
                 borderRadius: 6,
-                background: "#0f172a",
+                background: "var(--forge-primary)",
                 color: "#fff",
                 cursor: "pointer",
                 fontSize: 14,

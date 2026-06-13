@@ -38,10 +38,13 @@ export function EnvironmentSwitcher() {
 
   const buttonStyle = (value: EnvironmentKey) => ({
     padding: "0.4rem 0.75rem",
-    border: "1px solid #cbd5e1",
+    border:
+      environment === value
+        ? "1px solid var(--forge-primary)"
+        : "1px solid var(--forge-border-strong)",
     borderRadius: 6,
-    background: environment === value ? "#0f172a" : "#fff",
-    color: environment === value ? "#fff" : "#334155",
+    background: environment === value ? "var(--forge-primary)" : "var(--forge-surface)",
+    color: environment === value ? "#fff" : "var(--forge-text-muted)",
     cursor: "pointer" as const,
     fontSize: 13,
     fontWeight: 600,
@@ -55,9 +58,9 @@ export function EnvironmentSwitcher() {
         gap: "0.75rem",
         alignItems: "center",
         padding: "0.65rem 0.85rem",
-        border: "1px solid #e2e8f0",
+        border: "1px solid var(--forge-border)",
         borderRadius: 8,
-        background: "#fff",
+        background: "var(--forge-surface)",
         fontSize: 13,
       }}
     >

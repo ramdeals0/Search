@@ -128,6 +128,8 @@ export interface HealthResponseDto {
   database?: {
     connected: boolean;
     userCount: number;
+    productCount?: number;
+    catalogSource?: "database" | "generated-json" | "empty";
   };
 }
 
@@ -249,6 +251,39 @@ export interface SearchAnalyticsSummaryDto {
   noResultQueries: NoResultQueryDto[];
 }
 
+export interface TopProductInsightDto {
+  productId: string;
+  title: string;
+  brand: string;
+  category: string;
+  count: number;
+  source: "clicks" | "popularity";
+}
+
+export interface TopBrandInsightDto {
+  brand: string;
+  count: number;
+  source: "clicks" | "searches" | "popularity";
+}
+
+export interface TopCategoryInsightDto {
+  category: string;
+  count: number;
+  source: "clicks" | "searches" | "popularity";
+}
+
+export interface CatalogAnalyticsInsightsDto {
+  topProducts: TopProductInsightDto[];
+  topBrands: TopBrandInsightDto[];
+  topQueries: TopQueryDto[];
+  topCategories: TopCategoryInsightDto[];
+}
+
+export interface CatalogVocabularyDto {
+  brands: string[];
+  categories: string[];
+}
+
 export type MerchandisingRuleDto = MerchandisingRule;
 
 export type CreateMerchandisingRuleDto = Omit<MerchandisingRule, "id">;
@@ -262,6 +297,7 @@ export interface QueryPreviewHitDto {
   category: string;
   score: number;
   inStock: boolean;
+  rankingDebug?: RankingDebugDto;
 }
 
 export interface QueryPreviewResponseDto {

@@ -19,6 +19,7 @@ import {
 } from "./reviewer-management-panel";
 import { AnnotationPanel } from "./annotation-panel";
 import { CommentsPanel } from "./comments-panel";
+import { ADMIN_SNAPSHOTS_CHANGED_EVENT } from "./snapshot-events";
 
 const ADMIN_NOTIFICATIONS_CHANGED_EVENT = "admin:notifications-changed";
 const ADMIN_DELEGATION_CHANGED_EVENT = "admin:delegation-changed";
@@ -178,25 +179,32 @@ export function ApprovalPanel() {
         fetch(`${SEARCH_API_URL}/api/v1/admin/approval-sla`, { cache: "no-store" }),
       ]);
 
-      if (!approvalsRes.ok || !snapshotsRes.ok || !reviewersRes.ok || !slaRes.ok) {
+      if (!approvalsRes.ok || !reviewersRes.ok || !slaRes.ok) {
         throw new Error("Failed to load approval resources");
       }
 
       const approvalsData = (await approvalsRes.json()) as ApprovalListResponseDto;
-      const snapshotsData = (await snapshotsRes.json()) as {
-        snapshots: MerchandisingConfigSnapshotDto[];
-      };
       const reviewersData = (await reviewersRes.json()) as ReviewerListResponseDto;
       const slaData = (await slaRes.json()) as ApprovalSlaOverviewDto;
 
       setRequests(approvalsData.requests);
-      setSnapshots(snapshotsData.snapshots);
       setReviewers(reviewersData.reviewers);
       setSlaByRequestId(
         Object.fromEntries(
           slaData.items.map((item) => [item.approvalRequestId, item]),
         ),
       );
+
+      if (snapshotsRes.ok) {
+        const snapshotsData = (await snapshotsRes.json()) as {
+          snapshots: MerchandisingConfigSnapshotDto[];
+        };
+        const nextSnapshots = snapshotsData.snapshots ?? [];
+        setSnapshots(nextSnapshots);
+        setSnapshotId((current) => current || nextSnapshots[0]?.id || "");
+      } else {
+        setSnapshots([]);
+      }
 
       const storedActorId = window.localStorage.getItem(ADMIN_REVIEWER_STORAGE_KEY);
       const currentActorId =
@@ -234,6 +242,7 @@ export function ApprovalPanel() {
     window.addEventListener(ADMIN_DELEGATION_CHANGED_EVENT, handler);
     window.addEventListener(ADMIN_EXCEPTIONS_CHANGED_EVENT, handler);
     window.addEventListener("admin:promote-prefill", handler);
+    window.addEventListener(ADMIN_SNAPSHOTS_CHANGED_EVENT, handler);
     return () => {
       window.removeEventListener(ADMIN_APPROVALS_CHANGED_EVENT, handler);
       window.removeEventListener(ADMIN_REVIEWER_CHANGED_EVENT, handler);
@@ -241,6 +250,7 @@ export function ApprovalPanel() {
       window.removeEventListener(ADMIN_DELEGATION_CHANGED_EVENT, handler);
       window.removeEventListener(ADMIN_EXCEPTIONS_CHANGED_EVENT, handler);
       window.removeEventListener("admin:promote-prefill", handler);
+      window.removeEventListener(ADMIN_SNAPSHOTS_CHANGED_EVENT, handler);
     };
   }, [loadPanelData]);
 
@@ -618,7 +628,7 @@ export function ApprovalPanel() {
             padding: "0.55rem 0.9rem",
             border: "none",
             borderRadius: 6,
-            background: "#0f172a",
+            background: "var(--forge-primary)",
             color: "#fff",
             cursor: "pointer",
             fontSize: 14,

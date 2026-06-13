@@ -350,7 +350,7 @@ export function ApprovalSlaPanel() {
               padding: "0.5rem 0.85rem",
               border: "none",
               borderRadius: 6,
-              background: "#0f172a",
+              background: "var(--forge-primary)",
               color: "#fff",
               cursor: "pointer",
               fontSize: 13,

@@ -323,7 +323,7 @@ export function WebhookManagementPanel() {
             padding: "0.45rem 0.85rem",
             borderRadius: 6,
             border: "1px solid #334155",
-            background: "#0f172a",
+            background: "var(--forge-primary)",
             color: "#fff",
             cursor: creating ? "wait" : "pointer",
             fontSize: 13,

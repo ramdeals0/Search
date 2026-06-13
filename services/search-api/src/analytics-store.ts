@@ -63,6 +63,10 @@ export function recordSearchClick(
   return stored;
 }
 
+export function getClickEventsForInsights(): SearchClickEventDto[] {
+  return [...clickEvents];
+}
+
 export interface QueryAnalyticsRow {
   query: string;
   displayQuery: string;

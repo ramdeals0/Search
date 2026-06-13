@@ -2,6 +2,7 @@ import type {
   CreateMerchandisingRuleDto,
   EnvironmentKey,
   MerchandisingRule,
+  MerchandisingRuleCondition,
   UpdateMerchandisingRuleDto,
 } from "@retailer-search/shared-types";
 import {
@@ -41,6 +42,37 @@ function createRuleId(
   }
 
   return candidate;
+}
+
+function normalizeOptionalString(
+  value: string | null | undefined,
+): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+export function normalizeMerchandisingRuleCondition(
+  condition: MerchandisingRuleCondition,
+): MerchandisingRuleCondition {
+  const normalized: MerchandisingRuleCondition = {};
+  const query = normalizeOptionalString(condition.query);
+  const brand = normalizeOptionalString(condition.brand);
+  const category = normalizeOptionalString(condition.category);
+
+  if (query) {
+    normalized.query = query;
+  }
+  if (brand) {
+    normalized.brand = brand;
+  }
+  if (category) {
+    normalized.category = category;
+  }
+  if (condition.inStock !== undefined) {
+    normalized.inStock = condition.inStock;
+  }
+
+  return normalized;
 }
 
 export function getAllMerchandisingRules(
@@ -104,7 +136,14 @@ export function createMerchandisingRule(
   const rule: MerchandisingRule = {
     id: createRuleId(input.name, environment),
     ...input,
+    condition: normalizeMerchandisingRuleCondition(input.condition ?? {}),
   };
+  const brand = normalizeOptionalString(input.brand);
+  if (brand) {
+    rule.brand = brand;
+  } else {
+    delete rule.brand;
+  }
   const rules = getMutableRulesForEnvironment(environment);
   rules.push(rule);
   touchEnvironment(environment);
@@ -126,11 +165,21 @@ export function updateMerchandisingRule(
     ...rules[index],
     ...input,
     id,
-    condition: {
-      ...rules[index].condition,
-      ...input.condition,
-    },
   };
+
+  if (input.condition !== undefined) {
+    updated.condition = normalizeMerchandisingRuleCondition(input.condition);
+  }
+
+  if ("brand" in input) {
+    const brand = normalizeOptionalString(input.brand);
+    if (brand) {
+      updated.brand = brand;
+    } else {
+      delete updated.brand;
+    }
+  }
+
   rules[index] = updated;
   touchEnvironment(environment);
   return structuredClone(updated);

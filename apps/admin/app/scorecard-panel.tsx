@@ -153,7 +153,7 @@ export function ScorecardPanel() {
             padding: "0.45rem 0.75rem",
             border: "none",
             borderRadius: 6,
-            background: experimentId ? "#0f172a" : "#94a3b8",
+            background: experimentId ? "var(--forge-primary)" : "#94a3b8",
             color: "#fff",
             cursor: experimentId ? "pointer" : "not-allowed",
             fontSize: 12,

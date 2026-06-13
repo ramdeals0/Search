@@ -4,81 +4,11 @@ import type {
   EnvironmentListResponseDto,
   MerchandisingRule,
 } from "@retailer-search/shared-types";
-
-export const DEFAULT_MERCHANDISING_RULES: MerchandisingRule[] = [
-  {
-    id: "rule-pin-rice",
-    name: "Pin featured rice for rice searches",
-    active: true,
-    priority: 100,
-    action: "pin",
-    condition: { query: "rice" },
-    productIds: ["prod-021"],
-  },
-  {
-    id: "rule-boost-barilla-basmati",
-    name: "Boost Barilla for basmati searches",
-    active: true,
-    priority: 90,
-    action: "boost",
-    condition: { query: "basmati" },
-    brand: "Barilla",
-    boostAmount: 40,
-  },
-  {
-    id: "rule-boost-snacks-category",
-    name: "Boost Snacks category",
-    active: true,
-    priority: 80,
-    action: "boost",
-    condition: { query: "snacks", category: "Snacks" },
-    boostAmount: 35,
-  },
-  {
-    id: "rule-hide-salsa-oos",
-    name: "Hide out-of-stock habanero salsa",
-    active: true,
-    priority: 70,
-    action: "hide",
-    condition: { query: "salsa" },
-    productIds: ["prod-008"],
-  },
-  {
-    id: "rule-bury-clearance-premium",
-    name: "Bury premium items on clearance searches",
-    active: true,
-    priority: 60,
-    action: "bury",
-    condition: { query: "clearance" },
-    buryAmount: 30,
-  },
-  {
-    id: "rule-default-instock-boost",
-    name: "Default in-stock boost",
-    active: true,
-    priority: 10,
-    action: "boost",
-    condition: { inStock: true },
-    boostAmount: 5,
-  },
-  {
-    id: "rule-bury-oos",
-    name: "Bury out-of-stock items",
-    active: true,
-    priority: 5,
-    action: "bury",
-    condition: { inStock: false },
-    buryAmount: 15,
-  },
-];
-
-export const DEFAULT_TOKEN_SYNONYMS: Record<string, string> = {
-  atta: "flour",
-  soda: "beverages",
-  pop: "beverages",
-  chilli: "chili",
-  paneer: "cheese",
-};
+import { getSystemConfig } from "./bootstrap-store.js";
+import {
+  buildDemoMerchandisingRules,
+  buildSynonymMap,
+} from "./demo-search-config.js";
 
 interface EnvironmentState {
   rules: MerchandisingRule[];
@@ -98,8 +28,8 @@ function cloneSynonyms(synonyms: Record<string, string>): Record<string, string>
 
 function createInitialState(): EnvironmentState {
   return {
-    rules: cloneRules(DEFAULT_MERCHANDISING_RULES),
-    synonyms: cloneSynonyms(DEFAULT_TOKEN_SYNONYMS),
+    rules: cloneRules(buildDemoMerchandisingRules()),
+    synonyms: cloneSynonyms(buildSynonymMap()),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -125,6 +55,31 @@ function toConfigurationDto(environment: EnvironmentKey): EnvironmentConfigurati
       synonyms: Object.keys(state.synonyms).length,
     },
   };
+}
+
+export async function hydrateEnvironmentConfigStore(): Promise<void> {
+  const [stagingRules, liveRules, stagingSynonyms, liveSynonyms] = await Promise.all([
+    getSystemConfig<MerchandisingRule[]>("demo.search.rules.staging"),
+    getSystemConfig<MerchandisingRule[]>("demo.search.rules.live"),
+    getSystemConfig<Record<string, string>>("demo.search.synonyms.staging"),
+    getSystemConfig<Record<string, string>>("demo.search.synonyms.live"),
+  ]);
+
+  if (stagingRules && stagingRules.length > 0) {
+    replaceRulesForEnvironment("staging", stagingRules);
+  }
+
+  if (liveRules && liveRules.length > 0) {
+    replaceRulesForEnvironment("live", liveRules);
+  }
+
+  if (stagingSynonyms && Object.keys(stagingSynonyms).length > 0) {
+    replaceSynonymsForEnvironment("staging", stagingSynonyms);
+  }
+
+  if (liveSynonyms && Object.keys(liveSynonyms).length > 0) {
+    replaceSynonymsForEnvironment("live", liveSynonyms);
+  }
 }
 
 export function getEnvironmentConfig(

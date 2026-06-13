@@ -4,13 +4,20 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { BootstrapStateDto, LoginResponseDto } from "@retailer-search/shared-types";
-import { AUTH_TOKEN_STORAGE_KEY } from "../access-request-panel";
+import {
+  AUTH_TOKEN_COOKIE_NAME,
+  AUTH_TOKEN_STORAGE_KEY,
+  persistAuthSession,
+} from "../auth-session";
+import { ForgeOpsLogo } from "../admin/admin-page-header";
+import "../globals.css";
 
 const SEARCH_API_URL =
   process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export default function LoginPage() {
   const router = useRouter();
+  const [nextPath, setNextPath] = useState<string | null>(null);
   const [setupStatus, setSetupStatus] = useState<BootstrapStateDto | null>(null);
   const [loadingSetup, setLoadingSetup] = useState(true);
   const [email, setEmail] = useState("");
@@ -19,6 +26,17 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const next = new URLSearchParams(window.location.search).get("next");
+    setNextPath(next);
+
+    const storedToken = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+    const hasCookie = document.cookie.includes(`${AUTH_TOKEN_COOKIE_NAME}=`);
+    if (storedToken && !hasCookie) {
+      persistAuthSession(storedToken);
+      router.replace(next?.startsWith("/admin") ? next : "/admin");
+      return;
+    }
+
     void (async () => {
       try {
         const response = await fetch(`${SEARCH_API_URL}/api/v1/setup/status`, {
@@ -60,8 +78,8 @@ export default function LoginPage() {
         throw new Error(body.message ?? "Login failed");
       }
 
-      window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, body.session.token);
-      router.push("/");
+      persistAuthSession(body.session.token);
+      router.push(nextPath?.startsWith("/admin") ? nextPath : "/admin");
       router.refresh();
     } catch (signInError) {
       setError(signInError instanceof Error ? signInError.message : "Login failed");
@@ -72,87 +90,110 @@ export default function LoginPage() {
 
   if (loadingSetup) {
     return (
-      <main style={{ maxWidth: 420, margin: "0 auto", padding: "2rem 1.5rem" }}>
-        <p style={{ color: "#64748b", fontSize: 14 }}>Checking instance status…</p>
-      </main>
+      <div className="forge-auth-page">
+        <div className="forge-auth-card">
+          <ForgeOpsLogo />
+          <p style={{ marginTop: "1rem", color: "var(--forge-text-subtle)", fontSize: 14 }}>
+            Checking instance status…
+          </p>
+        </div>
+      </div>
     );
   }
 
   if (setupStatus?.setupRequired) {
     return (
-      <main style={{ maxWidth: 420, margin: "0 auto", padding: "2rem 1.5rem" }}>
-        <h1 style={{ marginTop: 0, fontSize: 24 }}>Admin sign in</h1>
-        <div
-          style={{
-            border: "1px solid #fcd34d",
-            background: "#fffbeb",
-            borderRadius: 8,
-            padding: "1rem",
-            fontSize: 14,
-            color: "#92400e",
-          }}
-        >
-          This instance requires initial setup before sign-in.
+      <div className="forge-auth-page">
+        <div className="forge-auth-card">
+          <div className="forge-auth-card__header">
+            <ForgeOpsLogo />
+            <h1 className="forge-auth-card__title">Sign in to ForgeOps</h1>
+            <p className="forge-auth-card__subtitle">
+              Initial setup is required before the operations console is available.
+            </p>
+          </div>
+          <div
+            className="forge-callout"
+            style={{
+              background: "var(--forge-warning-bg)",
+              borderColor: "#fcd34d",
+              color: "var(--forge-warning)",
+            }}
+          >
+            This instance requires initial setup before sign-in.
+          </div>
+          <p style={{ marginTop: "1rem", fontSize: 14 }}>
+            <Link href="/setup" style={{ fontWeight: 600 }}>
+              Continue to setup wizard
+            </Link>
+          </p>
         </div>
-        <p style={{ marginTop: 16, fontSize: 14 }}>
-          <Link href="/setup" style={{ color: "#2563eb", fontWeight: 600 }}>
-            Continue to setup wizard
-          </Link>
-        </p>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main style={{ maxWidth: 420, margin: "0 auto", padding: "2rem 1.5rem" }}>
-      <h1 style={{ marginTop: 0, fontSize: 24 }}>Admin sign in</h1>
-      <p style={{ marginTop: 0, color: "#64748b", fontSize: 14 }}>
-        Sign in with your admin credentials to access merchandising controls.
-      </p>
+    <div className="forge-auth-page">
+      <div className="forge-auth-card">
+        <div className="forge-auth-card__header">
+          <ForgeOpsLogo />
+          <h1 className="forge-auth-card__title">Sign in to ForgeOps</h1>
+          <p className="forge-auth-card__subtitle">
+            Merchandising, search operations, and governance for home-improvement catalogs.
+          </p>
+        </div>
 
-      {error ? (
-        <p style={{ color: "#b91c1c", fontSize: 13 }}>{error}</p>
-      ) : null}
+        {error ? (
+          <div
+            className="forge-callout"
+            style={{
+              marginBottom: "1rem",
+              background: "var(--forge-error-bg)",
+              borderColor: "#fecaca",
+              color: "var(--forge-error)",
+            }}
+          >
+            {error}
+          </div>
+        ) : null}
 
-      <form onSubmit={signIn} style={{ display: "grid", gap: 10, marginTop: 16 }}>
-        <input
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="Email"
-          required
-          style={inputStyle}
-        />
-        <input
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="Password"
-          required
-          style={inputStyle}
-        />
-        <button type="submit" disabled={submitting} style={buttonStyle}>
-          {submitting ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
-    </main>
+        <form onSubmit={signIn} style={{ display: "grid", gap: 12 }}>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--forge-text-muted)" }}>
+              Email
+            </span>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@company.com"
+              required
+              className="forge-input"
+            />
+          </label>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--forge-text-muted)" }}>
+              Password
+            </span>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Enter your password"
+              required
+              className="forge-input"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="forge-btn forge-btn--primary"
+            style={{ marginTop: 4, width: "100%" }}
+          >
+            {submitting ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
-
-const inputStyle: React.CSSProperties = {
-  padding: "0.5rem 0.65rem",
-  border: "1px solid #cbd5e1",
-  borderRadius: 6,
-  fontSize: 14,
-};
-
-const buttonStyle: React.CSSProperties = {
-  width: "fit-content",
-  padding: "0.5rem 0.9rem",
-  borderRadius: 6,
-  border: "1px solid #334155",
-  background: "#0f172a",
-  color: "#fff",
-  cursor: "pointer",
-  fontSize: 14,
-};

@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import type { QueryPreviewResponseDto } from "@retailer-search/shared-types";
+import { RankingScoreBreakdown } from "./ranking-score-breakdown";
 
 const SEARCH_API_URL =
   process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 export function QueryPreview() {
-  const [query, setQuery] = useState("rice");
+  const [query, setQuery] = useState("cordless drill");
   const [preview, setPreview] = useState<QueryPreviewResponseDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -76,7 +77,7 @@ export function QueryPreview() {
             padding: "0.55rem 0.9rem",
             border: "none",
             borderRadius: 6,
-            background: "#0f172a",
+            background: "var(--forge-primary)",
             color: "#fff",
             cursor: "pointer",
           }}
@@ -109,7 +110,7 @@ export function QueryPreview() {
               gap: "0.5rem",
             }}
           >
-            {preview.hits.map((hit) => (
+            {preview.hits.map((hit, index) => (
               <li
                 key={hit.id}
                 style={{
@@ -119,14 +120,34 @@ export function QueryPreview() {
                   fontSize: 14,
                 }}
               >
-                <strong>{hit.title}</strong>
-                <span style={{ color: "#64748b" }}>
-                  {" "}
-                  · {hit.brand} · {hit.category}
-                </span>
-                <span style={{ float: "right", color: "#475569" }}>
-                  score {hit.score.toFixed(1)}
-                </span>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: "0.75rem",
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <div>
+                    <strong>{hit.title}</strong>
+                    <span style={{ color: "#64748b" }}>
+                      {" "}
+                      · {hit.brand} · {hit.category}
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      color: "#475569",
+                      fontVariantNumeric: "tabular-nums",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    score {hit.score.toFixed(1)}
+                  </span>
+                </div>
+                {hit.rankingDebug ? (
+                  <RankingScoreBreakdown rankingDebug={hit.rankingDebug} rank={index + 1} />
+                ) : null}
               </li>
             ))}
           </ul>

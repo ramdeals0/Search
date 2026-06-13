@@ -8,7 +8,7 @@ import type {
   ConfigureBootstrapSecurityRequestDto,
   CreateBootstrapAdminRequestDto,
 } from "@retailer-search/shared-types";
-import { AUTH_TOKEN_STORAGE_KEY } from "../access-request-panel";
+import { AUTH_TOKEN_STORAGE_KEY, persistAuthSession } from "../auth-session";
 
 const SEARCH_API_URL =
   process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
@@ -151,7 +151,7 @@ export function SetupWizard({ initialState }: SetupWizardProps) {
       };
 
       if (body.session?.token) {
-        window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, body.session.token);
+        persistAuthSession(body.session.token);
       }
 
       const statusResponse = await fetch(`${SEARCH_API_URL}/api/v1/setup/status`, {
@@ -648,7 +648,7 @@ const primaryButtonStyle: React.CSSProperties = {
   padding: "0.5rem 0.9rem",
   borderRadius: 6,
   border: "1px solid #334155",
-  background: "#0f172a",
+  background: "var(--forge-primary)",
   color: "#fff",
   cursor: "pointer",
   fontSize: 13,

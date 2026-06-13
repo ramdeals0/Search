@@ -25,9 +25,9 @@ export function QuerySetEditor() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [queries, setQueries] = useState<EvaluationQueryDto[]>([
-    { query: "rice", expectedProductIds: ["prod-021"] },
-    { query: "basmati" },
-    { query: "snacks", tags: ["category-browse"] },
+    { query: "drill", expectedProductIds: ["prod-021"] },
+    { query: "impact driver" },
+    { query: "fasteners", tags: ["category-browse"] },
   ]);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -135,7 +135,7 @@ export function QuerySetEditor() {
             required
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Core grocery search queries"
+            placeholder="Core catalog search queries"
             style={inputStyle}
           />
         </label>
@@ -145,7 +145,7 @@ export function QuerySetEditor() {
           <input
             value={description}
             onChange={(event) => setDescription(event.target.value)}
-            placeholder="Broad and narrow queries for rice and snacks"
+            placeholder="Broad and narrow queries for drills and hardware"
             style={inputStyle}
           />
         </label>
@@ -168,7 +168,7 @@ export function QuerySetEditor() {
                 <input
                   value={query.query}
                   onChange={(event) => updateQuery(index, "query", event.target.value)}
-                  placeholder="rice"
+                  placeholder="drill"
                   style={inputStyle}
                 />
               </label>
@@ -196,7 +196,7 @@ export function QuerySetEditor() {
                 <input
                   value={query.tags?.join(", ") ?? ""}
                   onChange={(event) => updateQuery(index, "tags", event.target.value)}
-                  placeholder="rice, hero-product"
+                  placeholder="drill, hero-product"
                   style={inputStyle}
                 />
               </label>
@@ -243,7 +243,7 @@ export function QuerySetEditor() {
               padding: "0.55rem 0.9rem",
               border: "none",
               borderRadius: 6,
-              background: "#0f172a",
+              background: "var(--forge-primary)",
               color: "#fff",
               cursor: "pointer",
               fontSize: 14,

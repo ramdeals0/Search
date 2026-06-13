@@ -2,13 +2,17 @@
 
 import { useState } from "react";
 import type {
+  CatalogVocabularyDto,
   CreateMerchandisingRuleDto,
   MerchandisingRule,
   MerchandisingRuleAction,
+  MerchandisingRuleCondition,
 } from "@retailer-search/shared-types";
+import { CatalogAutocompleteInput } from "./catalog-autocomplete-input";
 
 interface RuleFormProps {
   initialRule?: MerchandisingRule;
+  catalogVocabulary: CatalogVocabularyDto;
   onSubmit: (payload: CreateMerchandisingRuleDto) => Promise<void>;
   onCancel: () => void;
 }
@@ -22,7 +26,31 @@ const emptyForm: CreateMerchandisingRuleDto = {
   boostAmount: 10,
 };
 
-export function RuleForm({ initialRule, onSubmit, onCancel }: RuleFormProps) {
+function buildConditionPayload(
+  condition: MerchandisingRuleCondition,
+): MerchandisingRuleCondition {
+  const next: MerchandisingRuleCondition = {};
+  const query = condition.query?.trim();
+  const brand = condition.brand?.trim();
+  const category = condition.category?.trim();
+
+  if (query) {
+    next.query = query;
+  }
+  if (brand) {
+    next.brand = brand;
+  }
+  if (category) {
+    next.category = category;
+  }
+  if (condition.inStock !== undefined) {
+    next.inStock = condition.inStock;
+  }
+
+  return next;
+}
+
+export function RuleForm({ initialRule, catalogVocabulary, onSubmit, onCancel }: RuleFormProps) {
   const [form, setForm] = useState<CreateMerchandisingRuleDto>(
     initialRule ?? emptyForm,
   );
@@ -46,6 +74,8 @@ export function RuleForm({ initialRule, onSubmit, onCancel }: RuleFormProps) {
 
     const payload: CreateMerchandisingRuleDto = {
       ...form,
+      condition: buildConditionPayload(form.condition),
+      brand: form.brand?.trim() ? form.brand.trim() : "",
       productIds: productIds
         .split(",")
         .map((item) => item.trim())
@@ -172,28 +202,38 @@ export function RuleForm({ initialRule, onSubmit, onCancel }: RuleFormProps) {
           </label>
           <label style={{ display: "grid", gap: 4, fontSize: 14 }}>
             Brand
-            <input
+            <CatalogAutocompleteInput
               value={form.condition.brand ?? ""}
-              onChange={(event) =>
-                updateField("condition", {
-                  ...form.condition,
-                  brand: event.target.value || undefined,
-                })
-              }
-              style={inputStyle}
+              options={catalogVocabulary.brands}
+              placeholder="Select or type a brand"
+              onChange={(brand) => {
+                const next = { ...form.condition };
+                const trimmed = brand.trim();
+                if (trimmed) {
+                  next.brand = trimmed;
+                } else {
+                  delete next.brand;
+                }
+                updateField("condition", next);
+              }}
             />
           </label>
           <label style={{ display: "grid", gap: 4, fontSize: 14 }}>
             Category
-            <input
+            <CatalogAutocompleteInput
               value={form.condition.category ?? ""}
-              onChange={(event) =>
-                updateField("condition", {
-                  ...form.condition,
-                  category: event.target.value || undefined,
-                })
-              }
-              style={inputStyle}
+              options={catalogVocabulary.categories}
+              placeholder="Select or type a category"
+              onChange={(category) => {
+                const next = { ...form.condition };
+                const trimmed = category.trim();
+                if (trimmed) {
+                  next.category = trimmed;
+                } else {
+                  delete next.category;
+                }
+                updateField("condition", next);
+              }}
             />
           </label>
           <label style={{ display: "grid", gap: 4, fontSize: 14 }}>
@@ -225,10 +265,11 @@ export function RuleForm({ initialRule, onSubmit, onCancel }: RuleFormProps) {
 
       <label style={{ display: "grid", gap: 4, fontSize: 14 }}>
         Target brand (optional)
-        <input
+        <CatalogAutocompleteInput
           value={form.brand ?? ""}
-          onChange={(event) => updateField("brand", event.target.value || undefined)}
-          style={inputStyle}
+          options={catalogVocabulary.brands}
+          placeholder="Select or type a target brand"
+          onChange={(brand) => updateField("brand", brand.trim() ? brand.trim() : undefined)}
         />
       </label>
 
@@ -288,7 +329,7 @@ export function RuleForm({ initialRule, onSubmit, onCancel }: RuleFormProps) {
             padding: "0.55rem 0.9rem",
             border: "none",
             borderRadius: 6,
-            background: "#0f172a",
+            background: "var(--forge-primary)",
             color: "#fff",
             cursor: "pointer",
           }}

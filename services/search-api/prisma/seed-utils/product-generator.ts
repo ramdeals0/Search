@@ -11,6 +11,7 @@ import {
 } from "../seed-data/brands.js";
 import {
   HERO_PRODUCT_TEMPLATES,
+  LEAF_SEARCH_KEYWORDS,
   VARIANT_FAMILY_TEMPLATES,
   type HeroProductTemplate,
   type VariantFamilyTemplate,
@@ -257,6 +258,7 @@ function mapSimpleProduct(input: {
     input.leaf.productType.toLowerCase(),
     input.leaf.subcategory.toLowerCase(),
     input.brand.name.toLowerCase(),
+    ...(LEAF_SEARCH_KEYWORDS[input.leaf.id] ?? []),
   ];
 
   return {

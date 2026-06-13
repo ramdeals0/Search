@@ -47,7 +47,16 @@ export function ActionPreview({
 
         const response = await fetch(url.toString(), { cache: "no-store" });
         if (!response.ok) {
-          throw new Error(`Preview failed with HTTP ${response.status}`);
+          let message = `Preview failed with HTTP ${response.status}`;
+          try {
+            const body = (await response.json()) as { error?: string };
+            if (body.error) {
+              message = body.error;
+            }
+          } catch {
+            // Keep the status-based fallback message.
+          }
+          throw new Error(message);
         }
 
         if (!cancelled) {
@@ -197,7 +206,7 @@ export function ActionPreview({
                   padding: "0.55rem 0.9rem",
                   border: "none",
                   borderRadius: 6,
-                  background: "#0f172a",
+                  background: "var(--forge-primary)",
                   color: "#fff",
                   cursor: "pointer",
                   fontSize: 14,

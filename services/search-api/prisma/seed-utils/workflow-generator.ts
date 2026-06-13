@@ -9,6 +9,7 @@ import type {
 } from "@prisma/client";
 import type { ProductDocument } from "@retailer-search/shared-types";
 import { DEMO_USERS } from "../seed-data/demo-users.js";
+import { DEMO_HERO_QUERIES } from "../seed-data/search-rules.js";
 import { createSeededRng, DEMO_RNG_SEED, isoDateDaysAgo, seedId } from "./random.js";
 
 export interface DemoExperimentBundle {
@@ -57,19 +58,21 @@ export interface WorkflowSeedBundle {
   experiments: DemoExperimentBundle;
 }
 
-const SEARCH_QUERIES = [
-  "cordless drill",
-  "ceiling fan",
-  "weed eater",
-  "drywall screws",
-  "shop vac",
-  "gfci outlet",
-  "pressure washer",
-  "mulch",
-  "primer",
-  "smoke detector",
-  "extension cord",
-  "breaker box",
+const SEARCH_QUERIES = DEMO_HERO_QUERIES.map((entry) => entry.query);
+
+const APPROVAL_SCENARIOS = [
+  "Boost contractor-grade cordless drills",
+  "Reduce out-of-stock pressure washer visibility",
+  "Promote spring mulch assortment",
+  "Improve zero-result recovery for sheetrock-related queries",
+  "Promote high-efficiency smart thermostats",
+  "Pin hero shop vac for wet dry vacuum searches",
+  "Boost GFCI outlet pack for kitchen and bath remodel queries",
+  "Hide out-of-stock ceiling fans on broad fan searches",
+  "Boost LED shop lights for garage lighting queries",
+  "Promote miter saw assortment for trim carpentry queries",
+  "Boost bathroom faucet results for vanity upgrade queries",
+  "Reduce clearance paint noise on budget interior paint searches",
 ];
 
 function actor(userId: string) {
@@ -120,7 +123,7 @@ export function buildWorkflowSeedBundle(
       snapshotId: `snapshot-demo-${String(index + 1).padStart(2, "0")}`,
       snapshotName: `Home Improvement Search Config ${index + 1}`,
       requestedBy: { actorId: requester.actorId, actorLabel: requester.actorLabel },
-      reason: `Promote merchandising updates for "${SEARCH_QUERIES[index % SEARCH_QUERIES.length]}".`,
+      reason: `${APPROVAL_SCENARIOS[index % APPROVAL_SCENARIOS.length]} (${SEARCH_QUERIES[index % SEARCH_QUERIES.length]}).`,
       assignedReviewerIds: ["user-reviewer", "user-approver"],
       requiredApprovalCount: 1,
       linkedExperimentId: index < 3 ? `exp-demo-${index + 1}` : undefined,
@@ -181,7 +184,7 @@ export function buildWorkflowSeedBundle(
       updatedAt: createdAt,
       type: ["approval_requested", "approval_approved", "jit_requested", "export_ready"][index % 4]!,
       title: `Demo notification ${index + 1}`,
-      message: "Synthetic home improvement merchandising notification.",
+      message: `Synthetic home improvement merchandising notification for ${SEARCH_QUERIES[index % SEARCH_QUERIES.length]}.`,
       relatedApprovalRequestId:
         index % 3 === 0 ? `approval-demo-${String((index % 12) + 1).padStart(2, "0")}` : undefined,
       recipientActorId: DEMO_USERS[index % DEMO_USERS.length]!.id,
@@ -198,7 +201,7 @@ export function buildWorkflowSeedBundle(
       targetType: index % 2 === 0 ? "product" : "approval_request",
       targetId: index % 2 === 0 ? product.id : `approval-demo-${String((index % 12) + 1).padStart(2, "0")}`,
       author: { actorId: author.actorId, actorLabel: author.actorLabel, name: author.actorName },
-      message: `Demo comment on ${product.title}.`,
+      message: `Review ranking for ${SEARCH_QUERIES[index % SEARCH_QUERIES.length]} on ${product.title}.`,
       createdAt,
       updatedAt: createdAt,
       status: index % 5 === 0 ? "resolved" : "open",
@@ -216,7 +219,7 @@ export function buildWorkflowSeedBundle(
       targetId: product.id,
       author: { actorId: author.actorId, actorLabel: author.actorLabel, name: author.actorName },
       anchorLabel: "Search ranking",
-      note: `Annotation for ${product.title}.`,
+      note: `Ranking annotation for "${SEARCH_QUERIES[index % SEARCH_QUERIES.length]}" on ${product.title}.`,
       createdAt,
       updatedAt: createdAt,
       tags: ["demo"],
@@ -305,48 +308,127 @@ export function buildWorkflowSeedBundle(
     {
       id: "qset-demo-power-tools",
       name: "Power Tools Search Relevance",
-      description: "Cordless drill, impact driver, and shop vac queries.",
+      description: "Boost contractor-grade cordless drills and shop vac coverage.",
       queries: [
-        { query: "cordless drill", expectedProductIds: heroIds.slice(0, 2), tags: ["power-tools"] },
-        { query: "shop vac", tags: ["power-tools"] },
+        { query: "cordless drill", expectedProductIds: heroIds.slice(0, 2), tags: ["power-tools", "contractor"] },
+        { query: "impact driver", expectedProductIds: ["prod-hero-002"], tags: ["power-tools"] },
+        { query: "shop vac", expectedProductIds: ["prod-hero-003"], tags: ["power-tools"] },
+        { query: "miter saw", expectedProductIds: ["prod-hero-026"], tags: ["power-tools"] },
       ],
       createdAt: isoDateDaysAgo(rng, 30),
     },
     {
       id: "qset-demo-seasonal-lawn",
       name: "Seasonal Lawn & Garden",
-      description: "Seasonal merchandising coverage.",
-      queries: [{ query: "mulch" }, { query: "weed eater" }],
+      description: "Promote spring mulch assortment and outdoor power equipment.",
+      queries: [
+        { query: "mulch", expectedProductIds: ["prod-hero-017"], tags: ["seasonal", "lawn-garden"] },
+        { query: "weed eater", expectedProductIds: ["prod-hero-021"], tags: ["outdoor-power"] },
+        { query: "leaf blower", expectedProductIds: ["prod-hero-032"], tags: ["outdoor-power"] },
+      ],
       createdAt: isoDateDaysAgo(rng, 25),
     },
     {
       id: "qset-demo-electrical-lighting",
       name: "Electrical & Lighting",
-      description: "Electrical and lighting upgrade queries.",
-      queries: [{ query: "gfci outlet" }, { query: "ceiling fan" }],
+      description: "GFCI, ceiling fan, and LED shop light upgrade queries.",
+      queries: [
+        { query: "gfci outlet", expectedProductIds: ["prod-hero-008"], tags: ["electrical"] },
+        { query: "ceiling fan", expectedProductIds: ["prod-hero-009"], tags: ["lighting"] },
+        { query: "led shop light", expectedProductIds: ["prod-hero-013"], tags: ["lighting"] },
+      ],
       createdAt: isoDateDaysAgo(rng, 20),
+    },
+    {
+      id: "qset-demo-plumbing-paint",
+      name: "Plumbing & Paint Recovery",
+      description: "Improve zero-result recovery for sheetrock and bathroom upgrade queries.",
+      queries: [
+        { query: "sheetrock", expectedProductIds: ["prod-hero-025"], tags: ["building-materials"] },
+        { query: "bathroom faucet", expectedProductIds: ["prod-hero-012"], tags: ["plumbing"] },
+        { query: "paint sprayer", expectedProductIds: ["prod-hero-041"], tags: ["paint"] },
+        { query: "interior paint", expectedProductIds: ["prod-hero-010"], tags: ["paint"] },
+      ],
+      createdAt: isoDateDaysAgo(rng, 15),
+    },
+    {
+      id: "qset-demo-appliances-storage",
+      name: "Appliances & Storage",
+      description: "Smart thermostat and garage storage relevance checks.",
+      queries: [
+        { query: "smart thermostat", expectedProductIds: ["prod-hero-023", "prod-hero-050"], tags: ["smart-home"] },
+        { query: "water heater", expectedProductIds: ["prod-hero-031"], tags: ["hvac"] },
+        { query: "storage shelving", expectedProductIds: ["prod-hero-049"], tags: ["storage"] },
+        { query: "pressure washer", expectedProductIds: ["prod-hero-018"], tags: ["outdoor-power"] },
+      ],
+      createdAt: isoDateDaysAgo(rng, 10),
     },
   ];
 
-  const experiments = querySets.map((querySet, index) => ({
-    id: `exp-demo-${index + 1}`,
-    name: `${querySet.name} Experiment`,
-    description: querySet.description,
-    status: index === 0 ? "run" : index === 1 ? "draft" : "completed",
-    querySetId: querySet.id,
-    baselineSnapshotId: `snapshot-demo-baseline-${index + 1}`,
-    candidateSnapshotId: `snapshot-demo-candidate-${index + 1}`,
-    createdAt: querySet.createdAt,
-    lastRunAt: index === 0 ? isoDateDaysAgo(rng, 3) : undefined,
-  }));
+  const experiments = [
+    {
+      id: "exp-demo-1",
+      name: "Boost contractor-grade cordless drills",
+      description: "Compare baseline vs candidate ranking for drill/driver queries.",
+      status: "run",
+      querySetId: "qset-demo-power-tools",
+      baselineSnapshotId: "snapshot-demo-baseline-1",
+      candidateSnapshotId: "snapshot-demo-candidate-1",
+      createdAt: querySets[0]!.createdAt,
+      lastRunAt: isoDateDaysAgo(rng, 3),
+    },
+    {
+      id: "exp-demo-2",
+      name: "Reduce out-of-stock pressure washer visibility",
+      description: "Candidate buries OOS pressure washers on broad searches.",
+      status: "draft",
+      querySetId: "qset-demo-appliances-storage",
+      baselineSnapshotId: "snapshot-demo-baseline-2",
+      candidateSnapshotId: "snapshot-demo-candidate-2",
+      createdAt: querySets[4]!.createdAt,
+    },
+    {
+      id: "exp-demo-3",
+      name: "Promote spring mulch assortment",
+      description: "Seasonal boost experiment for mulch and lawn queries.",
+      status: "completed",
+      querySetId: "qset-demo-seasonal-lawn",
+      baselineSnapshotId: "snapshot-demo-baseline-3",
+      candidateSnapshotId: "snapshot-demo-candidate-3",
+      createdAt: querySets[1]!.createdAt,
+      lastRunAt: isoDateDaysAgo(rng, 7),
+    },
+    {
+      id: "exp-demo-4",
+      name: "Improve zero-result recovery for sheetrock-related queries",
+      description: "Synonym and fallback tuning for drywall vocabulary.",
+      status: "completed",
+      querySetId: "qset-demo-plumbing-paint",
+      baselineSnapshotId: "snapshot-demo-baseline-4",
+      candidateSnapshotId: "snapshot-demo-candidate-4",
+      createdAt: querySets[3]!.createdAt,
+      lastRunAt: isoDateDaysAgo(rng, 5),
+    },
+    {
+      id: "exp-demo-5",
+      name: "Promote high-efficiency smart thermostats",
+      description: "Boost learning thermostats for smart home upgrade queries.",
+      status: "run",
+      querySetId: "qset-demo-appliances-storage",
+      baselineSnapshotId: "snapshot-demo-baseline-5",
+      candidateSnapshotId: "snapshot-demo-candidate-5",
+      createdAt: querySets[4]!.createdAt,
+      lastRunAt: isoDateDaysAgo(rng, 2),
+    },
+  ];
 
   const runs = Array.from({ length: 8 }, (_, index) => ({
-    experimentId: `exp-demo-${(index % 3) + 1}`,
+    experimentId: `exp-demo-${(index % 5) + 1}`,
     runAt: isoDateDaysAgo(rng, 14 - index),
     totalQueries: 12 + index,
     avgLatencyMs: 35 + index * 4,
     winner: (index % 3 === 0 ? "candidate" : index % 3 === 1 ? "baseline" : "tie") as "baseline" | "candidate" | "tie",
-    notes: `Demo experiment run ${index + 1}.`,
+    notes: `Demo run for "${experiments[(index % 5)]!.name}" on ${SEARCH_QUERIES[index % SEARCH_QUERIES.length]}.`,
   }));
 
   return {
