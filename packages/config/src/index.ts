@@ -5,12 +5,18 @@ const envSchema = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
   SEARCH_API_PORT: z.preprocess(
-    (value) => {
-      if (value !== undefined && value !== "") {
-        return value;
+    (_value) => {
+      // Railway and other PaaS inject PORT; it must win over SEARCH_API_PORT.
+      if (process.env.PORT !== undefined && process.env.PORT !== "") {
+        return process.env.PORT;
       }
 
-      return process.env.PORT;
+      const configured = process.env.SEARCH_API_PORT;
+      if (configured !== undefined && configured !== "") {
+        return configured;
+      }
+
+      return 4001;
     },
     z.coerce.number().int().positive().default(4001),
   ),

@@ -73,6 +73,8 @@ pnpm exec prisma db seed
 
 On Railway deploy, migrations run automatically via `nixpacks.toml` (`prisma migrate deploy` during build). Set the search-api service variable `DATABASE_URL` to your Railway Postgres reference (for example `${{Postgres.DATABASE_URL}}`), not the public proxy URL, when both services run in the same Railway project.
 
+**Important:** `DATABASE_URL` must be set on the search-api service before deploy. Migrations run at **container start** (`start:prod`), not during the Docker build, because Railway does not inject database credentials into the build stage.
+
 Or run all three in one step:
 
 ```bash

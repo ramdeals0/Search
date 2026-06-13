@@ -9,7 +9,7 @@ watchPatterns = [
 ]
 
 [deploy]
-startCommand = "pnpm --filter @retailer-search/search-api start"
+startCommand = "pnpm --filter @retailer-search/search-api start:prod"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"

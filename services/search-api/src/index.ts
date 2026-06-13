@@ -4751,6 +4751,12 @@ async function getSearchProductCatalog() {
 }
 
 async function startServer(): Promise<void> {
+  app.listen(env.SEARCH_API_PORT, env.SEARCH_API_HOST, () => {
+    console.log(
+      `search-api listening on http://${env.SEARCH_API_HOST}:${env.SEARCH_API_PORT}`,
+    );
+  });
+
   let dbConnected = false;
 
   try {
@@ -4788,12 +4794,6 @@ async function startServer(): Promise<void> {
       );
     }
   }
-
-  app.listen(env.SEARCH_API_PORT, env.SEARCH_API_HOST, () => {
-    console.log(
-      `search-api listening on http://${env.SEARCH_API_HOST}:${env.SEARCH_API_PORT}`,
-    );
-  });
 }
 
 void startServer();
