@@ -25,7 +25,7 @@ packages/
 
 ## Local setup (database-backed API)
 
-Governance features (auth, audit trail, approvals, access reviews, JIT, notifications, exports metadata) persist in **SQLite** via Prisma.
+Governance data, catalog tables, and auth persist in **PostgreSQL** via Prisma. The default configuration targets **Railway Postgres** (see `.env.example`).
 
 1. **Install dependencies**
 
@@ -35,7 +35,7 @@ pnpm install
 
 2. **Environment**
 
-Copy the example env and adjust if needed:
+Copy the example env and set your Railway `DATABASE_URL`:
 
 ```bash
 cp .env.example .env
@@ -44,18 +44,34 @@ cp .env.example services/search-api/.env
 
 Required variables:
 
-- `DATABASE_URL="file:./prisma/dev.db"` (relative to `services/search-api`)
+- `DATABASE_URL` — Railway example: `postgresql://postgres:PASSWORD@HOST.proxy.rlwy.net:PORT/railway?sslmode=require`
 - `SESSION_TTL_HOURS=24` (optional, default 24)
+
+Local `psql` against Railway (replace password/host/port):
+
+```bash
+PGPASSWORD=YOUR_PASSWORD psql -h HOST.proxy.rlwy.net -U postgres -p PORT -d railway
+```
 
 3. **Generate Prisma client, migrate, and seed**
 
-From the repo root:
+From the repo root (uses `services/search-api/.env`):
 
 ```bash
 pnpm prisma:generate
 pnpm prisma:migrate
 pnpm prisma:seed
 ```
+
+For **Railway Postgres**, run migrations against the remote database:
+
+```bash
+cd services/search-api
+pnpm exec prisma migrate deploy
+pnpm exec prisma db seed
+```
+
+On Railway deploy, migrations run automatically via `nixpacks.toml` (`prisma migrate deploy` during build). Set the search-api service variable `DATABASE_URL` to your Railway Postgres reference (for example `${{Postgres.DATABASE_URL}}`), not the public proxy URL, when both services run in the same Railway project.
 
 Or run all three in one step:
 
@@ -517,7 +533,7 @@ try {
 
 ## Known limitations
 
-- **SQLite is for local/dev only** — switch `DATABASE_URL` to Postgres for production deployment.
+- **Use Railway Postgres in production** — set `DATABASE_URL` on the search-api service (reference the Postgres plugin variable when both run on Railway).
 - **Webhooks remain in-memory** — endpoint/delivery persistence exists in schema/seed but runtime webhook delivery is not yet DB-backed.
 - **No background jobs** — export generation and webhook retries run inline in the API process.
 - **No object storage for exports** — export jobs store metadata only; file content is generated on demand.

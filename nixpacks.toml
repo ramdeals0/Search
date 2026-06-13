@@ -10,7 +10,11 @@ cmds = ["pnpm install --frozen-lockfile"]
 
 [phases.build]
 dependsOn = ["install"]
-cmds = ["pnpm --filter @retailer-search/search-api... build"]
+cmds = [
+  "pnpm --filter @retailer-search/search-api exec prisma generate",
+  "pnpm --filter @retailer-search/search-api exec prisma migrate deploy",
+  "pnpm --filter @retailer-search/search-api... build",
+]
 
 [start]
 cmd = "pnpm --filter @retailer-search/search-api start"

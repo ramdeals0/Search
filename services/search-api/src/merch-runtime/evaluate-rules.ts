@@ -18,7 +18,7 @@ function collectMatchedRuleRefs(
 ): RuleRef[] {
   const byRuleId = new Map<string, RuleRef>();
 
-  const addRefs = (refs: RuleRef[] | undefined): void => {
+  const addRefs = (refs: readonly RuleRef[] | undefined): void => {
     if (!refs) {
       return;
     }

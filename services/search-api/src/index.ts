@@ -363,8 +363,6 @@ const merchRuntimeEvaluateSchema = z.object({
   candidateLimit: z.coerce.number().int().positive().max(250).default(50),
 });
 
-let demoCompiledMerchSnapshot: CompiledRuleSnapshot | undefined;
-
 function buildDemoCompiledMerchSnapshot(version = "1.0.0"): CompiledRuleSnapshot {
   return createCompiledRuleSnapshot({
     snapshotId: "demo-runtime-v1",
@@ -401,13 +399,6 @@ function buildDemoCompiledMerchSnapshot(version = "1.0.0"): CompiledRuleSnapshot
       ],
     },
   });
-}
-
-function getDemoCompiledMerchSnapshot(): CompiledRuleSnapshot {
-  if (!demoCompiledMerchSnapshot) {
-    demoCompiledMerchSnapshot = buildDemoCompiledMerchSnapshot();
-  }
-  return demoCompiledMerchSnapshot;
 }
 
 const merchandisingRuleConditionSchema = z.object({

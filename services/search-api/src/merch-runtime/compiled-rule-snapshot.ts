@@ -183,7 +183,7 @@ function validateRuleRefMap(map: Map<string, RuleRef[]>, label: string): void {
   }
 }
 
-function validateRuleRefCollection(refs: RuleRef[], label: string): void {
+function validateRuleRefCollection(refs: readonly RuleRef[], label: string): void {
   for (const ref of refs) {
     validateRuleRef(ref, label);
   }

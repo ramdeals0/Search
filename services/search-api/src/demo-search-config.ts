@@ -305,8 +305,7 @@ export function buildDemoMerchandisingRules(): MerchandisingRule[] {
       active: true,
       priority: 80,
       action: "boost",
-      condition: { query: "weed" },
-      category: "Outdoor Power Equipment",
+      condition: { query: "weed", category: "Outdoor Power Equipment" },
       boostAmount: 22,
     },
     {
@@ -444,8 +443,7 @@ export function buildDemoMerchandisingRules(): MerchandisingRule[] {
       active: true,
       priority: 60,
       action: "boost",
-      condition: { query: "extension cord" },
-      category: "Electrical",
+      condition: { query: "extension cord", category: "Electrical" },
       boostAmount: 20,
     },
     {

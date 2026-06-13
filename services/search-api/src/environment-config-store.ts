@@ -59,10 +59,10 @@ function toConfigurationDto(environment: EnvironmentKey): EnvironmentConfigurati
 
 export async function hydrateEnvironmentConfigStore(): Promise<void> {
   const [stagingRules, liveRules, stagingSynonyms, liveSynonyms] = await Promise.all([
-    getSystemConfig<MerchandisingRule[]>("demo.search.rules.staging"),
-    getSystemConfig<MerchandisingRule[]>("demo.search.rules.live"),
-    getSystemConfig<Record<string, string>>("demo.search.synonyms.staging"),
-    getSystemConfig<Record<string, string>>("demo.search.synonyms.live"),
+    getSystemConfig("demo.search.rules.staging") as Promise<MerchandisingRule[] | null>,
+    getSystemConfig("demo.search.rules.live") as Promise<MerchandisingRule[] | null>,
+    getSystemConfig("demo.search.synonyms.staging") as Promise<Record<string, string> | null>,
+    getSystemConfig("demo.search.synonyms.live") as Promise<Record<string, string> | null>,
   ]);
 
   if (stagingRules && stagingRules.length > 0) {

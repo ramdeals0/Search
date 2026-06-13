@@ -65,7 +65,6 @@ export function retireExpiredSnapshots(
 
 function collectInactiveEvictableEntries(
   scopeState: SnapshotScopeState,
-  nowEpochMs: number,
 ): CachedSnapshotEntry[] {
   const entries: CachedSnapshotEntry[] = [];
   for (const entry of scopeState.entriesByKey.values()) {
@@ -81,7 +80,7 @@ function collectInactiveEvictableEntries(
 export function pruneScopeToGenerationLimit(
   scopeState: SnapshotScopeState,
   maxSnapshotsPerScope: number,
-  nowEpochMs: number,
+  _nowEpochMs: number,
 ): string[] {
   if (maxSnapshotsPerScope <= 0) {
     return [];
@@ -93,7 +92,7 @@ export function pruneScopeToGenerationLimit(
     protectedKeys.add(scopeState.activeKey);
   }
 
-  const inactiveEntries = collectInactiveEvictableEntries(scopeState, nowEpochMs)
+  const inactiveEntries = collectInactiveEvictableEntries(scopeState)
     .sort((a, b) => b.loadedAtEpochMs - a.loadedAtEpochMs);
 
   const allowedInactive = Math.max(0, maxSnapshotsPerScope - protectedKeys.size);
@@ -135,7 +134,6 @@ function sumEstimatedBytes(cacheState: SnapshotCacheState): number {
 
 function collectGlobalInactiveCandidates(
   cacheState: SnapshotCacheState,
-  nowEpochMs: number,
 ): CachedSnapshotEntry[] {
   const entries: CachedSnapshotEntry[] = [];
   for (const scope of cacheState.scopes.values()) {
@@ -170,14 +168,14 @@ function removeEntryFromScope(
 export function pruneGlobalToSnapshotLimit(
   cacheState: SnapshotCacheState,
   maxTotalSnapshots: number,
-  nowEpochMs: number,
+  _nowEpochMs: number,
 ): Array<{ key: string; type: CacheEvictionType }> {
   const evicted: Array<{ key: string; type: CacheEvictionType }> = [];
   if (maxTotalSnapshots <= 0) {
     return evicted;
   }
 
-  let candidates = collectGlobalInactiveCandidates(cacheState, nowEpochMs);
+  let candidates = collectGlobalInactiveCandidates(cacheState);
   while (countCachedSnapshots(cacheState) > maxTotalSnapshots && candidates.length > 0) {
     const entry = candidates.shift();
     if (!entry) {
@@ -188,7 +186,7 @@ export function pruneGlobalToSnapshotLimit(
     }
     removeEntryFromScope(cacheState, entry);
     evicted.push({ key: entry.key, type: "global_limit" });
-    candidates = collectGlobalInactiveCandidates(cacheState, nowEpochMs);
+    candidates = collectGlobalInactiveCandidates(cacheState);
   }
 
   return evicted;
@@ -197,14 +195,14 @@ export function pruneGlobalToSnapshotLimit(
 export function pruneGlobalToEstimatedBytes(
   cacheState: SnapshotCacheState,
   maxEstimatedBytes: number | undefined,
-  nowEpochMs: number,
+  _nowEpochMs: number,
 ): Array<{ key: string; type: CacheEvictionType }> {
   const evicted: Array<{ key: string; type: CacheEvictionType }> = [];
   if (maxEstimatedBytes === undefined || maxEstimatedBytes <= 0) {
     return evicted;
   }
 
-  let candidates = collectGlobalInactiveCandidates(cacheState, nowEpochMs);
+  let candidates = collectGlobalInactiveCandidates(cacheState);
   while (sumEstimatedBytes(cacheState) > maxEstimatedBytes && candidates.length > 0) {
     const entry = candidates.shift();
     if (!entry) {
@@ -215,7 +213,7 @@ export function pruneGlobalToEstimatedBytes(
     }
     removeEntryFromScope(cacheState, entry);
     evicted.push({ key: entry.key, type: "bytes_limit" });
-    candidates = collectGlobalInactiveCandidates(cacheState, nowEpochMs);
+    candidates = collectGlobalInactiveCandidates(cacheState);
   }
 
   return evicted;
