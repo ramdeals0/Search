@@ -1,5 +1,5 @@
 "use client";
-import { getSearchApiUrl } from "./lib/search-api-url";
+import { buildSearchApiUrl, getSearchApiUrl } from "./lib/search-api-url";
 
 import { useEffect, useState } from "react";
 import type {
@@ -37,9 +37,8 @@ export function ActionPreview({
       setSuccessMessage(null);
 
       try {
-        const url = new URL(
+        const url = buildSearchApiUrl(
           `/api/v1/admin/suggestions/${encodeURIComponent(suggestion.id)}/action-preview`,
-          getSearchApiUrl(),
         );
         url.searchParams.set("actionType", actionType);
 

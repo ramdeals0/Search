@@ -1,5 +1,5 @@
 "use client";
-import { getSearchApiUrl } from "./lib/search-api-url";
+import { buildSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -14,7 +14,7 @@ const OUTCOME_COLORS: Record<string, string> = {
 };
 
 function buildAuditLogUrl(filters: AuditLogFilterDto): string {
-  const url = new URL("/api/v1/admin/audit-logs", getSearchApiUrl());
+  const url = buildSearchApiUrl("/api/v1/admin/audit-logs");
 
   if (filters.actionType) {
     url.searchParams.set("actionType", filters.actionType);

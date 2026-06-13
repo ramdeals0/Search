@@ -1,5 +1,5 @@
 "use client";
-import { getSearchApiUrl } from "./lib/search-api-url";
+import { buildSearchApiUrl } from "./lib/search-api-url";
 
 import { useEffect, useState } from "react";
 import type { SnapshotDiffResponseDto } from "@retailer-search/shared-types";
@@ -48,7 +48,7 @@ export function SnapshotDiffPreview({
       setError(null);
 
       try {
-        const url = new URL("/api/v1/admin/snapshots/diff", getSearchApiUrl());
+        const url = buildSearchApiUrl("/api/v1/admin/snapshots/diff");
         url.searchParams.set("from", fromSnapshotId);
         url.searchParams.set("to", toSnapshotId);
 

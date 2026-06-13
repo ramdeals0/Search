@@ -1,5 +1,5 @@
 "use client";
-import { getSearchApiUrl } from "./lib/search-api-url";
+import { buildSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useState } from "react";
 import type {
@@ -49,7 +49,7 @@ export function ProductsWorkspace({
     setError(null);
 
     try {
-      const url = new URL("/api/v1/admin/query-preview", getSearchApiUrl());
+      const url = buildSearchApiUrl("/api/v1/admin/query-preview");
       url.searchParams.set("query", trimmed);
       url.searchParams.set("pageSize", "10");
 
