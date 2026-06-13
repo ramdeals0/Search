@@ -63,9 +63,15 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      const body = (await response.json()) as LoginResponseDto & {
-        details?: { reason?: string };
-      };
+      const raw = await response.text();
+      let body: LoginResponseDto & { details?: { reason?: string }; message?: string };
+      try {
+        body = JSON.parse(raw) as typeof body;
+      } catch {
+        throw new Error(
+          "Search API returned an invalid response. On Railway, set SEARCH_API_URL on the admin service to your search-api HTTPS URL, then redeploy.",
+        );
+      }
 
       if (response.status === 423 || body.details?.reason === "setup_required") {
         setError("This instance requires initial setup before sign-in.");

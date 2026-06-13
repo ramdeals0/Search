@@ -1,7 +1,6 @@
 /**
- * Browser calls use the same-origin `/search-api` proxy (see next.config.ts rewrites).
- * Server components use SEARCH_API_URL at runtime so production deploys do not depend
- * on a build-time NEXT_PUBLIC value alone.
+ * Browser calls use the same-origin `/search-api` proxy route (app/search-api/[[...path]]/route.ts).
+ * Server components call SEARCH_API_URL directly at runtime.
  */
 export function getSearchApiUrl(): string {
   if (typeof window !== "undefined") {
