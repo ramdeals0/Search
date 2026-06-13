@@ -116,6 +116,9 @@ importers:
       express:
         specifier: ^4.21.2
         version: 4.22.2
+      prisma:
+        specifier: ^6.2.1
+        version: 6.19.3(typescript@5.9.3)
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -129,9 +132,6 @@ importers:
       pg:
         specifier: ^8.21.0
         version: 8.21.0
-      prisma:
-        specifier: ^6.2.1
-        version: 6.19.3(typescript@5.9.3)
       tsx:
         specifier: ^4.19.2
         version: 4.22.4
