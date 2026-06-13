@@ -533,6 +533,47 @@ try {
 - Query normalization is lightweight (lowercase/trim); advanced synonym/typo canonicalization is not wired into runtime yet.
 - Compiled snapshot production from authoring UI is a separate pipeline (loader hooks are ready for DB/Redis).
 
+## Deploy to Railway
+
+This monorepo runs as **three Railway services** from the same GitHub repo (root directory `/` for each):
+
+| Service | Config file | Start command |
+|---------|-------------|---------------|
+| **search-api** | `/railway.toml` (repo root) | `pnpm --filter @retailer-search/search-api start:prod` |
+| **admin** | `/apps/admin/railway.toml` | `pnpm --filter @retailer-search/admin start` |
+| **storefront** | `/apps/storefront/railway.toml` | `pnpm --filter @retailer-search/storefront start` |
+
+### 1. search-api + Postgres
+
+1. Create a Railway project and add **PostgreSQL**.
+2. Add a service from GitHub repo `ramdeals0/Search` (or your fork).
+3. Leave **Root Directory** as `/`. Default config uses root `railway.toml` + `nixpacks.toml`.
+4. Variables:
+   - `DATABASE_URL=${{Postgres.DATABASE_URL}}`
+   - `NODE_ENV=production`
+   - `SEARCH_API_HOST=0.0.0.0`
+   - Do **not** set `SEARCH_API_PORT` (Railway injects `PORT`).
+5. Healthcheck: `/health` — expect `database.connected: true` and `productCount > 0` after seed/migrate.
+
+### 2. admin
+
+1. **New service** → same repo, root `/`.
+2. **Settings → Config-as-code → Railway config file:** `apps/admin/railway.toml`
+3. Variables (set **before** deploy/build — Next.js inlines public env at build time):
+   - `NEXT_PUBLIC_SEARCH_API_URL=https://<search-api-service>.up.railway.app`
+   - `NODE_ENV=production`
+
+### 3. storefront
+
+1. **New service** → same repo, root `/`.
+2. **Settings → Config-as-code → Railway config file:** `apps/storefront/railway.toml`
+3. Variables (required at **build** time for autocomplete and client-side API calls):
+   - `NEXT_PUBLIC_SEARCH_API_URL=https://<search-api-service>.up.railway.app`
+   - `NODE_ENV=production`
+4. Open the generated public URL — search should hit the deployed search-api.
+
+Redeploy storefront/admin whenever `NEXT_PUBLIC_SEARCH_API_URL` changes (Next.js bakes it into the client bundle).
+
 ## Known limitations
 
 - **Use Railway Postgres in production** — set `DATABASE_URL` on the search-api service (reference the Postgres plugin variable when both run on Railway).
