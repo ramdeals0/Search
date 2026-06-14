@@ -2,19 +2,16 @@
  * Browser calls use the same-origin `/search-api` proxy route (app/search-api/[[...path]]/route.ts).
  * Server components call SEARCH_API_URL directly at runtime.
  */
+import { getSearchApiBaseUrl } from "./search-api-base-url";
+
 export function getSearchApiUrl(): string {
   if (typeof window !== "undefined") {
     return "/search-api";
   }
 
-  return (
-    process.env.SEARCH_API_URL ??
-    process.env.NEXT_PUBLIC_SEARCH_API_URL ??
-    "http://localhost:4001"
-  );
+  return getSearchApiBaseUrl();
 }
 
-/** Build a URL for search-api endpoints (supports relative `/search-api` in the browser). */
 export function buildSearchApiUrl(path: string): URL {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const base = getSearchApiUrl();

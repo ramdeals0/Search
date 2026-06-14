@@ -32,7 +32,6 @@ import type {
   QueryPreviewResponseDto,
   ReviewerListResponseDto,
   RollbackSnapshotResponseDto,
-  RuleDraftListResponseDto,
   ScheduledReleaseListResponseDto,
   SavedViewListResponseDto,
   SearchFiltersDto,
@@ -44,7 +43,6 @@ import type {
   CurrentUserResponseDto,
   LoginResponseDto,
   UserDto,
-  ApiKeyListResponseDto,
   AuditHashChainReportDto,
   BackgroundJobDto,
   BrowseResponseDto,
@@ -55,7 +53,6 @@ import type {
   WebhookDeliveryLogListResponseDto,
   WebhookEndpointListResponseDto,
   WebhookEventType,
-  ZeroResultInsightsResponseDto,
   WorkspaceStateDto,
 } from "@retailer-search/shared-types";
 import {
@@ -173,17 +170,11 @@ import {
 import {
   getAnalyticsSummary,
   getQueryAnalytics,
-  getZeroResultInsights,
   hydrateAnalyticsStore,
   recordSearchClick,
   recordSearchEvent,
   recordSearchAnalytics,
 } from "./analytics-store.js";
-import {
-  createApiKey,
-  listApiKeys,
-  revokeApiKey,
-} from "./auth/api-key-store.js";
 import {
   attachApiKeyContext,
   enforceApiKeyRateLimit,
@@ -192,14 +183,6 @@ import {
 import { enqueueCatalogReindex } from "./jobs/handlers/reindex-catalog.js";
 import { getJobById, listJobs } from "./jobs/job-queue.js";
 import { startReleaseScheduler } from "./jobs/release-scheduler.js";
-import {
-  approveRuleDraft,
-  generateRuleDraft,
-  getRuleDraftById,
-  listRuleDrafts,
-  markRuleDraftApplied,
-  rejectRuleDraft,
-} from "./llm/rule-draft-service.js";
 import {
   listRegisteredIndexes,
   resolveFederatedSources,
@@ -296,6 +279,9 @@ import {
 import { registerInternalLlmDebugRoutes } from "./routes/internal-llm-debug.js";
 import { registerAccessGovernanceRoutes } from "./routes/access-governance.js";
 import { registerLlmSettingsRoutes } from "./routes/llm-settings.js";
+import { registerApiKeyRoutes } from "./routes/api-keys.js";
+import { registerZeroResultsInboxRoutes } from "./routes/zero-results-inbox.js";
+import { registerSynonymRoutes } from "./routes/synonyms.js";
 import { llmEnhancedSearch } from "./search/llm-enhanced-search.js";
 import { isAnyLlmFeatureEnabled } from "./search/search-feature-flags.js";
 import {
@@ -466,14 +452,6 @@ const browseQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 });
 
-const createApiKeySchema = z.object({
-  name: z.string().min(1),
-  tenantId: z.string().optional(),
-  scopes: z.array(z.string()).optional(),
-  rateLimitPerMinute: z.coerce.number().int().positive().max(10_000).optional(),
-  expiresAt: z.string().datetime().optional(),
-});
-
 const createScheduledReleaseSchema = z.object({
   type: z.enum(["promote_snapshot", "rollback_snapshot"]),
   snapshotId: z.string().min(1),
@@ -481,11 +459,6 @@ const createScheduledReleaseSchema = z.object({
   scheduledAt: z.string().datetime(),
   linkedExperimentId: z.string().optional(),
   approvalRequestId: z.string().optional(),
-});
-
-const generateRuleDraftSchema = z.object({
-  query: z.string().min(1),
-  productId: z.string().optional(),
 });
 
 const environmentKeySchema = z.enum(["staging", "live"]);
@@ -1728,6 +1701,20 @@ registerLlmSettingsRoutes(app, {
   assertValidBody,
 });
 
+registerApiKeyRoutes(app, {
+  requireAdminUser,
+  requireJsonContentType,
+  assertValidBody,
+});
+
+registerZeroResultsInboxRoutes(app, {
+  requireAuthenticatedUser,
+  requireJsonContentType,
+  assertValidBody,
+});
+
+registerSynonymRoutes(app);
+
 app.get("/api/v1/admin/security-timeline", (req, res) => {
   const user = requireAuthenticatedUser(req, res);
   if (!user) {
@@ -2249,67 +2236,6 @@ app.get("/api/v1/admin/analytics/summary", (_req, res) => {
   res.json(getAnalyticsSummary());
 });
 
-app.get("/api/v1/admin/analytics/zero-results", async (req, res) => {
-  const user = requireAuthenticatedUser(req, res);
-  if (!user) {
-    return;
-  }
-
-  const limit = z.coerce.number().int().positive().max(100).default(25).parse(
-    req.query.limit ?? 25,
-  );
-  const body: ZeroResultInsightsResponseDto = await getZeroResultInsights(limit);
-  res.json(body);
-});
-
-app.get("/api/v1/admin/api-keys", async (req, res) => {
-  const admin = requireAdminUser(req, res);
-  if (!admin) {
-    return;
-  }
-
-  const apiKeys = await listApiKeys();
-  const body: ApiKeyListResponseDto = {
-    total: apiKeys.length,
-    apiKeys,
-  };
-  res.json(body);
-});
-
-app.post("/api/v1/admin/api-keys", async (req, res) => {
-  const admin = requireAdminUser(req, res);
-  if (!admin) {
-    return;
-  }
-
-  if (!requireJsonContentType(req, res)) {
-    return;
-  }
-
-  const parsed = createApiKeySchema.safeParse(req.body);
-  if (!assertValidBody(parsed, res, req, "Invalid API key payload")) {
-    return;
-  }
-
-  const body = await createApiKey(parsed.data);
-  res.status(201).json(body);
-});
-
-app.delete("/api/v1/admin/api-keys/:id", async (req, res) => {
-  const admin = requireAdminUser(req, res);
-  if (!admin) {
-    return;
-  }
-
-  const revoked = await revokeApiKey(req.params.id);
-  if (!revoked) {
-    res.status(404).json({ error: "API key not found" });
-    return;
-  }
-
-  res.json({ apiKey: revoked });
-});
-
 app.post("/api/v1/admin/search-index/rebuild", async (req, res) => {
   const admin = requireAdminUser(req, res);
   if (!admin) {
@@ -2392,104 +2318,6 @@ app.delete("/api/v1/admin/scheduled-releases/:id", async (req, res) => {
     return;
   }
   res.json(cancelled);
-});
-
-app.get("/api/v1/admin/rule-drafts", async (req, res) => {
-  const user = requireAuthenticatedUser(req, res);
-  if (!user) {
-    return;
-  }
-  const drafts = await listRuleDrafts();
-  const body: RuleDraftListResponseDto = {
-    total: drafts.length,
-    drafts,
-  };
-  res.json(body);
-});
-
-app.post("/api/v1/admin/rule-drafts/generate", async (req, res) => {
-  const user = requireAuthenticatedUser(req, res);
-  if (!user) {
-    return;
-  }
-  if (!requireJsonContentType(req, res)) {
-    return;
-  }
-  const parsed = generateRuleDraftSchema.safeParse(req.body);
-  if (!assertValidBody(parsed, res, req, "Invalid rule draft payload")) {
-    return;
-  }
-  const draft = await generateRuleDraft(parsed.data, user.id);
-  res.status(201).json(draft);
-});
-
-app.post("/api/v1/admin/rule-drafts/:id/approve", async (req, res) => {
-  const user = requireAuthenticatedUser(req, res);
-  if (!user) {
-    return;
-  }
-  const draft = await approveRuleDraft(req.params.id);
-  if (!draft) {
-    res.status(404).json({ error: "Rule draft not found" });
-    return;
-  }
-  res.json(draft);
-});
-
-app.post("/api/v1/admin/rule-drafts/:id/reject", async (req, res) => {
-  const user = requireAuthenticatedUser(req, res);
-  if (!user) {
-    return;
-  }
-  const draft = await rejectRuleDraft(req.params.id);
-  if (!draft) {
-    res.status(404).json({ error: "Rule draft not found" });
-    return;
-  }
-  res.json(draft);
-});
-
-app.post("/api/v1/admin/rule-drafts/:id/apply", async (req, res) => {
-  const user = requireAuthenticatedUser(req, res);
-  if (!user) {
-    return;
-  }
-  const draft = await getRuleDraftById(req.params.id);
-  if (!draft || draft.status !== "approved") {
-    res.status(400).json({ error: "Approved rule draft required before apply" });
-    return;
-  }
-
-  const ruleInput = draft.suggestedRule as {
-    name?: string;
-    action?: "pin" | "boost" | "bury" | "hide";
-    condition?: Record<string, unknown>;
-    productIds?: string[];
-    boostAmount?: number;
-    buryAmount?: number;
-  };
-
-  if (!ruleInput.name || !ruleInput.action) {
-    res.status(400).json({ error: "Draft is missing required rule fields" });
-    return;
-  }
-
-  createMerchandisingRule(
-    {
-      name: ruleInput.name,
-      active: true,
-      priority: 100,
-      action: ruleInput.action,
-      condition: ruleInput.condition ?? { query: draft.query },
-      productIds: ruleInput.productIds,
-      boostAmount: ruleInput.boostAmount,
-      buryAmount: ruleInput.buryAmount,
-    },
-    "staging",
-  );
-
-  const applied = await markRuleDraftApplied(draft.id);
-  res.json(applied);
 });
 
 app.get("/api/v1/admin/audit/hash-chain", async (req, res) => {

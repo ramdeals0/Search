@@ -53,6 +53,16 @@ export function ApiKeysPanel() {
         headers: getAuthHeaders("none"),
       });
       if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error(
+            "API keys API not found (404). Restart search-api (pnpm --filter @retailer-search/search-api dev) to load the latest routes.",
+          );
+        }
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(
+            `Admin sign-in required to manage API keys (${response.status}). Use an admin account, not a workspace role override.`,
+          );
+        }
         throw new Error(`Failed to load API keys (${response.status})`);
       }
       const body = (await response.json()) as { apiKeys: ApiKeyDto[] };

@@ -73,6 +73,12 @@ export function ZeroResultsPanel() {
         throw new Error("Sign in to ForgeOps to view the zero-results inbox.");
       }
 
+      if (insightsRes.status === 404) {
+        throw new Error(
+          "Zero-results API not found (404). Restart search-api (pnpm --filter @retailer-search/search-api dev) to load the latest routes.",
+        );
+      }
+
       if (!insightsRes.ok) {
         throw new Error(`Failed to load zero-result queries (${insightsRes.status})`);
       }

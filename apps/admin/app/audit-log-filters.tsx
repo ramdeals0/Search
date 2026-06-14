@@ -43,6 +43,8 @@ export function AuditLogFilters({ filters, onChange }: AuditLogFiltersProps) {
           <option value="create_rule">create_rule</option>
           <option value="update_rule">update_rule</option>
           <option value="create_synonym">create_synonym</option>
+          <option value="update_synonym">update_synonym</option>
+          <option value="delete_synonym">delete_synonym</option>
           <option value="apply_suggestion">apply_suggestion</option>
           <option value="preview_suggestion_action">
             preview_suggestion_action

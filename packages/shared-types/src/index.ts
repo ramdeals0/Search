@@ -323,6 +323,26 @@ export type CreateMerchandisingRuleDto = Omit<MerchandisingRule, "id">;
 
 export type UpdateMerchandisingRuleDto = Partial<Omit<MerchandisingRule, "id">>;
 
+export interface SynonymEntryDto {
+  key: string;
+  value: string;
+}
+
+export interface SynonymListResponseDto {
+  environment: EnvironmentKey;
+  total: number;
+  synonyms: SynonymEntryDto[];
+}
+
+export interface CreateSynonymDto {
+  key: string;
+  value: string;
+}
+
+export interface UpdateSynonymDto {
+  value: string;
+}
+
 export interface QueryPreviewHitDto {
   id: string;
   title: string;
@@ -401,6 +421,8 @@ export type AuditActionType =
   | "create_rule"
   | "update_rule"
   | "create_synonym"
+  | "update_synonym"
+  | "delete_synonym"
   | "apply_suggestion"
   | "preview_suggestion_action"
   | "query_preview"

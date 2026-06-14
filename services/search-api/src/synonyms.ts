@@ -67,6 +67,59 @@ export function addSynonym(
   return { key: normalizedKey, value: normalizedValue };
 }
 
+export function listSynonymEntries(
+  environment: EnvironmentKey = DEFAULT_ADMIN_ENVIRONMENT,
+): Array<{ key: string; value: string }> {
+  const synonyms = getSynonymsForEnvironment(environment);
+  return Object.entries(synonyms)
+    .map(([key, value]) => ({ key, value }))
+    .sort((left, right) => left.key.localeCompare(right.key));
+}
+
+export function updateSynonym(
+  key: string,
+  value: string,
+  environment: EnvironmentKey = DEFAULT_ADMIN_ENVIRONMENT,
+): { key: string; value: string } | null {
+  const normalizedKey = key.trim().toLowerCase();
+  const normalizedValue = value.trim().toLowerCase();
+
+  if (!normalizedKey || !normalizedValue) {
+    return null;
+  }
+
+  const synonyms = getMutableSynonymsForEnvironment(environment);
+  if (!(normalizedKey in synonyms)) {
+    return null;
+  }
+
+  synonyms[normalizedKey] = normalizedValue;
+  touchEnvironment(environment);
+  if (environment === DEFAULT_LIVE_ENVIRONMENT) {
+    invalidateQueryProcessorCache();
+  }
+  return { key: normalizedKey, value: normalizedValue };
+}
+
+export function deleteSynonym(
+  key: string,
+  environment: EnvironmentKey = DEFAULT_ADMIN_ENVIRONMENT,
+): { key: string; value: string } | null {
+  const normalizedKey = key.trim().toLowerCase();
+  const synonyms = getMutableSynonymsForEnvironment(environment);
+  if (!(normalizedKey in synonyms)) {
+    return null;
+  }
+
+  const removed = { key: normalizedKey, value: synonyms[normalizedKey] };
+  delete synonyms[normalizedKey];
+  touchEnvironment(environment);
+  if (environment === DEFAULT_LIVE_ENVIRONMENT) {
+    invalidateQueryProcessorCache();
+  }
+  return removed;
+}
+
 export function getSynonymAuditContext(
   key: string,
   value: string,

@@ -136,6 +136,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       children: [
         { href: "/admin/merchandising", label: "Overview" },
         { href: "/admin/merchandising/rules", label: "Rules" },
+        { href: "/admin/merchandising/synonyms", label: "Synonyms" },
         { href: "/admin/merchandising/workflows/new-rule", label: "Guided new rule" },
         { href: "/admin/merchandising/snapshots", label: "Snapshots" },
         { href: "/admin/merchandising/promotions", label: "Promotions" },

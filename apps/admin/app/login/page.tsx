@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { BootstrapStateDto, LoginResponseDto } from "@retailer-search/shared-types";
 import {
-  AUTH_TOKEN_COOKIE_NAME,
   AUTH_TOKEN_STORAGE_KEY,
+  clearAuthSession,
   persistAuthSession,
 } from "../auth-session";
 import { ForgeOpsLogo } from "../admin/admin-page-header";
@@ -27,15 +27,30 @@ export default function LoginPage() {
     const next = new URLSearchParams(window.location.search).get("next");
     setNextPath(next);
 
-    const storedToken = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
-    const hasCookie = document.cookie.includes(`${AUTH_TOKEN_COOKIE_NAME}=`);
-    if (storedToken && !hasCookie) {
-      persistAuthSession(storedToken);
-      router.replace(next?.startsWith("/admin") ? next : "/admin");
-      return;
-    }
-
     void (async () => {
+      const storedToken = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)?.trim();
+      if (storedToken) {
+        try {
+          const response = await fetch(`${getSearchApiUrl()}/api/v1/auth/me`, {
+            headers: { Authorization: `Bearer ${storedToken}` },
+            cache: "no-store",
+          });
+
+          if (response.ok) {
+            const body = (await response.json()) as { authenticated?: boolean };
+            if (body.authenticated) {
+              persistAuthSession(storedToken);
+              router.replace(next?.startsWith("/admin") ? next : "/admin");
+              return;
+            }
+          }
+        } catch {
+          // Fall through to login form.
+        }
+
+        clearAuthSession();
+      }
+
       try {
         const response = await fetch(`${getSearchApiUrl()}/api/v1/setup/status`, {
           cache: "no-store",
@@ -49,7 +64,7 @@ export default function LoginPage() {
         setLoadingSetup(false);
       }
     })();
-  }, []);
+  }, [router]);
 
   const signIn = async (event: React.FormEvent) => {
     event.preventDefault();

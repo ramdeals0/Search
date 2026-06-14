@@ -60,6 +60,11 @@ const WORKSPACE_LINKS = [
     hint: "Boost, bury, pin, and hide rules in staging",
   },
   {
+    href: "/admin/merchandising/synonyms",
+    title: "Synonyms",
+    hint: "Query normalization mappings for shopper language",
+  },
+  {
     href: "/admin/merchandising/snapshots",
     title: "Snapshots",
     hint: "Capture, diff, and roll back configuration",
