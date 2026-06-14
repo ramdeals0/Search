@@ -108,22 +108,26 @@ export async function upsertProductEmbedding(
       productId: product.id,
       embedding: vector as unknown as Prisma.InputJsonValue,
       textHash,
+      sourceText: text,
       model: provider.model,
       provider: provider.name,
       dimensions: provider.dimensions,
+      lastIndexedAt: new Date(),
     },
     update: {
       embedding: vector as unknown as Prisma.InputJsonValue,
       textHash,
+      sourceText: text,
       model: provider.model,
       provider: provider.name,
       dimensions: provider.dimensions,
+      lastIndexedAt: new Date(),
     },
   });
 
   if (databaseVectorSearchEnabled) {
     try {
-      await syncEmbeddingVectorColumn(product.id, vector);
+      await syncEmbeddingVectorColumn(product.id, vector, { sourceText: text, textHash });
     } catch {
       // pgvector column may be unavailable until migration runs.
     }
@@ -205,21 +209,28 @@ export async function embedProductsBatch(
               productId: item.product.id,
               embedding: vector as unknown as Prisma.InputJsonValue,
               textHash: item.textHash,
+              sourceText: item.text,
               model: provider.model,
               provider: provider.name,
               dimensions: provider.dimensions,
+              lastIndexedAt: new Date(),
             },
             update: {
               embedding: vector as unknown as Prisma.InputJsonValue,
               textHash: item.textHash,
+              sourceText: item.text,
               model: provider.model,
               provider: provider.name,
               dimensions: provider.dimensions,
+              lastIndexedAt: new Date(),
             },
           });
           if (databaseVectorSearchEnabled) {
             try {
-              await syncEmbeddingVectorColumn(item.product.id, vector);
+              await syncEmbeddingVectorColumn(item.product.id, vector, {
+                sourceText: item.text,
+                textHash: item.textHash,
+              });
             } catch {
               // Ignore pgvector sync failures for individual rows.
             }

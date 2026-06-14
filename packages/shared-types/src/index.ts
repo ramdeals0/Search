@@ -181,6 +181,9 @@ export interface RankingDebugDto {
   lexicalScore?: number;
   semanticScore?: number;
   personalizationScore?: number;
+  fusedScore?: number;
+  rerankScore?: number;
+  retrievalSources?: Array<"lexical" | "semantic">;
   explanationCodes?: import("@retailer-search/shared-types").SearchExplanationCode[];
 }
 

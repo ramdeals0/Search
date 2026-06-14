@@ -2,7 +2,7 @@
 
 export const MAX_CATALOG_PRODUCTS = 80_000_000;
 
-const DEFAULT_IN_MEMORY_THRESHOLD = isRailwayRuntime() ? 8_000 : 100_000;
+const DEFAULT_IN_MEMORY_THRESHOLD = isRailwayRuntime() ? 25_000 : 100_000;
 
 export const CATALOG_IN_MEMORY_THRESHOLD = readIntEnv(
   "CATALOG_IN_MEMORY_THRESHOLD",
@@ -14,9 +14,11 @@ export const EMBEDDING_IN_MEMORY_THRESHOLD = readIntEnv(
   isRailwayRuntime() ? 1_000 : 5_000,
 );
 
+const DEFAULT_SEARCH_CANDIDATE_LIMIT = isRailwayRuntime() ? 1_500 : 5_000;
+
 export const CATALOG_SEARCH_CANDIDATE_LIMIT = readIntEnv(
   "CATALOG_SEARCH_CANDIDATE_LIMIT",
-  5_000,
+  DEFAULT_SEARCH_CANDIDATE_LIMIT,
 );
 
 export const CATALOG_DB_BATCH_SIZE = readIntEnv("CATALOG_DB_BATCH_SIZE", 1_000);

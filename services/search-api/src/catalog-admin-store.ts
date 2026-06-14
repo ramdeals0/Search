@@ -4,6 +4,7 @@ import type {
   UpdateAdminProductRequestDto,
 } from "@retailer-search/shared-types";
 import { prisma } from "./db.js";
+import { enqueueIncrementalEmbeddingJobs } from "./ai-search/embedding-job-service.js";
 
 function toBoolean(value: string | undefined): boolean | undefined {
   if (value === undefined) {
@@ -95,6 +96,10 @@ export async function updateAdminProduct(
             : undefined,
     },
     include: { brand: true, category: true },
+  });
+
+  void enqueueIncrementalEmbeddingJobs([productId]).catch(() => {
+    // Non-blocking: worker will pick up incremental job when enabled.
   });
 
   return {

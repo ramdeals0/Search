@@ -59,6 +59,11 @@ async function proxyRequest(
     headers.set("x-catalog-id", getProxyCatalogId(request));
   }
 
+  const apiKey = process.env.SEARCH_API_KEY?.trim();
+  if (apiKey && !headers.has("x-api-key")) {
+    headers.set("x-api-key", apiKey);
+  }
+
   const init: RequestInit = {
     method: request.method,
     headers,
