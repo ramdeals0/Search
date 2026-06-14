@@ -6,9 +6,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { CurrentUserResponseDto } from "@retailer-search/shared-types";
 import {
   ACCESS_GOVERNANCE_CHANGED_EVENT,
-} from "../access-request-panel";
+  JIT_ACCESS_CHANGED_EVENT,
+} from "../admin/access/lib/events";
 import { AUTH_TOKEN_STORAGE_KEY, clearAuthSession, persistAuthSession } from "../auth-session";
-import { JIT_ACCESS_CHANGED_EVENT } from "../jit-access-panel";
 
 function getAuthHeaders(): HeadersInit {
   const token =

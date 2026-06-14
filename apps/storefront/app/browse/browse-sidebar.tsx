@@ -44,33 +44,13 @@ export function BrowseSidebar({
   sort,
 }: BrowseSidebarProps) {
   return (
-    <aside
-      style={{
-        padding: "1rem",
-        border: "1px solid #e2e8f0",
-        borderRadius: 8,
-        background: "#fff",
-      }}
-    >
-      <h2 style={{ margin: "0 0 0.75rem", fontSize: "1rem" }}>Categories</h2>
-      <ul
-        style={{
-          listStyle: "none",
-          margin: 0,
-          padding: 0,
-          display: "grid",
-          gap: "0.35rem",
-        }}
-      >
+    <aside className="store-sidebar">
+      <h2 className="store-sidebar__title">Departments</h2>
+      <ul className="store-sidebar__list">
         <li>
           <Link
             href={buildBrowseUrl({ pageSize, brand, inStock, sort })}
-            style={{
-              fontSize: 14,
-              color: !activeCategory ? "#0f172a" : "#2563eb",
-              fontWeight: !activeCategory ? 600 : 400,
-              textDecoration: "none",
-            }}
+            className={`store-sidebar__link${!activeCategory ? " store-sidebar__link--active" : ""}`}
           >
             All products
           </Link>
@@ -85,16 +65,10 @@ export function BrowseSidebar({
                 inStock,
                 sort,
               })}
-              style={{
-                fontSize: 14,
-                color:
-                  activeCategory === entry.category ? "#0f172a" : "#2563eb",
-                fontWeight: activeCategory === entry.category ? 600 : 400,
-                textDecoration: "none",
-              }}
+              className={`store-sidebar__link${activeCategory === entry.category ? " store-sidebar__link--active" : ""}`}
             >
               {entry.category}{" "}
-              <span style={{ color: "#94a3b8" }}>({entry.productCount})</span>
+              <span style={{ color: "var(--store-muted)" }}>({entry.productCount})</span>
             </Link>
           </li>
         ))}

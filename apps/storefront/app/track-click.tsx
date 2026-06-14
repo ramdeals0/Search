@@ -10,6 +10,7 @@ interface TrackClickProps {
   productId: string;
   productTitle: string;
   href?: string;
+  className?: string;
   children: ReactNode;
 }
 
@@ -29,24 +30,12 @@ async function sendClickEvent(
   }
 }
 
-const actionStyle = {
-  marginTop: "0.75rem",
-  display: "inline-block",
-  padding: "0.45rem 0.75rem",
-  fontSize: 14,
-  borderRadius: 6,
-  border: "1px solid #cbd5e1",
-  background: "#fff",
-  color: "#0f172a",
-  cursor: "pointer",
-  textDecoration: "none",
-} as const;
-
 export function TrackClick({
   query,
   productId,
   productTitle,
   href,
+  className = "store-btn store-btn--secondary",
   children,
 }: TrackClickProps) {
   const handleClick = () => {
@@ -55,14 +44,14 @@ export function TrackClick({
 
   if (href) {
     return (
-      <a href={href} onClick={handleClick} style={actionStyle}>
+      <a href={href} onClick={handleClick} className={className}>
         {children}
       </a>
     );
   }
 
   return (
-    <button type="button" onClick={handleClick} style={actionStyle}>
+    <button type="button" onClick={handleClick} className={className}>
       {children}
     </button>
   );

@@ -10,7 +10,7 @@ import type {
   UserDto,
 } from "@retailer-search/shared-types";
 import type { Prisma } from "@prisma/client";
-import { listAccessReviewRuns } from "./access-governance-store.js";
+import { listAccessReviewRuns } from "./access-governance/index.js";
 import { listApprovalRequests } from "./approval-store.js";
 import { listPromotionHistory } from "./active-config-store.js";
 import { getApiUsageSummary } from "./usage-meter-store.js";

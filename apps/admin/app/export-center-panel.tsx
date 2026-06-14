@@ -10,9 +10,9 @@ import type {
   ExportTargetType,
 } from "@retailer-search/shared-types";
 import {
-  AUTH_TOKEN_STORAGE_KEY,
   ACCESS_GOVERNANCE_CHANGED_EVENT,
-} from "./access-request-panel";
+} from "./admin/access/lib/events";
+import { AUTH_TOKEN_STORAGE_KEY } from "./auth-session";
 
 export const INTEGRATIONS_CHANGED_EVENT = "admin:integrations-changed";
 

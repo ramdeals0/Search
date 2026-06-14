@@ -4,7 +4,7 @@ import { ApprovalSlaPanel } from "../../approval-sla-panel";
 import { DelegationPanel } from "../../delegation-panel";
 import { ExceptionQueuePanel } from "../../exception-queue-panel";
 import { PromotionPanel } from "../../promotion-panel";
-import { ReviewerManagementPanel } from "../../reviewer-management-panel";
+import { ReviewerManagementPanel } from "./components/reviewer-management-panel";
 import { AdminPageHeader } from "../admin-page-header";
 
 export default function AdminApprovalsPage() {

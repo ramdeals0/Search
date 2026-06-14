@@ -17,7 +17,7 @@ import type {
 import {
   ADMIN_REVIEWER_CHANGED_EVENT,
   ADMIN_REVIEWER_STORAGE_KEY,
-} from "./reviewer-management-panel";
+} from "./admin/approvals/components/reviewer-management-panel";
 import { AnnotationPanel } from "./annotation-panel";
 import { CommentsPanel } from "./comments-panel";
 import { ADMIN_SNAPSHOTS_CHANGED_EVENT } from "./snapshot-events";

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type {
   MerchandisingRule,
   SearchAnalyticsSummaryDto,
@@ -8,6 +7,7 @@ import { ActiveConfigBadge } from "../active-config-badge";
 import { EnvironmentSwitcher } from "../environment-switcher";
 import { DashboardOverviewWidgets } from "./admin-shell";
 import { AdminPageHeader } from "./admin-page-header";
+import { DashboardQuickLinks } from "./dashboard-quick-links";
 
 async function fetchRules(): Promise<MerchandisingRule[]> {
   const response = await fetch(
@@ -29,20 +29,6 @@ async function fetchAnalytics(): Promise<SearchAnalyticsSummaryDto> {
   }
   return (await response.json()) as SearchAnalyticsSummaryDto;
 }
-
-const QUICK_LINKS = [
-  { href: "/admin/products", label: "Products", hint: "Catalog lookup and SKU context" },
-  { href: "/admin/search", label: "Search analytics", hint: "Queries, zero-results, performance" },
-  { href: "/admin/merchandising", label: "Merchandising", hint: "Rules, boosts, promotions" },
-  { href: "/admin/experiments", label: "Experiments", hint: "A/B configs and scorecards" },
-  { href: "/admin/approvals", label: "Approvals", hint: "Pending release approvals" },
-  { href: "/admin/access", label: "Access", hint: "JIT, requests, reviews" },
-  { href: "/admin/audit", label: "Audit", hint: "Trail and security timeline" },
-  { href: "/admin/notifications", label: "Notifications", hint: "Inbox and alerts" },
-  { href: "/admin/exports", label: "Exports", hint: "Export jobs and downloads" },
-  { href: "/admin/integrations", label: "Integrations", hint: "Webhooks and delivery logs" },
-  { href: "/admin/settings", label: "Settings", hint: "Platform and environment defaults" },
-] as const;
 
 export default async function AdminDashboardPage() {
   const [rules, analytics] = await Promise.all([fetchRules(), fetchAnalytics()]);
@@ -123,14 +109,7 @@ export default async function AdminDashboardPage() {
 
       <section>
         <h2 className="forge-section-title">Quick links</h2>
-        <div className="forge-grid-links">
-          {QUICK_LINKS.map((link) => (
-            <Link key={link.href} href={link.href} className="forge-quick-link">
-              <div className="forge-quick-link__title">{link.label}</div>
-              <div className="forge-quick-link__hint">{link.hint}</div>
-            </Link>
-          ))}
-        </div>
+        <DashboardQuickLinks />
       </section>
     </>
   );

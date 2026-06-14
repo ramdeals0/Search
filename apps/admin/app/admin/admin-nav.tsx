@@ -8,6 +8,7 @@ import {
   WORKSPACE_ROLE_CHANGED_EVENT,
   WORKSPACE_ROLE_STORAGE_KEY,
 } from "../workspace-switcher";
+import { canAccessWorkspace } from "./admin-workspaces";
 
 export interface AdminNavItem {
   href: string;
@@ -150,7 +151,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         href: "/admin/approvals",
         label: "Approvals",
-        allowedRoles: ["reviewer", "approver", "release_manager", "admin"],
+        allowedRoles: "all",
         icon: (
           <NavIcon>
             <svg {...iconProps}>
@@ -161,22 +162,9 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         ),
       },
       {
-        href: "/admin/access",
-        label: "Access",
-        allowedRoles: "all",
-        icon: (
-          <NavIcon>
-            <svg {...iconProps}>
-              <circle cx="8" cy="5.5" r="2" />
-              <path d="M3.5 13c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4" />
-            </svg>
-          </NavIcon>
-        ),
-      },
-      {
         href: "/admin/audit",
         label: "Audit",
-        allowedRoles: ["reviewer", "approver", "release_manager", "admin"],
+        allowedRoles: "all",
         icon: (
           <NavIcon>
             <svg {...iconProps}>
@@ -200,6 +188,25 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         ),
       },
     ],
+    expandable: {
+      href: "/admin/access",
+      label: "Access",
+      allowedRoles: "all",
+      icon: (
+        <NavIcon>
+          <svg {...iconProps}>
+            <circle cx="8" cy="5.5" r="2" />
+            <path d="M3.5 13c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4" />
+          </svg>
+        </NavIcon>
+      ),
+      children: [
+        { href: "/admin/access", label: "Overview" },
+        { href: "/admin/access/jit", label: "JIT elevation" },
+        { href: "/admin/access/requests", label: "Standing requests" },
+        { href: "/admin/access/reviews", label: "Access reviews" },
+      ],
+    },
   },
   {
     title: "Operations",
@@ -207,7 +214,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         href: "/admin/exports",
         label: "Exports",
-        allowedRoles: ["approver", "release_manager", "admin"],
+        allowedRoles: "all",
         icon: (
           <NavIcon>
             <svg {...iconProps}>
@@ -221,7 +228,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         href: "/admin/integrations",
         label: "Integrations",
-        allowedRoles: ["admin"],
+        allowedRoles: "all",
         icon: (
           <NavIcon>
             <svg {...iconProps}>
@@ -249,7 +256,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         href: "/admin/settings",
         label: "Settings",
-        allowedRoles: ["admin"],
+        allowedRoles: "all",
         icon: (
           <NavIcon>
             <svg {...iconProps}>
@@ -281,24 +288,19 @@ const UTILITY_NAV_ITEMS: AdminNavItem[] = [
 ];
 
 function canAccessItem(item: AdminNavItem, role: WorkspaceRole): boolean {
-  if (role === "admin") {
-    return true;
-  }
-  if (item.allowedRoles === "all") {
-    return true;
-  }
-  return item.allowedRoles.includes(role);
+  return canAccessWorkspace(role, item.allowedRoles);
 }
 
-function isMerchandisingPath(pathname: string): boolean {
-  return (
-    pathname === "/admin/merchandising" ||
-    pathname.startsWith("/admin/merchandising/")
-  );
+function isExpandableRootPath(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function isSubNavActive(pathname: string, href: string): boolean {
-  if (href === "/admin/merchandising") {
+function isSubNavActive(
+  pathname: string,
+  href: string,
+  rootHref: string,
+): boolean {
+  if (href === rootHref) {
     return pathname === href;
   }
   if (href === "/admin/merchandising/rules") {
@@ -318,8 +320,8 @@ function isActivePath(pathname: string, href: string): boolean {
   if (href === "/login") {
     return false;
   }
-  if (href === "/admin/merchandising") {
-    return isMerchandisingPath(pathname);
+  if (href === "/admin/merchandising" || href === "/admin/access") {
+    return isExpandableRootPath(pathname, href);
   }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -337,7 +339,10 @@ export function AdminNav({
 }: AdminNavProps) {
   const pathname = usePathname();
   const [role, setRole] = useState<WorkspaceRole>("merchandiser");
-  const [merchandisingOpen, setMerchandisingOpen] = useState(true);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    "/admin/merchandising": true,
+    "/admin/access": true,
+  });
 
   useEffect(() => {
     const loadRole = () => {
@@ -360,8 +365,16 @@ export function AdminNav({
   }, []);
 
   useEffect(() => {
-    if (isMerchandisingPath(pathname)) {
-      setMerchandisingOpen(true);
+    for (const group of ADMIN_NAV_GROUPS) {
+      if (
+        group.expandable &&
+        isExpandableRootPath(pathname, group.expandable.href)
+      ) {
+        setExpandedSections((current) => ({
+          ...current,
+          [group.expandable!.href]: true,
+        }));
+      }
     }
   }, [pathname]);
 
@@ -444,13 +457,18 @@ export function AdminNav({
                     </Link>
                     <button
                       type="button"
-                      aria-expanded={merchandisingOpen}
+                      aria-expanded={expandedSections[group.expandable.href] ?? true}
                       aria-label={
-                        merchandisingOpen
-                          ? "Collapse merchandising navigation"
-                          : "Expand merchandising navigation"
+                        expandedSections[group.expandable.href] ?? true
+                          ? `Collapse ${group.expandable.label} navigation`
+                          : `Expand ${group.expandable.label} navigation`
                       }
-                      onClick={() => setMerchandisingOpen((open) => !open)}
+                      onClick={() =>
+                        setExpandedSections((current) => ({
+                          ...current,
+                          [group.expandable!.href]: !(current[group.expandable!.href] ?? true),
+                        }))
+                      }
                       className="forge-nav-link"
                       style={{
                         width: "2rem",
@@ -459,16 +477,20 @@ export function AdminNav({
                         cursor: "pointer",
                       }}
                     >
-                      {merchandisingOpen ? "▾" : "▸"}
+                      {(expandedSections[group.expandable.href] ?? true) ? "▾" : "▸"}
                     </button>
                   </div>
-                  {merchandisingOpen ? (
+                  {(expandedSections[group.expandable.href] ?? true) ? (
                     <ul
                       className="forge-nav-list"
                       style={{ paddingLeft: "1.35rem", marginTop: 2 }}
                     >
                       {group.expandable.children.map((child) => {
-                        const childActive = isSubNavActive(pathname, child.href);
+                        const childActive = isSubNavActive(
+                          pathname,
+                          child.href,
+                          group.expandable!.href,
+                        );
                         return (
                           <li key={child.href}>
                             <Link

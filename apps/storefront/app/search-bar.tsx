@@ -7,14 +7,21 @@ interface SearchBarProps {
   query: string;
   pageSize: number;
   activeFilters: SearchFiltersDto;
+  compact?: boolean;
 }
 
-export function SearchBar({ query, pageSize, activeFilters }: SearchBarProps) {
+export function SearchBar({
+  query,
+  pageSize,
+  activeFilters,
+  compact = false,
+}: SearchBarProps) {
   return (
     <form
       action="/"
       method="get"
-      style={{ display: "flex", gap: "0.5rem", marginTop: "1.25rem" }}
+      className="store-search-form"
+      role="search"
     >
       <Autocomplete
         initialQuery={query}
@@ -44,16 +51,7 @@ export function SearchBar({ query, pageSize, activeFilters }: SearchBarProps) {
       ))}
       <button
         type="submit"
-        style={{
-          padding: "0.65rem 1rem",
-          fontSize: 16,
-          border: "none",
-          borderRadius: 6,
-          background: "#0f172a",
-          color: "#fff",
-          cursor: "pointer",
-          whiteSpace: "nowrap",
-        }}
+        className={`store-btn store-btn--primary${compact ? "" : ""}`}
       >
         Search
       </button>

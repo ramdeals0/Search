@@ -1,5 +1,4 @@
 import Link from "next/link";
-import type { CSSProperties } from "react";
 
 interface BrowsePaginationProps {
   page: number;
@@ -37,25 +36,6 @@ function buildBrowseUrl(
   return `/browse?${params.toString()}`;
 }
 
-const linkStyle: CSSProperties = {
-  padding: "0.5rem 0.85rem",
-  fontSize: 14,
-  borderRadius: 6,
-  border: "1px solid #cbd5e1",
-  background: "#fff",
-  color: "#0f172a",
-  textDecoration: "none",
-  fontWeight: 500,
-};
-
-const disabledStyle: CSSProperties = {
-  ...linkStyle,
-  color: "#94a3b8",
-  background: "#f8fafc",
-  borderColor: "#e2e8f0",
-  cursor: "not-allowed",
-};
-
 export function BrowsePagination({
   page,
   totalPages,
@@ -73,44 +53,33 @@ export function BrowsePagination({
   const hasNext = page < totalPages;
 
   return (
-    <nav
-      aria-label="Browse pagination"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: "1rem",
-        marginTop: "1.25rem",
-        paddingTop: "1rem",
-        borderTop: "1px solid #e2e8f0",
-      }}
-    >
+    <nav className="store-pagination" aria-label="Browse pagination">
       {hasPrev ? (
         <Link
           href={buildBrowseUrl(page - 1, pageSize, category, brand, inStock, sort)}
-          style={linkStyle}
+          className="store-pagination__link"
         >
           Previous
         </Link>
       ) : (
-        <span style={disabledStyle} aria-disabled="true">
+        <span className="store-pagination__link store-pagination__link--disabled">
           Previous
         </span>
       )}
 
-      <span style={{ fontSize: 14, color: "#475569" }}>
+      <span className="store-pagination__status">
         Page {page} of {totalPages}
       </span>
 
       {hasNext ? (
         <Link
           href={buildBrowseUrl(page + 1, pageSize, category, brand, inStock, sort)}
-          style={linkStyle}
+          className="store-pagination__link"
         >
           Next
         </Link>
       ) : (
-        <span style={disabledStyle} aria-disabled="true">
+        <span className="store-pagination__link store-pagination__link--disabled">
           Next
         </span>
       )}

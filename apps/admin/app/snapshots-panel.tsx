@@ -12,7 +12,7 @@ import { AnnotationPanel } from "./annotation-panel";
 import { CommentsPanel } from "./comments-panel";
 import { SnapshotDiffPreview } from "./snapshot-diff-preview";
 import { notifySnapshotsChanged } from "./snapshot-events";
-import { ADMIN_REVIEWER_STORAGE_KEY } from "./reviewer-management-panel";
+import { ADMIN_REVIEWER_STORAGE_KEY } from "./admin/approvals/components/reviewer-management-panel";
 
 const inputStyle = {
   padding: "0.5rem 0.65rem",

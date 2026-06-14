@@ -9,7 +9,7 @@ import type {
 } from "@retailer-search/shared-types";
 import { AnnotationPanel } from "./annotation-panel";
 import { CommentsPanel } from "./comments-panel";
-import { ADMIN_REVIEWER_STORAGE_KEY } from "./reviewer-management-panel";
+import { ADMIN_REVIEWER_STORAGE_KEY } from "./admin/approvals/components/reviewer-management-panel";
 
 function getExperimentRunTargetId(run: ExperimentRunSummaryDto): string {
   return `${run.experimentId}::${run.runAt}`;

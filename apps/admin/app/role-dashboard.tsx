@@ -27,7 +27,7 @@ import { NotificationInboxPanel } from "./notification-inbox-panel";
 import { PromotionPanel } from "./promotion-panel";
 import { QueryPreview } from "./query-preview";
 import { QuerySetEditor } from "./query-set-editor";
-import { ReviewerManagementPanel } from "./reviewer-management-panel";
+import { ReviewerManagementPanel } from "./admin/approvals/components/reviewer-management-panel";
 import { RulesTable } from "./rules-table";
 import { SavedViewsPanel } from "./saved-views-panel";
 import { ScorecardPanel } from "./scorecard-panel";

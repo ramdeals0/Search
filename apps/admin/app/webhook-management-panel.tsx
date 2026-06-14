@@ -11,10 +11,8 @@ import type {
   WebhookEndpointListResponseDto,
   WebhookEventType,
 } from "@retailer-search/shared-types";
-import {
-  AUTH_TOKEN_STORAGE_KEY,
-  ACCESS_GOVERNANCE_CHANGED_EVENT,
-} from "./access-request-panel";
+import { ACCESS_GOVERNANCE_CHANGED_EVENT } from "./admin/access/lib/events";
+import { AUTH_TOKEN_STORAGE_KEY } from "./auth-session";
 import { INTEGRATIONS_CHANGED_EVENT } from "./export-center-panel";
 
 const EVENT_OPTIONS: WebhookEventType[] = [

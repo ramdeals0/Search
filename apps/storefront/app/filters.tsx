@@ -68,15 +68,8 @@ export function Filters({
   };
 
   return (
-    <aside
-      style={{
-        padding: "1rem",
-        border: "1px solid #e2e8f0",
-        borderRadius: 8,
-        background: "#f8fafc",
-      }}
-    >
-      <h2 style={{ margin: "0 0 1rem", fontSize: "1rem" }}>Filters</h2>
+    <aside className="store-filters">
+      <h2 className="store-filters__title">Refine results</h2>
 
       {FILTER_GROUPS.map((group) => {
         const options = facets[group.key] ?? [];
@@ -88,15 +81,7 @@ export function Filters({
 
         return (
           <section key={group.key} style={{ marginBottom: "1.25rem" }}>
-            <h3
-              style={{
-                margin: "0 0 0.5rem",
-                fontSize: 14,
-                color: "#334155",
-              }}
-            >
-              {group.label}
-            </h3>
+            <h3 className="store-filters__group-title">{group.label}</h3>
             <ul
               style={{
                 listStyle: "none",
@@ -129,7 +114,9 @@ export function Filters({
                         onChange={() => updateFilter(group.key, option.value)}
                       />
                       <span style={{ flex: 1 }}>{label}</span>
-                      <span style={{ color: "#64748b" }}>({option.count})</span>
+                      <span style={{ color: "var(--store-muted)" }}>
+                        ({option.count})
+                      </span>
                     </label>
                   </li>
                 );

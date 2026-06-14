@@ -11,19 +11,19 @@ const content: Record<
   { title: string; body: string; action: string }
 > = {
   "first-use": {
-    title: "Search our catalog",
-    body: "Find products by name, brand, category, or description. Try tools, hardware, or home improvement items.",
-    action: "Enter a search term above to get started.",
+    title: "Start shopping",
+    body: "Search for tools, hardware, outdoor gear, and more — or browse departments from the home page.",
+    action: "Use the search bar above or explore Shop all.",
   },
   "no-results": {
-    title: "No matching products",
-    body: "We couldn't find products that match your search. Try a different keyword, brand name, or category.",
-    action: "Broaden your search or check spelling, then try again.",
+    title: "No products found",
+    body: "Try a different keyword, check spelling, or browse a category instead.",
+    action: "Clear filters or search for a broader term.",
   },
   error: {
-    title: "Search unavailable",
-    body: "We couldn't reach the search service right now. Make sure the search API is running locally.",
-    action: "Start search-api and refresh this page.",
+    title: "Store temporarily unavailable",
+    body: "We couldn't reach the product catalog. Make sure the search API is running.",
+    action: "Refresh the page or contact support if the issue persists.",
   },
 };
 
@@ -32,29 +32,21 @@ export function EmptyState({ mode, query, errorMessage }: EmptyStateProps) {
 
   return (
     <section
-      style={{
-        marginTop: "1.5rem",
-        padding: "1.25rem",
-        borderRadius: 8,
-        background: mode === "error" ? "#fef2f2" : "#f8fafc",
-        border: `1px solid ${mode === "error" ? "#fca5a5" : "#e2e8f0"}`,
-      }}
+      className={`store-empty${mode === "error" ? " store-empty--error" : ""}`}
     >
-      <h2 style={{ margin: "0 0 0.5rem", fontSize: "1.1rem" }}>{title}</h2>
-      <p style={{ margin: "0 0 0.75rem", color: "#475569", lineHeight: 1.5 }}>
-        {body}
-      </p>
-      {mode === "no-results" && query && (
-        <p style={{ margin: "0 0 0.75rem", color: "#64748b", fontSize: 14 }}>
-          Query: <strong>{query}</strong>
+      <h2 className="store-empty__title">{title}</h2>
+      <p className="store-empty__text">{body}</p>
+      {mode === "no-results" && query ? (
+        <p className="store-empty__text">
+          Searched for: <strong>{query}</strong>
         </p>
-      )}
-      {mode === "error" && errorMessage && (
-        <p style={{ margin: "0 0 0.75rem", color: "#b91c1c", fontSize: 14 }}>
+      ) : null}
+      {mode === "error" && errorMessage ? (
+        <p className="store-empty__text" style={{ color: "var(--store-danger)" }}>
           {errorMessage}
         </p>
-      )}
-      <p style={{ margin: 0, color: "#334155", fontSize: 14 }}>{action}</p>
+      ) : null}
+      <p className="store-empty__text">{action}</p>
     </section>
   );
 }

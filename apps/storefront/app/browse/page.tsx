@@ -18,6 +18,10 @@ interface PageProps {
   searchParams: Promise<SearchParams>;
 }
 
+export const metadata = {
+  title: "Shop all products",
+};
+
 function readParam(
   params: SearchParams,
   key: string,
@@ -160,71 +164,45 @@ export default async function BrowsePage({ searchParams }: PageProps) {
   ]);
 
   const error = categoriesResult.error ?? browseResult.error;
+  const pageTitle = category ?? "Shop all products";
 
   return (
-    <main style={{ maxWidth: 960, margin: "0 auto", padding: "2rem 1.5rem" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: "1rem",
-          flexWrap: "wrap",
-          alignItems: "baseline",
-          marginBottom: "0.5rem",
-        }}
-      >
-        <h1 style={{ margin: 0 }}>Browse catalog</h1>
-        <Link href="/" style={{ fontSize: 14, color: "#2563eb" }}>
-          Back to search
+    <>
+      <div className="store-results-header" style={{ marginBottom: "1.25rem" }}>
+        <div>
+          <h1 style={{ margin: "0 0 0.35rem", fontSize: "1.75rem" }}>{pageTitle}</h1>
+          <p className="store-results-meta" style={{ margin: 0 }}>
+            Browse our full catalog with filters and sorting.
+          </p>
+        </div>
+        <Link href="/" className="store-btn store-btn--secondary">
+          Back to home
         </Link>
       </div>
-      <p style={{ color: "#475569", marginBottom: "1.25rem" }}>
-        Explore products by category with sort and pagination.
-      </p>
 
-      <form
-        method="get"
-        action="/browse"
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "0.75rem",
-          marginBottom: "1.25rem",
-          alignItems: "end",
-        }}
-      >
+      <form method="get" action="/browse" className="store-browse-toolbar">
         {category ? <input type="hidden" name="category" value={category} /> : null}
         <input type="hidden" name="page" value="1" />
         <input type="hidden" name="pageSize" value={String(pageSize)} />
 
-        <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
+        <label>
           Brand
           <input
             name="brand"
             defaultValue={brand ?? ""}
             placeholder="Filter by brand"
-            style={{
-              padding: "0.5rem 0.65rem",
-              border: "1px solid #cbd5e1",
-              borderRadius: 6,
-              fontSize: 14,
-            }}
+            className="store-input"
           />
         </label>
 
-        <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
+        <label>
           Stock
           <select
             name="inStock"
             defaultValue={
               inStock === undefined ? "" : inStock ? "true" : "false"
             }
-            style={{
-              padding: "0.5rem 0.65rem",
-              border: "1px solid #cbd5e1",
-              borderRadius: 6,
-              fontSize: 14,
-            }}
+            className="store-select"
           >
             <option value="">Any</option>
             <option value="true">In stock</option>
@@ -232,18 +210,9 @@ export default async function BrowsePage({ searchParams }: PageProps) {
           </select>
         </label>
 
-        <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
+        <label>
           Sort
-          <select
-            name="sort"
-            defaultValue={sort}
-            style={{
-              padding: "0.5rem 0.65rem",
-              border: "1px solid #cbd5e1",
-              borderRadius: 6,
-              fontSize: 14,
-            }}
-          >
+          <select name="sort" defaultValue={sort} className="store-select">
             <option value="relevance">Relevance</option>
             <option value="price_asc">Price: low to high</option>
             <option value="price_desc">Price: high to low</option>
@@ -251,25 +220,15 @@ export default async function BrowsePage({ searchParams }: PageProps) {
           </select>
         </label>
 
-        <button
-          type="submit"
-          style={{
-            padding: "0.55rem 0.9rem",
-            border: "none",
-            borderRadius: 6,
-            background: "#2563eb",
-            color: "#fff",
-            fontSize: 14,
-            cursor: "pointer",
-          }}
-        >
-          Apply filters
+        <button type="submit" className="store-btn store-btn--primary">
+          Apply
         </button>
 
         {brand || inStock !== undefined || sort !== "relevance" ? (
           <Link
             href={buildBrowseUrl({ pageSize, category, sort: "relevance" })}
-            style={{ fontSize: 13, color: "#64748b", alignSelf: "center" }}
+            className="store-results-meta"
+            style={{ alignSelf: "center", textDecoration: "none" }}
           >
             Clear filters
           </Link>
@@ -277,18 +236,13 @@ export default async function BrowsePage({ searchParams }: PageProps) {
       </form>
 
       {error ? (
-        <p style={{ color: "#b91c1c", fontSize: 14 }}>{error}</p>
+        <div className="store-empty store-empty--error">
+          <p className="store-empty__text">{error}</p>
+        </div>
       ) : null}
 
       {!error && browseResult.data ? (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(220px, 260px) 1fr",
-            gap: "1.25rem",
-            alignItems: "start",
-          }}
-        >
+        <div className="store-layout-with-sidebar">
           <BrowseSidebar
             categories={categoriesResult.categories}
             activeCategory={category}
@@ -306,6 +260,6 @@ export default async function BrowsePage({ searchParams }: PageProps) {
           />
         </div>
       ) : null}
-    </main>
+    </>
   );
 }

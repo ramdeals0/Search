@@ -1,17 +1,19 @@
 import type {
+  BrowseCategoryDto,
   SearchFiltersDto,
   SearchResponseDto,
 } from "@retailer-search/shared-types";
+import { Suspense } from "react";
+import { HomeHero } from "./components/home-hero";
 import { EmptyState } from "./empty-state";
 import { Filters } from "./filters";
-import { SearchBar } from "./search-bar";
 import { SearchResults } from "./search-results";
 
 const SEARCH_API_URL =
   process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
 
 const DEFAULT_PAGE = 1;
-const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 12;
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -65,6 +67,21 @@ function buildActiveFilters(params: SearchParams): SearchFiltersDto {
   }
 
   return filters;
+}
+
+async function fetchBrowseCategories(): Promise<BrowseCategoryDto[]> {
+  try {
+    const response = await fetch(`${SEARCH_API_URL}/api/v1/browse/categories`, {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return [];
+    }
+    const body = (await response.json()) as { categories: BrowseCategoryDto[] };
+    return body.categories ?? [];
+  } catch {
+    return [];
+  }
 }
 
 async function fetchSearchResults(
@@ -138,75 +155,53 @@ export default async function HomePage({ searchParams }: PageProps) {
   const debug = readParam(params, "debug", "") === "true";
 
   const hasQuery = query.length > 0;
-  const searchResult = hasQuery
-    ? await fetchSearchResults(query, page, pageSize, activeFilters, debug)
-    : null;
+  const [categories, searchResult] = await Promise.all([
+    hasQuery ? Promise.resolve([]) : fetchBrowseCategories(),
+    hasQuery
+      ? fetchSearchResults(query, page, pageSize, activeFilters, debug)
+      : Promise.resolve(null),
+  ]);
 
   if (hasQuery && searchResult?.data) {
     await recordSearchEvent(query, searchResult.data.totalHits);
   }
 
+  if (!hasQuery) {
+    return <HomeHero categories={categories} />;
+  }
+
   return (
-    <main style={{ maxWidth: 960, margin: "0 auto", padding: "2rem 1.5rem" }}>
-      <h1 style={{ marginTop: 0 }}>Retail Discovery Platform</h1>
-      <p style={{ color: "#475569", marginBottom: 0 }}>
-        Search products across our store network.{" "}
-        <a href="/browse" style={{ color: "#2563eb" }}>
-          Browse catalog
-        </a>
-      </p>
+    <>
+      {searchResult?.data?.correctedQuery &&
+        searchResult.data.correctedQuery !==
+          searchResult.data.query.trim().toLowerCase() && (
+          <p className="store-results-meta" style={{ marginBottom: "1rem" }}>
+            Showing results for{" "}
+            <strong>{searchResult.data.correctedQuery}</strong>
+          </p>
+        )}
 
-      <SearchBar
-        query={query}
-        pageSize={pageSize}
-        activeFilters={activeFilters}
-      />
-
-      {!hasQuery && <EmptyState mode="first-use" />}
-
-      {hasQuery && searchResult?.error && (
+      {searchResult?.error ? (
         <EmptyState mode="error" errorMessage={searchResult.error} />
-      )}
+      ) : null}
 
-      {hasQuery && searchResult?.data && (
-        <>
-          {searchResult.data.correctedQuery &&
-            searchResult.data.correctedQuery !==
-              searchResult.data.query.trim().toLowerCase() && (
-              <p
-                style={{
-                  margin: "1rem 0 0",
-                  fontSize: 14,
-                  color: "#64748b",
-                }}
-              >
-                Showing results for{" "}
-                <strong>{searchResult.data.correctedQuery}</strong>
-              </p>
-            )}
-          <div
-            style={{
-              marginTop: "1.5rem",
-              display: "grid",
-              gridTemplateColumns: "minmax(220px, 260px) 1fr",
-              gap: "1.25rem",
-              alignItems: "start",
-            }}
-          >
+      {searchResult?.data ? (
+        <div className="store-layout-with-sidebar">
+          <Suspense fallback={<aside className="store-filters">Loading filters…</aside>}>
             <Filters
               facets={searchResult.data.availableFacets}
               activeFilters={activeFilters}
               query={query}
               pageSize={pageSize}
             />
-            <SearchResults
-              data={searchResult.data}
-              activeFilters={activeFilters}
-              debug={debug}
-            />
-          </div>
-        </>
-      )}
-    </main>
+          </Suspense>
+          <SearchResults
+            data={searchResult.data}
+            activeFilters={activeFilters}
+            debug={debug}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }

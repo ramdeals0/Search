@@ -187,7 +187,7 @@ export function Autocomplete({
   };
 
   return (
-    <div ref={containerRef} style={{ position: "relative", flex: 1 }}>
+    <div ref={containerRef} className="store-search-form__input-wrap">
       <input
         type="search"
         name="query"
@@ -207,14 +207,7 @@ export function Autocomplete({
         aria-autocomplete="list"
         aria-controls={isOpen ? listboxId : undefined}
         aria-expanded={isOpen}
-        style={{
-          width: "100%",
-          padding: "0.65rem 0.75rem",
-          fontSize: 16,
-          border: "1px solid #cbd5e1",
-          borderRadius: 6,
-          boxSizing: "border-box",
-        }}
+        className="store-input"
       />
 
       {isOpen && suggestions.length > 0 && (
