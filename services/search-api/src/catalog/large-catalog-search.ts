@@ -16,6 +16,7 @@ import { CATALOG_SEARCH_CANDIDATE_LIMIT } from "./catalog-scale-config.js";
 
 export interface LargeCatalogSearchOptions {
   catalogId?: string;
+  candidates?: ProductDocument[];
   rules?: MerchandisingRule[];
   debug?: boolean;
   index?: ProductSearchIndex;
@@ -30,12 +31,14 @@ export async function searchLargeCatalog(
   request: SearchRequestDto,
   options: LargeCatalogSearchOptions = {},
 ): Promise<SearchResponseDto> {
-  const candidates = await fetchSearchCandidatesFromDatabase({
-    query: request.query,
-    catalogId: options.catalogId,
-    filters: request.filters,
-    limit: CATALOG_SEARCH_CANDIDATE_LIMIT,
-  });
+  const candidates =
+    options.candidates ??
+    (await fetchSearchCandidatesFromDatabase({
+      query: request.query,
+      catalogId: options.catalogId,
+      filters: request.filters,
+      limit: CATALOG_SEARCH_CANDIDATE_LIMIT,
+    }));
 
   if (options.useHybrid && options.config) {
     return executeHybridRankingPipeline(candidates, request, {

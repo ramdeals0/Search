@@ -12,7 +12,9 @@ import { RankingScoreBreakdown } from "./ranking-score-breakdown";
 
 const PREVIEW_MODE_OPTIONS: Array<{ value: AiSearchPreviewMode; label: string }> = [
   { value: "lexical", label: "Lexical only" },
-  { value: "hybrid", label: "Hybrid" },
+  { value: "semantic", label: "Semantic only" },
+  { value: "hybrid", label: "Hybrid (fusion)" },
+  { value: "hybrid_rerank", label: "Hybrid + rerank" },
   { value: "hybrid_personalization", label: "Hybrid + personalization" },
   { value: "semantic_rescue", label: "Semantic rescue" },
 ];

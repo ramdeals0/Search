@@ -32,7 +32,10 @@ function envNumber(name: string, fallback: number): number {
 export function getDefaultAiRankingConfig(): AiRankingConfigDto {
   return {
     enabled: envBool("HYBRID_SEARCH_ENABLED", envBool("HYBRID_VECTOR_ENABLED", false)),
-    semanticRetrievalEnabled: envBool("SEMANTIC_SEARCH_ENABLED", envBool("HYBRID_VECTOR_ENABLED", false)),
+    semanticRetrievalEnabled: envBool(
+      "SEMANTIC_SEARCH_ENABLED",
+      envBool("VECTOR_SEARCH_ENABLED", envBool("HYBRID_VECTOR_ENABLED", false)),
+    ),
     personalizationEnabled: envBool("PERSONALIZATION_ENABLED", true),
     semanticZeroResultsFallbackEnabled: envBool(
       "SEMANTIC_ZERO_RESULTS_FALLBACK_ENABLED",
@@ -170,9 +173,24 @@ export function resolvePreviewModeConfig(
         personalizationEnabled: false,
         semanticZeroResultsFallbackEnabled: false,
       };
+    case "semantic":
+      return {
+        ...base,
+        enabled: true,
+        semanticRetrievalEnabled: true,
+        personalizationEnabled: false,
+        semanticZeroResultsFallbackEnabled: false,
+      };
     case "hybrid":
       return {
         ...base,
+        semanticRetrievalEnabled: true,
+        personalizationEnabled: false,
+      };
+    case "hybrid_rerank":
+      return {
+        ...base,
+        enabled: true,
         semanticRetrievalEnabled: true,
         personalizationEnabled: false,
       };
