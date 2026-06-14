@@ -1,9 +1,22 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Suspense } from "react";
+import { Barlow, Barlow_Condensed } from "next/font/google";
 import { SiteHeader } from "./components/site-header";
 import { SiteFooter } from "./components/site-footer";
 import "./globals.css";
+
+const barlow = Barlow({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-body",
+});
+
+const barlowCondensed = Barlow_Condensed({
+  subsets: ["latin"],
+  weight: ["600", "700"],
+  variable: "--font-display",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -34,8 +47,8 @@ function HeaderFallback() {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <body className="store-body">
+    <html lang="en" className={`${barlow.variable} ${barlowCondensed.variable}`}>
+      <body className="store-body store-theme--buildmart">
         <div className="store-shell">
           <Suspense fallback={<HeaderFallback />}>
             <SiteHeader />

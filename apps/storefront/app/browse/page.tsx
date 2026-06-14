@@ -6,7 +6,7 @@ import type {
 import { BrowseResults } from "./browse-results";
 import { BrowseSidebar } from "./browse-sidebar";
 import { getSearchApiUrl } from "../lib/search-api-url";
-import { getCatalogRequestHeaders } from "../lib/store-config";
+import { getCatalogRequestHeaders, withCatalogScope } from "../lib/store-config";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 12;
@@ -53,10 +53,13 @@ async function fetchBrowseCategories(): Promise<{
   error?: string;
 }> {
   try {
-    const response = await fetch(`${getSearchApiUrl()}/api/v1/browse/categories`, {
+    const response = await fetch(
+      withCatalogScope(new URL("/api/v1/browse/categories", getSearchApiUrl())).toString(),
+      {
       cache: "no-store",
       headers: getCatalogRequestHeaders(),
-    });
+    },
+    );
 
     if (!response.ok) {
       return { categories: [], error: `Browse API returned HTTP ${response.status}` };
@@ -80,7 +83,7 @@ async function fetchBrowseResults(options: {
   inStock?: boolean;
   sort?: string;
 }): Promise<{ data?: BrowseResponseDto; error?: string }> {
-  const url = new URL("/api/v1/browse", getSearchApiUrl());
+  const url = withCatalogScope(new URL("/api/v1/browse", getSearchApiUrl()));
   url.searchParams.set("page", String(options.page));
   url.searchParams.set("pageSize", String(options.pageSize));
   if (options.category) {

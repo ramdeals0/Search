@@ -1,17 +1,6 @@
 import { formatPrice } from "../lib/format";
 import { TrackClick } from "../track-click";
 
-const CATEGORY_ICONS: Record<string, string> = {
-  "Power Tools": "🔧",
-  "Lawn & Garden": "🌿",
-  Electrical: "⚡",
-  Plumbing: "🚿",
-  Lighting: "💡",
-  Hardware: "🔩",
-  Paint: "🎨",
-  Flooring: "🪵",
-};
-
 interface ProductCardProps {
   id: string;
   title: string;
@@ -24,8 +13,19 @@ interface ProductCardProps {
   query?: string;
 }
 
-function categoryIcon(category: string): string {
-  return CATEGORY_ICONS[category] ?? "📦";
+function placeholderMonogram(brand: string, category: string): string {
+  const brandInitials = brand
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+
+  if (brandInitials.length > 0) {
+    return brandInitials;
+  }
+
+  return category.slice(0, 1).toUpperCase() || "LA";
 }
 
 export function ProductCard({
@@ -46,7 +46,7 @@ export function ProductCard({
           <img src={imageUrl} alt={title} loading="lazy" />
         ) : (
           <div className="store-product-card__placeholder" aria-hidden="true">
-            {categoryIcon(category)}
+            {placeholderMonogram(brand, category)}
           </div>
         )}
       </div>
@@ -62,7 +62,7 @@ export function ProductCard({
           <span
             className={`store-badge ${inStock ? "store-badge--in-stock" : "store-badge--out-of-stock"}`}
           >
-            {inStock ? "In stock" : "Out of stock"}
+            {inStock ? "Available" : "Sold out"}
           </span>
         </div>
         <TrackClick
@@ -71,7 +71,7 @@ export function ProductCard({
           productTitle={title}
           className="store-btn store-btn--primary store-btn--block"
         >
-          Add to cart
+          Add to bag
         </TrackClick>
       </div>
     </article>

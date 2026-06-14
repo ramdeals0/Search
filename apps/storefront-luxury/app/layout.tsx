@@ -1,9 +1,22 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Suspense } from "react";
+import { Cormorant_Garamond, Jost } from "next/font/google";
 import { SiteHeader } from "./components/site-header";
 import { SiteFooter } from "./components/site-footer";
 import "./globals.css";
+
+const displayFont = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-display",
+});
+
+const bodyFont = Jost({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600"],
+  variable: "--font-body",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -21,10 +34,7 @@ function HeaderFallback() {
       <header className="store-header">
         <div className="store-header__inner">
           <div className="store-header__top">
-            <span className="store-logo">
-              <span className="store-logo__mark">L</span>
-              Luxe Atelier
-            </span>
+            <span className="store-logo">Luxe Atelier</span>
           </div>
         </div>
       </header>
@@ -34,8 +44,8 @@ function HeaderFallback() {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <body className="store-body">
+    <html lang="en" className={`${displayFont.variable} ${bodyFont.variable}`}>
+      <body className="store-body store-theme--luxury">
         <div className="store-shell">
           <Suspense fallback={<HeaderFallback />}>
             <SiteHeader />

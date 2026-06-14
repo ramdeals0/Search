@@ -29,7 +29,7 @@ function getProxyCatalogId(request: NextRequest): string {
     process.env.STORE_CATALOG_ID ??
     "luxury-clothing";
   const trimmed = configured.trim();
-  return trimmed.length > 0 ? trimmed : "default";
+  return trimmed.length > 0 ? trimmed : "luxury-clothing";
 }
 
 const FORWARD_RESPONSE_HEADERS = [

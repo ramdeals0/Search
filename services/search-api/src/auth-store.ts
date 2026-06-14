@@ -230,26 +230,34 @@ export async function hydrateAuthStore(): Promise<void> {
   usersByEmail.clear();
   sessionsByToken.clear();
 
-  const users = await prisma.user.findMany();
-  for (const row of users) {
-    const user = mapUserRow(row);
-    const stored: StoredUser = {
-      user,
-      password: row.password,
-    };
-    usersById.set(user.id, stored);
-    usersByEmail.set(user.email.toLowerCase(), stored);
-  }
+  try {
+    const users = await prisma.user.findMany();
+    for (const row of users) {
+      const user = mapUserRow(row);
+      const stored: StoredUser = {
+        user,
+        password: row.password,
+      };
+      usersById.set(user.id, stored);
+      usersByEmail.set(user.email.toLowerCase(), stored);
+    }
 
-  const sessions = await prisma.session.findMany();
-  for (const row of sessions) {
-    sessionsByToken.set(row.token, {
-      token: row.token,
-      userId: row.userId,
-      createdAt: row.createdAt.toISOString(),
-      expiresAt: row.expiresAt.toISOString(),
-      lastActivityAt: row.lastActivityAt.toISOString(),
-    });
+    const sessions = await prisma.session.findMany();
+    for (const row of sessions) {
+      sessionsByToken.set(row.token, {
+        token: row.token,
+        userId: row.userId,
+        createdAt: row.createdAt.toISOString(),
+        expiresAt: row.expiresAt.toISOString(),
+        lastActivityAt: row.lastActivityAt.toISOString(),
+      });
+    }
+  } catch (error) {
+    console.error(
+      "Failed to hydrate auth store from database. Run `prisma migrate deploy` if Session.lastActivityAt is missing.",
+      error,
+    );
+    throw error;
   }
 }
 

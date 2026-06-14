@@ -15,9 +15,11 @@ const POPULAR_SEARCHES = [
 ];
 
 const CATEGORY_ICONS: Record<string, string> = {
-  Women: "👗",
-  Men: "🤵",
-  Accessories: "👜",
+  Women: "W",
+  Men: "M",
+  Accessories: "A",
+  Jewelry: "J",
+  Shoes: "S",
 };
 
 interface HomeHeroProps {
@@ -74,8 +76,8 @@ export async function HomeHero({ categories }: HomeHeroProps) {
                 href={`/browse?category=${encodeURIComponent(entry.category)}`}
                 className="store-category-card"
               >
-                <span className="store-category-card__icon" aria-hidden="true">
-                  {CATEGORY_ICONS[entry.category] ?? "✨"}
+                <span className="store-category-card__initial" aria-hidden="true">
+                  {CATEGORY_ICONS[entry.category] ?? entry.category.slice(0, 1)}
                 </span>
                 <span className="store-category-card__name">{entry.category}</span>
                 <span className="store-category-card__count">

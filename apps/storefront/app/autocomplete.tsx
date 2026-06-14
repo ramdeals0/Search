@@ -246,7 +246,7 @@ export function Autocomplete({
           }
         }}
         onKeyDown={handleKeyDown}
-        placeholder="Search products, brands, categories..."
+        placeholder="Search tools, brands, departments..."
         aria-label="Search products"
         aria-autocomplete="list"
         aria-controls={isOpen ? listboxId : undefined}

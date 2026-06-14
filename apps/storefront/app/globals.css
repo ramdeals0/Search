@@ -15,6 +15,8 @@
   --store-shadow: 0 1px 3px rgba(20, 33, 61, 0.08);
   --store-shadow-lg: 0 12px 32px rgba(20, 33, 61, 0.12);
   --store-max-width: 1200px;
+  --font-body: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-body);
 }
 
 *,
@@ -30,10 +32,56 @@ html {
 body.store-body {
   margin: 0;
   min-height: 100vh;
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-body);
   color: var(--store-text);
   background: var(--store-bg);
   line-height: 1.5;
+}
+
+body.store-theme--buildmart {
+  background:
+    linear-gradient(180deg, #eef1f6 0%, var(--store-bg) 240px),
+    var(--store-bg);
+}
+
+body.store-theme--buildmart .store-promo-bar {
+  background: linear-gradient(90deg, #c44900 0%, var(--store-accent) 50%, #f48c06 100%);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+body.store-theme--buildmart .store-logo {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+body.store-theme--buildmart .store-hero__banner {
+  background:
+    linear-gradient(120deg, rgba(20, 33, 61, 0.94) 0%, rgba(29, 53, 87, 0.92) 42%, rgba(232, 93, 4, 0.88) 100%),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.04) 0,
+      rgba(255, 255, 255, 0.04) 2px,
+      transparent 2px,
+      transparent 10px
+    );
+}
+
+body.store-theme--buildmart .store-hero__title,
+body.store-theme--buildmart .store-section-title {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+body.store-theme--buildmart .store-category-card__icon {
+  font-size: 2rem;
+}
+
+body.store-theme--buildmart .store-category-card:hover {
+  border-color: #fed7aa;
 }
 
 a {

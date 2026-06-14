@@ -1748,7 +1748,10 @@ app.get("/api/v1/autocomplete", requireApiKeyScope("search:read"), enforceApiKey
     req.header("x-catalog-id")?.trim(),
   );
   if (isLargeCatalogMode()) {
-    const suggestions = await autocompleteFromDatabase(parsed.data.query);
+    const suggestions = await autocompleteFromDatabase(
+      parsed.data.query,
+      autocompleteCatalogId,
+    );
     res.json({
       query: parsed.data.query,
       normalizedQuery: parsed.data.query.trim().toLowerCase(),

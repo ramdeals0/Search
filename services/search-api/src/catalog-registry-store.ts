@@ -160,5 +160,6 @@ export async function resolveCatalogId(
     return bySlug.id;
   }
 
-  return "default";
+  // Keep explicit storefront catalog selection even if registry sync lags seeding.
+  return value;
 }

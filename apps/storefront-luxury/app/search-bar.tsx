@@ -58,7 +58,7 @@ export function SearchBar({
         type="submit"
         className={`store-btn store-btn--primary${compact ? "" : ""}`}
       >
-        Search
+        Discover
       </button>
     </form>
   );

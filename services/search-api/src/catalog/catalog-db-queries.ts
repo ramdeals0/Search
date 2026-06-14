@@ -286,6 +286,7 @@ export async function listBrowseCategoriesFromDatabase(
 
 export async function autocompleteFromDatabase(
   query: string,
+  catalogId?: string,
   limit = 8,
 ): Promise<AutocompleteSuggestionDto[]> {
   const trimmed = query.trim();
@@ -293,39 +294,49 @@ export async function autocompleteFromDatabase(
     return [];
   }
 
+  const catalog = resolveCatalogFilter(catalogId);
+
   const [products, brands, categories] = await Promise.all([
     prisma.$queryRawUnsafe<Array<{ title: string }>>(
       `
-      SELECT DISTINCT title
-      FROM "Product"
-      WHERE title ILIKE $1 || '%'
-      ORDER BY title ASC
+      SELECT DISTINCT p.title
+      FROM "Product" p
+      WHERE p."catalogId" = $3
+        AND p.title ILIKE $1 || '%'
+      ORDER BY p.title ASC
       LIMIT $2
       `,
       trimmed,
       limit,
+      catalog,
     ),
     prisma.$queryRawUnsafe<Array<{ name: string }>>(
       `
-      SELECT DISTINCT name
-      FROM "Brand"
-      WHERE name ILIKE $1 || '%'
-      ORDER BY name ASC
+      SELECT DISTINCT b.name
+      FROM "Brand" b
+      INNER JOIN "Product" p ON p."brandId" = b.id
+      WHERE p."catalogId" = $3
+        AND b.name ILIKE $1 || '%'
+      ORDER BY b.name ASC
       LIMIT $2
       `,
       trimmed,
       Math.max(2, Math.floor(limit / 2)),
+      catalog,
     ),
     prisma.$queryRawUnsafe<Array<{ department: string }>>(
       `
-      SELECT DISTINCT department
-      FROM "Category"
-      WHERE department ILIKE $1 || '%'
-      ORDER BY department ASC
+      SELECT DISTINCT c.department
+      FROM "Category" c
+      INNER JOIN "Product" p ON p."categoryId" = c.id
+      WHERE p."catalogId" = $3
+        AND c.department ILIKE $1 || '%'
+      ORDER BY c.department ASC
       LIMIT $2
       `,
       trimmed,
       Math.max(2, Math.floor(limit / 2)),
+      catalog,
     ),
   ]);
 

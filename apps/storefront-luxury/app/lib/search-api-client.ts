@@ -26,6 +26,7 @@ export async function fetchSearchApi(
   }
 
   const url = buildSearchApiUrl(path);
+  url.searchParams.set("catalogId", getStoreCatalogId());
   return fetch(url, {
     ...rest,
     method,

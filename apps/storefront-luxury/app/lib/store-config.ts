@@ -16,3 +16,9 @@ export function getCatalogRequestHeaders(
   headers.set("x-catalog-id", getStoreCatalogId());
   return headers;
 }
+
+/** Adds catalogId query param for server-side API calls that bypass the proxy. */
+export function withCatalogScope(url: URL): URL {
+  url.searchParams.set("catalogId", getStoreCatalogId());
+  return url;
+}

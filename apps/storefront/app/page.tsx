@@ -10,7 +10,7 @@ import { EmptyState } from "./empty-state";
 import { Filters } from "./filters";
 import { SearchResults } from "./search-results";
 import { getSearchApiUrl } from "./lib/search-api-url";
-import { getCatalogRequestHeaders } from "./lib/store-config";
+import { getCatalogRequestHeaders, withCatalogScope } from "./lib/store-config";
 
 const SESSION_COOKIE_NAME = "shopper-session-id";
 
@@ -73,10 +73,13 @@ function buildActiveFilters(params: SearchParams): SearchFiltersDto {
 
 async function fetchBrowseCategories(): Promise<BrowseCategoryDto[]> {
   try {
-    const response = await fetch(`${getSearchApiUrl()}/api/v1/browse/categories`, {
+    const response = await fetch(
+      withCatalogScope(new URL("/api/v1/browse/categories", getSearchApiUrl())).toString(),
+      {
       cache: "no-store",
       headers: getCatalogRequestHeaders(),
-    });
+    },
+    );
     if (!response.ok) {
       return [];
     }
@@ -95,7 +98,7 @@ async function fetchSearchResults(
   debug: boolean,
   sessionId?: string,
 ): Promise<{ data?: SearchResponseDto; error?: string }> {
-  const url = new URL("/api/v1/search", getSearchApiUrl());
+  const url = withCatalogScope(new URL("/api/v1/search", getSearchApiUrl()));
   url.searchParams.set("query", query);
   url.searchParams.set("page", String(page));
   url.searchParams.set("pageSize", String(pageSize));

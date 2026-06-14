@@ -17,12 +17,7 @@ export function SiteHeader() {
       <header className="store-header">
         <div className="store-header__inner">
           <div className="store-header__top">
-            <Link href="/" className="store-logo">
-              <span className="store-logo__mark" aria-hidden="true">
-                L
-              </span>
-              Luxe Atelier
-            </Link>
+            <Link href="/" className="store-logo">Luxe Atelier</Link>
             <nav className="store-nav" aria-label="Primary">
               <Link
                 href="/"
