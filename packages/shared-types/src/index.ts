@@ -31,9 +31,58 @@ export type {
   LlmSettingsDto,
   UpdateLlmSettingsRequestDto,
 } from "./llm-settings.js";
+export type {
+  AdminProductListResponseDto,
+  CatalogCsvImportResultDto,
+  CommerceEventType,
+  DiscoveryRecentQueryDto,
+  DiscoveryRecentResponseDto,
+  DiscoveryTrendingResponseDto,
+  OnlineExperimentStatusDto,
+  RecordCommerceEventRequestDto,
+  RevenueMetricsDto,
+  RuleConflictItemDto,
+  RuleConflictReportDto,
+  SearchContentModuleDto,
+  SearchContentModuleHitDto,
+  SearchContentModuleListResponseDto,
+  SearchContentModuleType,
+  UpdateAdminProductRequestDto,
+} from "./platform-enhancements.js";
+export type {
+  AdminBrandingDto,
+  CatalogDto,
+  CatalogListResponseDto,
+  CreateCatalogRequestDto,
+  DeveloperApiKeyListResponseDto,
+  PluginDescriptorDto,
+  PluginHookName,
+  PluginListResponseDto,
+  RotateApiKeyResponseDto,
+  UpdateAdminBrandingRequestDto,
+  UpdateCatalogRequestDto,
+} from "./platform-p4.js";
+export type {
+  AiQueryPreviewResponseDto,
+  AiRankingConfigDto,
+  AiRankingDebugDto,
+  AiRankingWeightsDto,
+  AiSearchPreviewMode,
+  AiSearchResponseDto,
+  EmbeddingCoverageDto,
+  EmbeddingJobDto,
+  EmbeddingJobListResponseDto,
+  EmbeddingsProviderName,
+  ExperimentArmAiConfigDto,
+  ExtendedRankingDebugDto,
+  SearchExplanationCode,
+  TriggerEmbeddingJobRequestDto,
+  UpdateAiRankingConfigRequestDto,
+} from "./ai-search.js";
 
 import type { UserRole } from "./user-role.js";
 import type { ActivePrivilegeDto } from "./access-governance.js";
+import type { SearchContentModuleHitDto } from "./platform-enhancements.js";
 
 export interface ProductAttributeMap {
   [key: string]: string | number | boolean | string[];
@@ -52,6 +101,7 @@ export interface ProductDocument {
   inStock: boolean;
   imageUrl?: string;
   attributes: ProductAttributeMap;
+  catalogId?: string;
   createdAt: ISODateString;
   updatedAt: ISODateString;
 }
@@ -115,6 +165,8 @@ export interface MerchandisingRule {
   brand?: string;
   boostAmount?: number;
   buryAmount?: number;
+  activeFrom?: ISODateString;
+  activeTo?: ISODateString;
 }
 
 export interface RankingDebugDto {
@@ -126,6 +178,10 @@ export interface RankingDebugDto {
   merchandisingAdjustment: number;
   finalScore: number;
   appliedRuleNames: string[];
+  lexicalScore?: number;
+  semanticScore?: number;
+  personalizationScore?: number;
+  explanationCodes?: import("@retailer-search/shared-types").SearchExplanationCode[];
 }
 
 export interface SearchResponseDto {
@@ -140,6 +196,20 @@ export interface SearchResponseDto {
   hits: SearchHitDto[];
   availableFacets: AvailableFacetsDto;
   appliedRuleNames?: string[];
+  modules?: SearchContentModuleHitDto[];
+  experimentArm?: "baseline" | "candidate";
+  rankingMode?: string;
+  aiRankingDebug?: {
+    rankingMode: string;
+    lexicalWeight: number;
+    semanticWeight: number;
+    personalizationWeight: number;
+    semanticHits: number;
+    semanticRecoveryApplied: boolean;
+    embeddingProvider: string;
+    embeddingModel: string;
+    experimentArm?: "baseline" | "candidate";
+  };
 }
 
 export interface AutocompleteSuggestionDto {
@@ -470,6 +540,7 @@ export type AuditActionType =
   | "revoke_jit_elevation"
   | "update_jit_policy"
   | "update_llm_settings"
+  | "update_ai_ranking_config"
   | "create_export_job"
   | "download_export"
   | "create_webhook_endpoint"
@@ -503,6 +574,7 @@ export type AuditEntityType =
   | "jit_elevation_request"
   | "jit_policy"
   | "llm_settings"
+  | "ai_ranking_config"
   | "export_job"
   | "webhook_endpoint"
   | "webhook_delivery"
@@ -634,6 +706,9 @@ export interface ExperimentDto {
   candidateSnapshotId: string;
   querySetId: string;
   candidateLlmOverrides?: ExperimentLlmOverridesDto;
+  candidateAiConfig?: import("./ai-search.js").ExperimentArmAiConfigDto;
+  onlineEnabled?: boolean;
+  onlineTrafficPercent?: number;
   createdAt: ISODateString;
   lastRunAt?: ISODateString;
 }
@@ -677,6 +752,7 @@ export interface CreateExperimentRequestDto {
   candidateSnapshotId: string;
   querySetId: string;
   candidateLlmOverrides?: ExperimentLlmOverridesDto;
+  candidateAiConfig?: import("./ai-search.js").ExperimentArmAiConfigDto;
 }
 
 export interface CreateQuerySetRequestDto {
@@ -1156,6 +1232,7 @@ export type WorkspaceRole =
   | "reviewer"
   | "approver"
   | "release_manager"
+  | "developer"
   | "admin";
 
 export interface SavedViewDto {
@@ -1255,7 +1332,12 @@ export type PermissionKey =
   | "view_audit_logs"
   | "manage_saved_views"
   | "comment"
-  | "annotate";
+  | "annotate"
+  | "manage_catalogs"
+  | "manage_branding"
+  | "manage_api_keys"
+  | "manage_own_api_keys"
+  | "view_api_usage";
 
 export interface RolePermissionsDto {
   role: UserRole;
@@ -1434,6 +1516,7 @@ export interface ApiKeyDto {
   name: string;
   keyPrefix: string;
   tenantId: string;
+  ownerUserId?: string;
   scopes: string[];
   enabled: boolean;
   lastUsedAt?: ISODateString;

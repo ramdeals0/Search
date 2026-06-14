@@ -201,7 +201,7 @@ The Prisma seed generates **synthetic, non-trademark demo data** for a Home Depo
 
 | Area | Count (approx.) |
 |------|-----------------|
-| Products | 1,000 (50 heroes + generated simple/variant SKUs) |
+| Products | 50,000 (50 heroes + generated simple/variant SKUs) |
 | Leaf categories | 39 |
 | Synthetic brands | 80+ |
 | Synonym groups | 38 |

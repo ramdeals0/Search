@@ -36,6 +36,8 @@ import type {
   SavedViewListResponseDto,
   SearchFiltersDto,
   SearchRequestDto,
+  SearchResponseDto,
+  ProductDocument,
   SearchMetricsSnapshotDto,
   SnapshotDiffResponseDto,
   SnapshotListResponseDto,
@@ -175,6 +177,9 @@ import {
   recordSearchEvent,
   recordSearchAnalytics,
 } from "./analytics-store.js";
+import { matchModulesForQuery } from "./content-modules-store.js";
+import { getPersonalizationBoosts, recordSearchAffinity, recordQueryAffinity } from "./personalization-store.js";
+import { resolveExperimentRulesForSearch } from "./online-experiment-service.js";
 import {
   attachApiKeyContext,
   enforceApiKeyRateLimit,
@@ -192,7 +197,6 @@ import {
   createScheduledRelease,
   listScheduledReleases,
 } from "./scheduled-release-store.js";
-import { hybridSearchProducts } from "./search/hybrid-search.js";
 import { isHybridVectorEnabled } from "./search/search-feature-flags.js";
 import {
   browseCategoriesResponse,
@@ -213,6 +217,7 @@ import {
   saveExperimentDecision,
   saveExperimentRun,
   saveExperimentScorecard,
+  hydrateExperimentStore,
 } from "./experiment-store.js";
 import { runExperimentEvaluation } from "./evaluation-engine.js";
 import { buildExperimentScorecard } from "./scorecard-engine.js";
@@ -247,7 +252,13 @@ import {
   getProductCatalogSource,
   ensureProductCatalogLoaded,
   hydrateProductCatalog,
+  filterProductCatalogByCatalogId,
 } from "./catalog-store.js";
+import {
+  ensureDefaultCatalog,
+  resolveCatalogId,
+} from "./catalog-registry-store.js";
+import { getPluginRegistry } from "./plugin-registry.js";
 import {
   getProductSearchIndex,
   syncProductSearchIndexFromCatalog,
@@ -282,8 +293,22 @@ import { registerLlmSettingsRoutes } from "./routes/llm-settings.js";
 import { registerApiKeyRoutes } from "./routes/api-keys.js";
 import { registerZeroResultsInboxRoutes } from "./routes/zero-results-inbox.js";
 import { registerSynonymRoutes } from "./routes/synonyms.js";
+import { registerPlatformEnhancementRoutes } from "./routes/platform-enhancements.js";
+import { registerPlatformP4Routes } from "./routes/platform-p4.js";
+import { registerAiSearchRoutes } from "./routes/ai-search.js";
+import {
+  getAiRankingConfig,
+  mergeExperimentArmAiConfig,
+} from "./ai-search/ai-ranking-config-store.js";
+import { executeHybridRankingPipeline } from "./ai-search/hybrid-ranking-pipeline.js";
+import { resolveExperimentAiConfigForSearch } from "./ai-search/experiment-ai-config.js";
+import { hydrateVectorIndex } from "./ai-search/vector-index.js";
 import { llmEnhancedSearch } from "./search/llm-enhanced-search.js";
 import { isAnyLlmFeatureEnabled } from "./search/search-feature-flags.js";
+import { hydrateContentModulesStore } from "./content-modules-store.js";
+import { hydrateCommerceEventStore } from "./commerce-event-store.js";
+import { hydratePersonalizationStore } from "./personalization-store.js";
+import { hydrateProductEmbeddingStore } from "./product-embedding-store.js";
 import {
   expireJitAccess,
   getActivePrivilegeForUser,
@@ -375,6 +400,83 @@ function getAnalyticsContext(req: express.Request) {
   };
 }
 
+async function enrichSearchResult(
+  request: SearchRequestDto,
+  result: SearchResponseDto,
+  sessionId?: string,
+  experimentArm?: "baseline" | "candidate" | null,
+  products?: ProductDocument[],
+): Promise<SearchResponseDto> {
+  const hybridAlreadyPersonalized = Boolean(result.aiRankingDebug?.personalizationWeight);
+
+  const [modules, personalizationBoosts] = await Promise.all([
+    matchModulesForQuery(request.query, "live"),
+    sessionId && !hybridAlreadyPersonalized
+      ? getPersonalizationBoosts(sessionId, products)
+      : Promise.resolve(new Map()),
+  ]);
+
+  const hits =
+    personalizationBoosts.size === 0
+      ? result.hits
+      : result.hits
+          .map((hit) => ({
+            ...hit,
+            score: hit.score + (personalizationBoosts.get(hit.id) ?? 0),
+          }))
+          .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+
+  return {
+    ...result,
+    hits,
+    modules: modules.length > 0 ? modules : undefined,
+    experimentArm: experimentArm ?? undefined,
+  };
+}
+
+async function finalizeSearchResponse(
+  req: express.Request,
+  res: express.Response,
+  request: SearchRequestDto,
+  result: SearchResponseDto,
+  started: number,
+  options: {
+    sessionId?: string;
+    experimentArm?: "baseline" | "candidate" | null;
+    products?: ProductDocument[];
+    pluginContext: {
+      tenantId: string;
+      catalogId?: string;
+      sessionId?: string;
+    };
+    body?: unknown;
+  },
+): Promise<void> {
+  let enrichedResult = await enrichSearchResult(
+    request,
+    result,
+    options.sessionId,
+    options.experimentArm,
+    options.products,
+  );
+  enrichedResult = await getPluginRegistry().runPostRank({
+    context: options.pluginContext,
+    request,
+    response: enrichedResult,
+  });
+  if (options.sessionId && request.query.trim()) {
+    void recordQueryAffinity(options.sessionId, request.query);
+  }
+  finishSearchResponse(
+    req,
+    res,
+    request,
+    enrichedResult,
+    started,
+    options.body ?? enrichedResult,
+  );
+}
+
 function finishSearchResponse(
   req: express.Request,
   res: express.Response,
@@ -423,6 +525,7 @@ const searchQuerySchema = z.object({
   category: z.union([z.string(), z.array(z.string())]).optional(),
   inStock: z.union([z.string(), z.array(z.string())]).optional(),
   indexes: z.union([z.string(), z.array(z.string())]).optional(),
+  catalogId: z.string().optional(),
   debug: z
     .union([z.literal("true"), z.literal("false"), z.boolean()])
     .optional()
@@ -1435,15 +1538,33 @@ app.get("/api/v1/search", requireApiKeyScope("search:read"), enforceApiKeyRateLi
     return;
   }
 
-  const request: SearchRequestDto = {
+  const analyticsContext = getAnalyticsContext(req);
+  const catalogId = await resolveCatalogId(
+    parsed.data.catalogId ?? req.header("x-catalog-id")?.trim(),
+    analyticsContext.tenantId,
+  );
+
+  let request: SearchRequestDto = {
     query: parsed.data.query,
     page: parsed.data.page,
     pageSize: parsed.data.pageSize,
     filters: buildFilters(parsed.data),
   };
 
-  const products = await getSearchProductCatalog();
-  const rules = getActiveMerchandisingRules("live");
+  const allProducts = await getSearchProductCatalog();
+  const products = filterProductCatalogByCatalogId(allProducts, catalogId);
+  const sessionId = req.header("x-session-id")?.trim();
+  const pluginContext = {
+    tenantId: analyticsContext.tenantId,
+    catalogId,
+    sessionId,
+  };
+  request = await getPluginRegistry().runPreSearch({
+    context: pluginContext,
+    request,
+  });
+  const experimentResolution = await resolveExperimentRulesForSearch(sessionId ?? "");
+  const rules = experimentResolution.rules ?? getActiveMerchandisingRules("live");
   const debug = parsed.data.debug ?? false;
   const pipeline = getSearchPipelineOptions();
   const indexNames = parseIndexNames(parsed.data.indexes);
@@ -1462,44 +1583,67 @@ app.get("/api/v1/search", requireApiKeyScope("search:read"), enforceApiKeyRateLi
       debug,
       ...pipeline,
     });
+    const enrichedResult = await enrichSearchResult(
+      request,
+      result,
+      sessionId,
+      experimentResolution.arm,
+    );
+    const withPlugins = await getPluginRegistry().runPostRank({
+      context: pluginContext,
+      request,
+      response: enrichedResult,
+    });
     const federatedDebug: FederatedSearchDebugDto = {
       indexes: indexNames,
-      mergedHitCount: result.totalHits,
+      mergedHitCount: withPlugins.totalHits,
       hybridVectorEnabled: isHybridVectorEnabled(),
     };
-    finishSearchResponse(req, res, request, result, started, {
-      ...result,
+    finishSearchResponse(req, res, request, withPlugins, started, {
+      ...withPlugins,
       federatedDebug,
     });
     return;
   }
 
   if (isAnyLlmFeatureEnabled()) {
-    const result = await llmEnhancedSearch(products, request, {
-      rules,
-      debug,
-      ...pipeline,
-    });
-    finishSearchResponse(req, res, request, result, started, result);
-    return;
+    const aiBaseConfig = await getAiRankingConfig();
+    const experimentAi = await resolveExperimentAiConfigForSearch(sessionId ?? "");
+    const rankingConfig = mergeExperimentArmAiConfig(aiBaseConfig, experimentAi.aiConfig);
+    if (!rankingConfig.enabled && !rankingConfig.semanticRetrievalEnabled) {
+      const result = await llmEnhancedSearch(products, request, {
+        rules,
+        debug,
+        ...pipeline,
+      });
+      await finalizeSearchResponse(req, res, request, result, started, {
+        sessionId,
+        experimentArm: experimentResolution.arm ?? experimentAi.arm,
+        products,
+        pluginContext,
+      });
+      return;
+    }
   }
 
-  if (isHybridVectorEnabled()) {
-    const result = await hybridSearchProducts(products, request, {
-      rules,
-      debug,
-      ...pipeline,
-    });
-    finishSearchResponse(req, res, request, result, started, result);
-    return;
-  }
+  const aiBaseConfig = await getAiRankingConfig();
+  const experimentAi = await resolveExperimentAiConfigForSearch(sessionId ?? "");
+  const rankingConfig = mergeExperimentArmAiConfig(aiBaseConfig, experimentAi.aiConfig);
 
-  const result = searchProducts(products, request, {
+  const result = await executeHybridRankingPipeline(products, request, {
     rules,
     debug,
     ...pipeline,
+    config: rankingConfig,
+    sessionId,
+    experimentArm: experimentResolution.arm ?? experimentAi.arm,
   });
-  finishSearchResponse(req, res, request, result, started, result);
+  await finalizeSearchResponse(req, res, request, result, started, {
+    sessionId,
+    experimentArm: experimentResolution.arm ?? experimentAi.arm,
+    products,
+    pluginContext,
+  });
 });
 
 app.get("/api/v1/autocomplete", requireApiKeyScope("search:read"), enforceApiKeyRateLimit("autocomplete"), async (req, res) => {
@@ -1714,6 +1858,30 @@ registerZeroResultsInboxRoutes(app, {
 });
 
 registerSynonymRoutes(app);
+registerPlatformEnhancementRoutes(app, {
+  requireAuthenticatedUser,
+  requireJsonContentType,
+  assertValidBody,
+  getAnalyticsContext,
+});
+
+registerPlatformP4Routes(app, {
+  requireAuthenticatedUser,
+  requireAdminUser,
+  requireJsonContentType,
+  assertValidBody,
+  getEffectiveRoleForUser,
+});
+
+registerAiSearchRoutes(app, {
+  requireAuthenticatedUser,
+  requireAdminUser,
+  requireJsonContentType,
+  assertValidBody,
+  getEffectiveRoleForUser,
+  getProducts: getSearchProductCatalog,
+  getRules: (environment) => getActiveMerchandisingRules(environment),
+});
 
 app.get("/api/v1/admin/security-timeline", (req, res) => {
   const user = requireAuthenticatedUser(req, res);
@@ -2232,8 +2400,8 @@ app.delete("/api/v1/admin/rules/:id", (req, res) => {
   res.status(204).send();
 });
 
-app.get("/api/v1/admin/analytics/summary", (_req, res) => {
-  res.json(getAnalyticsSummary());
+app.get("/api/v1/admin/analytics/summary", async (_req, res) => {
+  res.json(await getAnalyticsSummary());
 });
 
 app.post("/api/v1/admin/search-index/rebuild", async (req, res) => {
@@ -2335,7 +2503,7 @@ app.get("/api/v1/admin/audit/hash-chain", async (req, res) => {
 
 app.get("/api/v1/admin/analytics/catalog-insights", async (_req, res) => {
   const products = await getSearchProductCatalog();
-  res.json(getCatalogAnalyticsInsights(products, 10));
+  res.json(await getCatalogAnalyticsInsights(products, 10));
 });
 
 app.get("/api/v1/admin/catalog/vocabulary", async (_req, res) => {
@@ -3991,8 +4159,8 @@ app.post("/api/v1/admin/promote-snapshot", async (req, res) => {
 
   let warning: string | undefined;
   if (parsed.data.sourceExperimentId) {
-    const experiment = getExperimentById(parsed.data.sourceExperimentId);
-    const decision = getExperimentDecision(parsed.data.sourceExperimentId);
+    const experiment = await getExperimentById(parsed.data.sourceExperimentId);
+    const decision = await getExperimentDecision(parsed.data.sourceExperimentId);
 
     if (!experiment) {
       warning = "Linked source experiment was not found.";
@@ -4053,11 +4221,12 @@ app.get("/api/v1/admin/snapshots/:id", (req, res) => {
   res.json(snapshot);
 });
 
-app.get("/api/v1/admin/query-sets", (_req, res) => {
-  res.json({ total: listQuerySets().length, querySets: listQuerySets() });
+app.get("/api/v1/admin/query-sets", async (_req, res) => {
+  const querySets = await listQuerySets();
+  res.json({ total: querySets.length, querySets });
 });
 
-app.post("/api/v1/admin/query-sets", (req, res) => {
+app.post("/api/v1/admin/query-sets", async (req, res) => {
   const parsed = createQuerySetSchema.safeParse(req.body);
   if (!parsed.success) {
     recordAuditLog({
@@ -4074,7 +4243,7 @@ app.post("/api/v1/admin/query-sets", (req, res) => {
     return;
   }
 
-  const querySet = createQuerySet(parsed.data);
+  const querySet = await createQuerySet(parsed.data);
   recordAuditLog({
     actionType: "create_query_set",
     entityType: "query_set",
@@ -4087,11 +4256,12 @@ app.post("/api/v1/admin/query-sets", (req, res) => {
   res.status(201).json(querySet);
 });
 
-app.get("/api/v1/admin/experiments", (_req, res) => {
-  res.json({ total: listExperiments().length, experiments: listExperiments() });
+app.get("/api/v1/admin/experiments", async (_req, res) => {
+  const experiments = await listExperiments();
+  res.json({ total: experiments.length, experiments });
 });
 
-app.post("/api/v1/admin/experiments", (req, res) => {
+app.post("/api/v1/admin/experiments", async (req, res) => {
   const parsed = createExperimentSchema.safeParse(req.body);
   if (!parsed.success) {
     recordAuditLog({
@@ -4116,12 +4286,12 @@ app.post("/api/v1/admin/experiments", (req, res) => {
     res.status(400).json({ error: "Candidate snapshot not found" });
     return;
   }
-  if (!getQuerySetById(parsed.data.querySetId)) {
+  if (!(await getQuerySetById(parsed.data.querySetId))) {
     res.status(400).json({ error: "Query set not found" });
     return;
   }
 
-  const experiment = createExperiment(parsed.data);
+  const experiment = await createExperiment(parsed.data);
   recordAuditLog({
     actionType: "create_experiment",
     entityType: "experiment",
@@ -4138,8 +4308,8 @@ app.post("/api/v1/admin/experiments", (req, res) => {
   res.status(201).json(experiment);
 });
 
-app.get("/api/v1/admin/experiments/:id", (req, res) => {
-  const experiment = getExperimentById(req.params.id);
+app.get("/api/v1/admin/experiments/:id", async (req, res) => {
+  const experiment = await getExperimentById(req.params.id);
   if (!experiment) {
     res.status(404).json({ error: "Experiment not found" });
     return;
@@ -4147,21 +4317,21 @@ app.get("/api/v1/admin/experiments/:id", (req, res) => {
 
   const body: ExperimentDetailResponseDto = {
     experiment,
-    lastRun: getLastExperimentRun(experiment.id),
-    scorecard: getExperimentScorecard(experiment.id),
-    decision: getExperimentDecision(experiment.id),
+    lastRun: await getLastExperimentRun(experiment.id),
+    scorecard: await getExperimentScorecard(experiment.id),
+    decision: await getExperimentDecision(experiment.id),
   };
   res.json(body);
 });
 
-app.post("/api/v1/admin/experiments/:id/scorecard/generate", (req, res) => {
-  const experiment = getExperimentById(req.params.id);
+app.post("/api/v1/admin/experiments/:id/scorecard/generate", async (req, res) => {
+  const experiment = await getExperimentById(req.params.id);
   if (!experiment) {
     res.status(404).json({ error: "Experiment not found" });
     return;
   }
 
-  const run = getLastExperimentRun(experiment.id);
+  const run = await getLastExperimentRun(experiment.id);
   if (!run) {
     recordAuditLog({
       actionType: "generate_scorecard",
@@ -4176,7 +4346,7 @@ app.post("/api/v1/admin/experiments/:id/scorecard/generate", (req, res) => {
   }
 
   const scorecard = buildExperimentScorecard(run);
-  saveExperimentScorecard(experiment.id, scorecard);
+  await saveExperimentScorecard(experiment.id, scorecard);
 
   recordAuditLog({
     actionType: "generate_scorecard",
@@ -4195,14 +4365,14 @@ app.post("/api/v1/admin/experiments/:id/scorecard/generate", (req, res) => {
   res.json(scorecard);
 });
 
-app.get("/api/v1/admin/experiments/:id/scorecard", (req, res) => {
-  const experiment = getExperimentById(req.params.id);
+app.get("/api/v1/admin/experiments/:id/scorecard", async (req, res) => {
+  const experiment = await getExperimentById(req.params.id);
   if (!experiment) {
     res.status(404).json({ error: "Experiment not found" });
     return;
   }
 
-  const scorecard = getExperimentScorecard(experiment.id);
+  const scorecard = await getExperimentScorecard(experiment.id);
   if (!scorecard) {
     res.status(404).json({ error: "Scorecard not found for this experiment" });
     return;
@@ -4211,14 +4381,14 @@ app.get("/api/v1/admin/experiments/:id/scorecard", (req, res) => {
   res.json(scorecard);
 });
 
-app.get("/api/v1/admin/experiments/:id/decision", (req, res) => {
-  const experiment = getExperimentById(req.params.id);
+app.get("/api/v1/admin/experiments/:id/decision", async (req, res) => {
+  const experiment = await getExperimentById(req.params.id);
   if (!experiment) {
     res.status(404).json({ error: "Experiment not found" });
     return;
   }
 
-  const decision = getExperimentDecision(experiment.id);
+  const decision = await getExperimentDecision(experiment.id);
   if (!decision) {
     res.status(404).json({ error: "Decision not found for this experiment" });
     return;
@@ -4227,7 +4397,7 @@ app.get("/api/v1/admin/experiments/:id/decision", (req, res) => {
   res.json(decision);
 });
 
-app.post("/api/v1/admin/experiments/:id/decision", (req, res) => {
+app.post("/api/v1/admin/experiments/:id/decision", async (req, res) => {
   const parsed = saveExperimentDecisionSchema.safeParse(req.body);
   if (!parsed.success) {
     recordAuditLog({
@@ -4245,14 +4415,14 @@ app.post("/api/v1/admin/experiments/:id/decision", (req, res) => {
     return;
   }
 
-  const experiment = getExperimentById(req.params.id);
+  const experiment = await getExperimentById(req.params.id);
   if (!experiment) {
     res.status(404).json({ error: "Experiment not found" });
     return;
   }
 
-  const lastRun = getLastExperimentRun(experiment.id);
-  const decision = saveExperimentDecision(
+  const lastRun = await getLastExperimentRun(experiment.id);
+  const decision = await saveExperimentDecision(
     experiment.id,
     parsed.data,
     lastRun?.runAt,
@@ -4283,7 +4453,7 @@ app.post("/api/v1/admin/experiments/:id/decision", (req, res) => {
 });
 
 app.post("/api/v1/admin/experiments/:id/run", async (req, res) => {
-  const experiment = getExperimentById(req.params.id);
+  const experiment = await getExperimentById(req.params.id);
   if (!experiment) {
     recordAuditLog({
       actionType: "run_experiment",
@@ -4296,7 +4466,7 @@ app.post("/api/v1/admin/experiments/:id/run", async (req, res) => {
     return;
   }
 
-  const querySet = getQuerySetById(experiment.querySetId);
+  const querySet = await getQuerySetById(experiment.querySetId);
   const baseline = getSnapshotSearchConfig(experiment.baselineSnapshotId);
   const candidate = getSnapshotSearchConfig(experiment.candidateSnapshotId);
 
@@ -4323,7 +4493,7 @@ app.post("/api/v1/admin/experiments/:id/run", async (req, res) => {
     candidateLlmOverrides: experiment.candidateLlmOverrides,
   });
 
-  saveExperimentRun(run);
+  await saveExperimentRun(run);
 
   recordAuditLog({
     actionType: "run_experiment",
@@ -4358,21 +4528,29 @@ app.post("/api/v1/events/search", requireApiKeyScope("events:write"), (req, res)
   }
 
   const event = recordSearchEvent(parsed.data, getAnalyticsContext(req));
+  const sessionId = req.header("x-session-id")?.trim();
+  if (sessionId && parsed.data.query?.trim()) {
+    void recordQueryAffinity(sessionId, parsed.data.query);
+  }
   res.status(201).json(event);
 });
 
-app.post("/api/v1/events/click", requireApiKeyScope("events:write"), (req, res) => {
+app.post("/api/v1/events/click", requireApiKeyScope("events:write"), async (req, res) => {
   const parsed = clickEventBodySchema.safeParse(req.body);
   if (!assertValidBody(parsed, res, req, "Invalid click event payload")) {
     return;
   }
 
   const event = recordSearchClick(parsed.data, getAnalyticsContext(req));
+  const sessionId = req.header("x-session-id")?.trim();
+  if (sessionId) {
+    await recordSearchAffinity(sessionId, parsed.data.query, parsed.data.productId);
+  }
   res.status(201).json(event);
 });
 
-app.get("/api/v1/analytics/summary", (_req, res) => {
-  res.json(getAnalyticsSummary());
+app.get("/api/v1/analytics/summary", async (_req, res) => {
+  res.json(await getAnalyticsSummary());
 });
 
 app.use(
@@ -4408,7 +4586,14 @@ async function hydratePersistentStores(): Promise<void> {
   await hydrateExportStore();
   await hydrateEnvironmentConfigStore();
   await hydrateAnalyticsStore();
+  await hydrateContentModulesStore();
+  await hydrateCommerceEventStore();
+  await hydratePersonalizationStore();
+  await hydrateProductEmbeddingStore();
+  await hydrateVectorIndex();
+  await hydrateExperimentStore();
   await hydrateLlmConfigStore();
+  await ensureDefaultCatalog();
 }
 
 async function loadProductCatalogAtStartup(): Promise<number> {

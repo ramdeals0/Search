@@ -39,6 +39,9 @@ const primaryButtonStyle = {
   borderColor: "#0f172a",
 } as const;
 
+const PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
+type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
+
 function buildSynonymUrl(key?: string, environment: EnvironmentKey = "staging"): string {
   const base = `${getSearchApiUrl()}/api/v1/admin/synonyms`;
   const params = new URLSearchParams({ environment });
@@ -52,6 +55,8 @@ export function SynonymsPanel() {
   const [environment, setEnvironment] = useState<EnvironmentKey>("staging");
   const [synonyms, setSynonyms] = useState<SynonymEntryDto[]>([]);
   const [filter, setFilter] = useState("");
+  const [pageSize, setPageSize] = useState<PageSize>(50);
+  const [page, setPage] = useState(1);
   const [newKey, setNewKey] = useState("");
   const [newValue, setNewValue] = useState("");
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -94,6 +99,10 @@ export function SynonymsPanel() {
     void loadSynonyms();
   }, [loadSynonyms]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [filter, environment, pageSize]);
+
   const filteredSynonyms = useMemo(() => {
     const query = filter.trim().toLowerCase();
     if (!query) {
@@ -106,6 +115,24 @@ export function SynonymsPanel() {
         entry.value.includes(query),
     );
   }, [filter, synonyms]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSynonyms.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  const paginatedSynonyms = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredSynonyms.slice(start, start + pageSize);
+  }, [filteredSynonyms, currentPage, pageSize]);
+
+  const rangeStart =
+    filteredSynonyms.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(currentPage * pageSize, filteredSynonyms.length);
 
   const createSynonym = async () => {
     setBusy(true);
@@ -279,16 +306,42 @@ export function SynonymsPanel() {
         </div>
       </div>
 
-      <label style={{ display: "grid", gap: 4, fontSize: 13, marginBottom: "1rem" }}>
-        Filter
-        <input
-          style={inputStyle}
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-          placeholder="Search source or target terms"
-          disabled={loading}
-        />
-      </label>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.75rem",
+          alignItems: "end",
+          justifyContent: "space-between",
+          marginBottom: "1rem",
+        }}
+      >
+        <label style={{ display: "grid", gap: 4, fontSize: 13, flex: 1, minWidth: 220 }}>
+          Filter
+          <input
+            style={inputStyle}
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="Search source or target terms"
+            disabled={loading}
+          />
+        </label>
+        <label style={{ display: "grid", gap: 4, fontSize: 13 }}>
+          Rows per page
+          <select
+            value={pageSize}
+            onChange={(event) => setPageSize(Number(event.target.value) as PageSize)}
+            style={{ ...inputStyle, width: "auto", minWidth: 100 }}
+            disabled={loading}
+          >
+            {PAGE_SIZE_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       {loading ? (
         <p style={{ margin: 0, fontSize: 14, color: "#64748b" }}>Loading synonyms...</p>
@@ -309,7 +362,7 @@ export function SynonymsPanel() {
               </tr>
             </thead>
             <tbody>
-              {filteredSynonyms.map((entry) => {
+              {paginatedSynonyms.map((entry) => {
                 const isEditing = editingKey === entry.key;
 
                 return (
@@ -383,13 +436,55 @@ export function SynonymsPanel() {
               })}
             </tbody>
           </table>
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.75rem",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginTop: "0.75rem",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            <span>
+              Showing {rangeStart}–{rangeEnd} of {filteredSynonyms.length}
+              {filter.trim() && filteredSynonyms.length !== synonyms.length
+                ? ` (filtered from ${synonyms.length})`
+                : ""}
+            </span>
+            <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+              <button
+                type="button"
+                style={buttonStyle}
+                disabled={busy || currentPage <= 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                Previous
+              </button>
+              <span style={{ minWidth: "4.5rem", textAlign: "center" }}>
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                type="button"
+                style={buttonStyle}
+                disabled={busy || currentPage >= totalPages}
+                onClick={() =>
+                  setPage((current) => Math.min(totalPages, current + 1))
+                }
+              >
+                Next
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
       {!loading ? (
         <p style={{ margin: "0.75rem 0 0", fontSize: 12, color: "#94a3b8" }}>
           {synonyms.length} synonym{synonyms.length === 1 ? "" : "s"} in {environment}
-          {filter.trim() ? ` · ${filteredSynonyms.length} shown` : ""}
         </p>
       ) : null}
     </section>

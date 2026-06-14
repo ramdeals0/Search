@@ -12,17 +12,18 @@ import {
 import type {
   AutocompleteResponseDto,
   AutocompleteSuggestionDto,
+  DiscoveryRecentResponseDto,
   SearchFiltersDto,
 } from "@retailer-search/shared-types";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
+import { fetchSearchApi } from "./lib/search-api-client";
+import { getOrCreateSessionId } from "./lib/session-id";
 
 interface AutocompleteProps {
   initialQuery: string;
   pageSize: number;
   activeFilters: SearchFiltersDto;
   onQueryChange?: (query: string) => void;
+  showRecentSearches?: boolean;
 }
 
 function buildSearchUrl(
@@ -66,6 +67,7 @@ export function Autocomplete({
   pageSize,
   activeFilters,
   onQueryChange,
+  showRecentSearches = false,
 }: AutocompleteProps) {
   const router = useRouter();
   const listboxId = useId();
@@ -77,6 +79,9 @@ export function Autocomplete({
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [isLoading, setIsLoading] = useState(false);
+  const [recentQueries, setRecentQueries] = useState<string[]>([]);
+  const [isLoadingRecent, setIsLoadingRecent] = useState(false);
+  const [hasLoadedRecent, setHasLoadedRecent] = useState(false);
 
   const navigateToSearch = useCallback(
     (value: string) => {
@@ -106,14 +111,18 @@ export function Autocomplete({
     const timeoutId = window.setTimeout(async () => {
       setIsLoading(true);
       try {
-        const url = new URL("/api/v1/autocomplete", SEARCH_API_URL);
-        url.searchParams.set("query", query);
-        const response = await fetch(url.toString(), {
-          signal: controller.signal,
-        });
+        const sessionId = getOrCreateSessionId();
+        const response = await fetchSearchApi(
+          `/api/v1/autocomplete?query=${encodeURIComponent(query.trim())}`,
+          {
+            signal: controller.signal,
+            sessionId,
+          },
+        );
 
         if (!response.ok) {
           setSuggestions([]);
+          setIsOpen(false);
           return;
         }
 
@@ -138,6 +147,35 @@ export function Autocomplete({
     };
   }, [query]);
 
+  const loadRecentQueries = useCallback(async () => {
+    if (!showRecentSearches || hasLoadedRecent) {
+      return;
+    }
+
+    setIsLoadingRecent(true);
+    try {
+      const sessionId = getOrCreateSessionId();
+      const response = await fetchSearchApi("/api/v1/discovery/recent?limit=10", {
+        sessionId,
+      });
+      if (!response.ok) {
+        setRecentQueries([]);
+        return;
+      }
+      const data = (await response.json()) as DiscoveryRecentResponseDto;
+      const queries = data.queries.map((entry) => entry.query).filter(Boolean);
+      setRecentQueries(queries);
+      if (queries.length > 0) {
+        setIsOpen(true);
+      }
+    } catch {
+      setRecentQueries([]);
+    } finally {
+      setHasLoadedRecent(true);
+      setIsLoadingRecent(false);
+    }
+  }, [hasLoadedRecent, showRecentSearches]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) {
@@ -151,7 +189,10 @@ export function Autocomplete({
   }, []);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (!isOpen || suggestions.length === 0) {
+    const hasInput = query.trim().length > 0;
+    const options = hasInput ? suggestions : recentQueries.map((value) => ({ value }));
+
+    if (!isOpen || options.length === 0) {
       if (event.key === "Enter") {
         return;
       }
@@ -161,7 +202,7 @@ export function Autocomplete({
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setActiveIndex((current) =>
-        current >= suggestions.length - 1 ? 0 : current + 1,
+        current >= options.length - 1 ? 0 : current + 1,
       );
       return;
     }
@@ -169,14 +210,14 @@ export function Autocomplete({
     if (event.key === "ArrowUp") {
       event.preventDefault();
       setActiveIndex((current) =>
-        current <= 0 ? suggestions.length - 1 : current - 1,
+        current <= 0 ? options.length - 1 : current - 1,
       );
       return;
     }
 
     if (event.key === "Enter" && activeIndex >= 0) {
       event.preventDefault();
-      navigateToSearch(suggestions[activeIndex]?.value ?? query);
+      navigateToSearch(options[activeIndex]?.value ?? query);
       return;
     }
 
@@ -197,7 +238,10 @@ export function Autocomplete({
           onQueryChange?.(event.target.value);
         }}
         onFocus={() => {
-          if (suggestions.length > 0) {
+          if (query.trim().length === 0) {
+            void loadRecentQueries();
+          }
+          if (suggestions.length > 0 || recentQueries.length > 0) {
             setIsOpen(true);
           }
         }}
@@ -210,7 +254,7 @@ export function Autocomplete({
         className="store-input"
       />
 
-      {isOpen && suggestions.length > 0 && (
+      {isOpen && (query.trim().length > 0 ? suggestions.length > 0 : recentQueries.length > 0) && (
         <ul
           id={listboxId}
           role="listbox"
@@ -231,17 +275,25 @@ export function Autocomplete({
             overflowY: "auto",
           }}
         >
-          {suggestions.map((suggestion, index) => {
+          {(query.trim().length > 0
+            ? suggestions.map((suggestion) => ({
+                value: suggestion.value,
+                typeLabel: formatTypeLabel(suggestion.type),
+              }))
+            : recentQueries.map((value) => ({
+                value,
+                typeLabel: "Recent",
+              }))).map((item, index) => {
             const isActive = index === activeIndex;
 
             return (
-              <li key={`${suggestion.type}-${suggestion.value}-${index}`}>
+              <li key={`${item.value}-${index}`}>
                 <button
                   type="button"
                   role="option"
                   aria-selected={isActive}
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => navigateToSearch(suggestion.value)}
+                  onClick={() => navigateToSearch(item.value)}
                   style={{
                     width: "100%",
                     display: "flex",
@@ -255,9 +307,9 @@ export function Autocomplete({
                     fontSize: 14,
                   }}
                 >
-                  <span>{suggestion.value}</span>
+                  <span>{item.value}</span>
                   <span style={{ color: "#64748b", whiteSpace: "nowrap" }}>
-                    {formatTypeLabel(suggestion.type)}
+                    {item.typeLabel}
                   </span>
                 </button>
               </li>
@@ -266,7 +318,7 @@ export function Autocomplete({
         </ul>
       )}
 
-      {isLoading && query.trim() && (
+      {(isLoading && query.trim()) || (isLoadingRecent && !query.trim()) ? (
         <span
           style={{
             position: "absolute",
@@ -279,7 +331,7 @@ export function Autocomplete({
         >
           ...
         </span>
-      )}
+      ) : null}
     </div>
   );
 }

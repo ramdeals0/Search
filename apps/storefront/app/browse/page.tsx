@@ -5,9 +5,7 @@ import type {
 } from "@retailer-search/shared-types";
 import { BrowseResults } from "./browse-results";
 import { BrowseSidebar } from "./browse-sidebar";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
+import { getSearchApiUrl } from "../lib/search-api-url";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 12;
@@ -54,7 +52,7 @@ async function fetchBrowseCategories(): Promise<{
   error?: string;
 }> {
   try {
-    const response = await fetch(`${SEARCH_API_URL}/api/v1/browse/categories`, {
+    const response = await fetch(`${getSearchApiUrl()}/api/v1/browse/categories`, {
       cache: "no-store",
     });
 
@@ -80,7 +78,7 @@ async function fetchBrowseResults(options: {
   inStock?: boolean;
   sort?: string;
 }): Promise<{ data?: BrowseResponseDto; error?: string }> {
-  const url = new URL("/api/v1/browse", SEARCH_API_URL);
+  const url = new URL("/api/v1/browse", getSearchApiUrl());
   url.searchParams.set("page", String(options.page));
   url.searchParams.set("pageSize", String(options.pageSize));
   if (options.category) {

@@ -1,5 +1,9 @@
 import Link from "next/link";
-import type { BrowseCategoryDto } from "@retailer-search/shared-types";
+import type {
+  BrowseCategoryDto,
+  DiscoveryTrendingResponseDto,
+} from "@retailer-search/shared-types";
+import { fetchSearchApi } from "../lib/search-api-client";
 
 const POPULAR_SEARCHES = [
   "cordless drill",
@@ -25,8 +29,26 @@ interface HomeHeroProps {
   categories: BrowseCategoryDto[];
 }
 
-export function HomeHero({ categories }: HomeHeroProps) {
+async function fetchTrendingSearches(): Promise<string[]> {
+  try {
+    const response = await fetchSearchApi("/api/v1/discovery/trending?limit=10&days=7", {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return POPULAR_SEARCHES;
+    }
+
+    const data = (await response.json()) as DiscoveryTrendingResponseDto;
+    const queries = data.queries.map((entry) => entry.query).filter(Boolean);
+    return queries.length > 0 ? queries : POPULAR_SEARCHES;
+  } catch {
+    return POPULAR_SEARCHES;
+  }
+}
+
+export async function HomeHero({ categories }: HomeHeroProps) {
   const topCategories = categories.slice(0, 8);
+  const trendingSearches = await fetchTrendingSearches();
 
   return (
     <section className="store-hero">
@@ -73,7 +95,7 @@ export function HomeHero({ categories }: HomeHeroProps) {
       <div>
         <h2 className="store-section-title">Trending searches</h2>
         <div className="store-chip-row">
-          {POPULAR_SEARCHES.map((term) => (
+          {trendingSearches.map((term) => (
             <Link
               key={term}
               href={`/?query=${encodeURIComponent(term)}`}

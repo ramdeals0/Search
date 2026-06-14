@@ -35,6 +35,12 @@ export const DEMO_USERS: DemoUserSeed[] = [
     role: "release_manager",
   },
   {
+    id: "user-developer",
+    email: "developer@example.com",
+    name: "Dev Partner",
+    role: "developer",
+  },
+  {
     id: "user-admin",
     email: "admin@example.com",
     name: "Morgan Patel",

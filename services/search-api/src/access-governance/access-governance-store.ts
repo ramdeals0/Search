@@ -14,6 +14,7 @@ const ALL_ROLES: UserRole[] = [
   "reviewer",
   "approver",
   "release_manager",
+  "developer",
   "admin",
 ];
 
@@ -25,6 +26,7 @@ const ROLE_DOWNGRADE: Record<UserRole, UserRole> = {
   approver: "reviewer",
   reviewer: "merchandiser",
   merchandiser: "merchandiser",
+  developer: "developer",
 };
 
 const STALE_LOGIN_DAYS = 90;

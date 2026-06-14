@@ -77,3 +77,39 @@ export async function getApiUsageSummary(since?: Date): Promise<{
   );
   return { totalRequests, meters };
 }
+
+export async function getApiUsageSummaryForKeys(
+  apiKeyIds: string[],
+  since?: Date,
+): Promise<{
+  totalRequests: number;
+  meters: ApiUsageMeterDto[];
+}> {
+  if (apiKeyIds.length === 0) {
+    return { totalRequests: 0, meters: [] };
+  }
+
+  const rows = await prisma.apiUsageMeter.findMany({
+    where: {
+      apiKeyId: { in: apiKeyIds },
+      ...(since ? { windowStart: { gte: since } } : {}),
+    },
+    orderBy: [{ windowStart: "desc" }, { requestCount: "desc" }],
+    take: 500,
+  });
+
+  const meters = rows.map((row) => ({
+    apiKeyId: row.apiKeyId,
+    tenantId: row.tenantId,
+    route: row.route,
+    windowStart: row.windowStart.toISOString(),
+    requestCount: row.requestCount,
+  }));
+
+  const totalRequests = meters.reduce(
+    (sum, meter) => sum + meter.requestCount,
+    0,
+  );
+
+  return { totalRequests, meters };
+}

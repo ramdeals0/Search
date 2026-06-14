@@ -20,6 +20,14 @@ function formatSigned(value: number): string {
   return value > 0 ? `+${formatted}` : `−${formatted}`;
 }
 
+function hasAiScores(rankingDebug: RankingDebugDto): boolean {
+  return (
+    rankingDebug.lexicalScore !== undefined ||
+    rankingDebug.semanticScore !== undefined ||
+    rankingDebug.personalizationScore !== undefined
+  );
+}
+
 export function RankingScoreBreakdown({
   rankingDebug,
   rank,
@@ -52,6 +60,26 @@ export function RankingScoreBreakdown({
       value: rankingDebug.merchandisingAdjustment,
     },
   ];
+
+  const aiComponents = hasAiScores(rankingDebug)
+    ? [
+        {
+          label: "Lexical (hybrid)",
+          hint: "Lexical retrieval score in hybrid ranking pipeline",
+          value: rankingDebug.lexicalScore ?? 0,
+        },
+        {
+          label: "Semantic (hybrid)",
+          hint: "Vector similarity score from embeddings retrieval",
+          value: rankingDebug.semanticScore ?? 0,
+        },
+        {
+          label: "Personalization",
+          hint: "Session/profile affinity rerank contribution",
+          value: rankingDebug.personalizationScore ?? 0,
+        },
+      ]
+    : [];
 
   const subtotal = components.reduce((sum, item) => sum + item.value, 0);
 
@@ -133,6 +161,54 @@ export function RankingScoreBreakdown({
                 </td>
               </tr>
             ))}
+
+            {aiComponents.length > 0 ? (
+              <>
+                <tr>
+                  <td
+                    colSpan={2}
+                    style={{
+                      padding: "0.5rem 0 0.25rem",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "var(--forge-text-subtle, #64748b)",
+                      borderTop: "1px solid var(--forge-border, #e2e8f0)",
+                    }}
+                  >
+                    Hybrid ranking signals
+                  </td>
+                </tr>
+                {aiComponents.map((item) => (
+                  <tr key={item.label}>
+                    <td style={{ padding: "0.3rem 0.5rem 0.3rem 0", verticalAlign: "top" }}>
+                      <div style={{ color: "var(--forge-text)" }}>{item.label}</div>
+                      {!compact ? (
+                        <div style={{ fontSize: 12, color: "var(--forge-text-subtle, #64748b)" }}>
+                          {item.hint}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td
+                      style={{
+                        padding: "0.3rem 0",
+                        textAlign: "right",
+                        fontVariantNumeric: "tabular-nums",
+                        whiteSpace: "nowrap",
+                        color:
+                          item.value > 0
+                            ? "#15803d"
+                            : item.value < 0
+                              ? "#b91c1c"
+                              : "var(--forge-text-muted, #475569)",
+                      }}
+                    >
+                      {formatSigned(item.value)}
+                    </td>
+                  </tr>
+                ))}
+              </>
+            ) : null}
+
             <tr style={{ borderTop: "1px solid var(--forge-border, #e2e8f0)" }}>
               <td style={{ padding: "0.5rem 0.5rem 0 0", fontWeight: 600 }}>Final score</td>
               <td
@@ -149,6 +225,15 @@ export function RankingScoreBreakdown({
           </tbody>
         </table>
 
+        {rankingDebug.explanationCodes && rankingDebug.explanationCodes.length > 0 ? (
+          <p style={{ margin: "0.65rem 0 0", fontSize: 12, color: "var(--forge-text-subtle, #64748b)" }}>
+            Explanation codes:{" "}
+            <strong style={{ color: "var(--forge-text)" }}>
+              {rankingDebug.explanationCodes.join(", ")}
+            </strong>
+          </p>
+        ) : null}
+
         <p
           style={{
             margin: "0.65rem 0 0",
@@ -162,6 +247,9 @@ export function RankingScoreBreakdown({
             ? ` (${formatScore(subtotal)} computed)`
             : ""}
           . Pin rules reorder results without changing these points.
+          {aiComponents.length > 0
+            ? " Hybrid lexical/semantic/personalization scores are diagnostic signals from the AI pipeline."
+            : ""}
         </p>
 
         {rankingDebug.appliedRuleNames.length > 0 ? (

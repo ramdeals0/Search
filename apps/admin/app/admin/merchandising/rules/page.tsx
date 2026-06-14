@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { MerchandisingRule } from "@retailer-search/shared-types";
 import { RulesTable } from "../../../rules-table";
+import { RuleConflictsPanel } from "../../../rule-conflicts-panel";
 import { AdminMetricCard, AdminPageHeader } from "../../admin-page-header";
 import { getSearchApiUrl } from "../../../lib/search-api-url";
 
@@ -51,6 +52,8 @@ export default async function MerchandisingRulesPage() {
         ) : null}
         <RulesTable initialRules={rules} />
       </section>
+
+      <RuleConflictsPanel />
     </div>
   );
 }

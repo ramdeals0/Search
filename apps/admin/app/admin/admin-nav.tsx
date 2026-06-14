@@ -95,6 +95,19 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         ),
       },
       {
+        href: "/admin/ai-search",
+        label: "AI Search",
+        allowedRoles: "all",
+        icon: (
+          <NavIcon>
+            <svg {...iconProps}>
+              <path d="M3 11.5 6 5.5 10 9.5 13 3.5" />
+              <circle cx="12.5" cy="11.5" r="1.25" />
+            </svg>
+          </NavIcon>
+        ),
+      },
+      {
         href: "/admin/search/zero-results",
         label: "Zero-results inbox",
         allowedRoles: "all",
@@ -137,6 +150,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         { href: "/admin/merchandising", label: "Overview" },
         { href: "/admin/merchandising/rules", label: "Rules" },
         { href: "/admin/merchandising/synonyms", label: "Synonyms" },
+        { href: "/admin/merchandising/modules", label: "Content modules" },
         { href: "/admin/merchandising/workflows/new-rule", label: "Guided new rule" },
         { href: "/admin/merchandising/snapshots", label: "Snapshots" },
         { href: "/admin/merchandising/promotions", label: "Promotions" },
@@ -210,6 +224,38 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     },
   },
   {
+    title: "Platform",
+    items: [
+      {
+        href: "/admin/platform/catalogs",
+        label: "Catalogs",
+        allowedRoles: ["admin"],
+        icon: (
+          <NavIcon>
+            <svg {...iconProps}>
+              <path d="M2.5 4.5h11v9h-11z" />
+              <path d="M5.5 7.5h5M5.5 10h3" />
+            </svg>
+          </NavIcon>
+        ),
+      },
+      {
+        href: "/admin/platform/plugins",
+        label: "Plugins",
+        allowedRoles: ["admin"],
+        icon: (
+          <NavIcon>
+            <svg {...iconProps}>
+              <path d="M5 8.5h6" />
+              <circle cx="4" cy="8.5" r="1.5" />
+              <circle cx="12" cy="8.5" r="1.5" />
+            </svg>
+          </NavIcon>
+        ),
+      },
+    ],
+  },
+  {
     title: "Operations",
     items: [
       {
@@ -250,6 +296,32 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
               <path d="M5 8.5h6" />
               <circle cx="4" cy="8.5" r="1.5" />
               <circle cx="12" cy="8.5" r="1.5" />
+            </svg>
+          </NavIcon>
+        ),
+      },
+      {
+        href: "/admin/integrations/usage",
+        label: "API usage",
+        allowedRoles: ["admin", "developer"],
+        icon: (
+          <NavIcon>
+            <svg {...iconProps}>
+              <path d="M3 12h10" />
+              <path d="M5 12V8M8 12V5M11 12V9" />
+            </svg>
+          </NavIcon>
+        ),
+      },
+      {
+        href: "/admin/developer",
+        label: "Developer portal",
+        allowedRoles: ["developer", "admin"],
+        icon: (
+          <NavIcon>
+            <svg {...iconProps}>
+              <path d="M4 11.5 6.5 9 4 6.5" />
+              <path d="M8 11.5h4.5" />
             </svg>
           </NavIcon>
         ),
@@ -352,7 +424,7 @@ export function AdminNav({
       ) as WorkspaceRole | null;
       if (
         stored &&
-        ["merchandiser", "reviewer", "approver", "release_manager", "admin"].includes(
+        ["merchandiser", "reviewer", "approver", "release_manager", "developer", "admin"].includes(
           stored,
         )
       ) {

@@ -26,7 +26,7 @@ import {
   type SeededRng,
 } from "./random.js";
 
-export const TARGET_PRODUCT_COUNT = 1000;
+export const TARGET_PRODUCT_COUNT = 50_000;
 
 export interface GeneratedCatalog {
   products: ProductDocument[];

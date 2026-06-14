@@ -12,13 +12,14 @@
     "start:prod": "prisma migrate deploy && node dist/index.js",
     "typecheck": "prisma generate && tsc -b --noEmit",
     "lint": "echo \"lint pending\"",
-    "test": "echo \"tests pending\"",
+    "test": "tsx --test src/ai-search/ai-search.test.ts",
     "db:test-aiven": "node scripts/test-aiven-postgres.mjs"
   },
   "dependencies": {
     "prisma": "^6.2.1",
     "@prisma/client": "^6.2.1",
     "@retailer-search/config": "workspace:*",
+    "@retailer-search/plugin-sdk": "workspace:*",
     "@retailer-search/search-core": "workspace:*",
     "@retailer-search/shared-types": "workspace:*",
     "express": "^4.21.2",

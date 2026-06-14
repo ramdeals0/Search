@@ -1,6 +1,7 @@
 "use client";
 
 import type { SearchFiltersDto } from "@retailer-search/shared-types";
+import { getOrCreateSessionId } from "./lib/session-id";
 import { Autocomplete } from "./autocomplete";
 
 interface SearchBarProps {
@@ -22,11 +23,15 @@ export function SearchBar({
       method="get"
       className="store-search-form"
       role="search"
+      onSubmit={() => {
+        getOrCreateSessionId();
+      }}
     >
       <Autocomplete
         initialQuery={query}
         pageSize={pageSize}
         activeFilters={activeFilters}
+        showRecentSearches
       />
       <input type="hidden" name="page" value="1" />
       <input type="hidden" name="pageSize" value={pageSize} />

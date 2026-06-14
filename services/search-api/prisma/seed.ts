@@ -82,16 +82,12 @@ function writeCatalogArtifacts(products: ReturnType<typeof generateProductCatalo
   const catalogPath = join(generatedDir, "catalog.json");
   writeFileSync(
     catalogPath,
-    JSON.stringify(
-      {
-        generatedAt: "2026-03-15T12:00:00.000Z",
-        seed: DEMO_RNG_SEED,
-        targetCount: TARGET_PRODUCT_COUNT,
-        products,
-      },
-      null,
-      2,
-    ),
+    JSON.stringify({
+      generatedAt: new Date().toISOString(),
+      seed: DEMO_RNG_SEED,
+      targetCount: TARGET_PRODUCT_COUNT,
+      products,
+    }),
     "utf8",
   );
 }

@@ -37,6 +37,7 @@ function mapProductRow(row: {
   inStock: boolean;
   imageUrl: string | null;
   attributes: unknown;
+  catalogId?: string;
   createdAt: Date;
   updatedAt: Date;
   brand: { name: string };
@@ -55,6 +56,7 @@ function mapProductRow(row: {
     inStock: row.inStock,
     imageUrl: row.imageUrl ?? undefined,
     attributes: row.attributes as ProductAttributeMap,
+    catalogId: row.catalogId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -62,6 +64,18 @@ function mapProductRow(row: {
 
 export function getProductCatalog(): ProductDocument[] {
   return cachedProducts;
+}
+
+export function filterProductCatalogByCatalogId(
+  products: ProductDocument[],
+  catalogId: string,
+): ProductDocument[] {
+  if (!catalogId || catalogId === "default") {
+    return products.filter(
+      (product) => !product.catalogId || product.catalogId === "default",
+    );
+  }
+  return products.filter((product) => product.catalogId === catalogId);
 }
 
 export function getProductCatalogCount(): number {

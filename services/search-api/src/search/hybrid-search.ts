@@ -1,18 +1,12 @@
-import {
-  mergeHybridScores,
-  NoopVectorSearchProvider,
-  searchProducts,
-  type ProductSearchIndex,
-  type QueryProcessorConfig,
-} from "@retailer-search/search-core";
 import type {
   MerchandisingRule,
   ProductDocument,
   SearchRequestDto,
   SearchResponseDto,
 } from "@retailer-search/shared-types";
-
-const vectorProvider = new NoopVectorSearchProvider();
+import type { ProductSearchIndex, QueryProcessorConfig } from "@retailer-search/search-core";
+import { getAiRankingConfig } from "../ai-search/ai-ranking-config-store.js";
+import { executeHybridRankingPipeline } from "../ai-search/hybrid-ranking-pipeline.js";
 
 export interface HybridSearchOptions {
   rules?: MerchandisingRule[];
@@ -20,44 +14,24 @@ export interface HybridSearchOptions {
   index?: ProductSearchIndex;
   queryProcessorConfig?: QueryProcessorConfig;
   vectorWeight?: number;
+  sessionId?: string;
 }
 
 export async function hybridSearchProducts(
   products: ProductDocument[],
   request: SearchRequestDto,
   options: HybridSearchOptions = {},
-): Promise<SearchResponseDto & { hybridDebug?: { vectorHits: number; vectorWeight: number } }> {
-  const keywordResult = searchProducts(products, request, options);
-  const vectorHits = await vectorProvider.search(request.query, request.pageSize);
-  const vectorWeight = options.vectorWeight ?? 0.25;
-
-  if (vectorHits.length === 0) {
-    return {
-      ...keywordResult,
-      hybridDebug: { vectorHits: 0, vectorWeight },
-    };
+): Promise<SearchResponseDto> {
+  const config = await getAiRankingConfig();
+  if (options.vectorWeight !== undefined) {
+    config.weights.semanticWeight = options.vectorWeight;
   }
-
-  const vectorScoreById = new Map(
-    vectorHits.map((hit) => [hit.productId, hit.score]),
-  );
-
-  const mergedHits = keywordResult.hits.map((hit) => {
-    const vectorScore = vectorScoreById.get(hit.id) ?? 0;
-    return {
-      ...hit,
-      score: mergeHybridScores(hit.score, vectorScore, vectorWeight),
-    };
+  return executeHybridRankingPipeline(products, request, {
+    rules: options.rules,
+    debug: options.debug,
+    index: options.index,
+    queryProcessorConfig: options.queryProcessorConfig,
+    config,
+    sessionId: options.sessionId,
   });
-
-  mergedHits.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
-
-  return {
-    ...keywordResult,
-    hits: mergedHits,
-    hybridDebug: {
-      vectorHits: vectorHits.length,
-      vectorWeight,
-    },
-  };
 }

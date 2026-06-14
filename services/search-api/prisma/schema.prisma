@@ -12,6 +12,7 @@ enum UserRole {
   reviewer
   approver
   release_manager
+  developer
   admin
 }
 
@@ -361,6 +362,23 @@ model SystemConfig {
   @@index([key])
 }
 
+model Catalog {
+  id          String   @id @default(cuid())
+  tenantId    String   @default("default")
+  slug        String
+  name        String
+  description String?
+  isDefault   Boolean  @default(false)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  products    Product[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([active])
+}
+
 model Brand {
   id        String    @id
   name      String    @unique
@@ -391,6 +409,8 @@ model Product {
   brand       Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
   categoryId  String
   category    Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  catalogId   String   @default("default")
+  catalog     Catalog  @relation(fields: [catalogId], references: [id], onDelete: Restrict)
   description String
   price       Float
   inventory   Int
@@ -402,6 +422,7 @@ model Product {
 
   @@index([brandId])
   @@index([categoryId])
+  @@index([catalogId])
   @@index([inStock])
   @@index([title])
   @@index([updatedAt])
@@ -413,6 +434,7 @@ model ApiKey {
   keyHash            String    @unique
   keyPrefix          String
   tenantId           String    @default("default")
+  ownerUserId        String?
   scopes             String[]  @default(["search:read", "browse:read", "events:write"])
   enabled            Boolean   @default(true)
   rateLimitPerMinute Int?
@@ -422,6 +444,7 @@ model ApiKey {
   updatedAt          DateTime  @updatedAt
 
   @@index([tenantId])
+  @@index([ownerUserId])
   @@index([enabled])
 }
 
@@ -506,4 +529,127 @@ model ApiUsageMeter {
   @@unique([apiKeyId, route, windowStart])
   @@index([tenantId])
   @@index([windowStart])
+}
+
+model EvaluationQuerySet {
+  id          String             @id
+  name        String
+  description String?
+  queries     Json
+  createdAt   DateTime           @default(now())
+  experiments ExperimentRecord[]
+}
+
+model ExperimentRecord {
+  id                    String   @id
+  name                  String
+  description           String?
+  status                String
+  baselineSnapshotId    String
+  candidateSnapshotId   String
+  querySetId            String
+  querySet              EvaluationQuerySet @relation(fields: [querySetId], references: [id], onDelete: Cascade)
+  candidateLlmOverrides Json?
+  candidateAiConfig     Json?
+  lastRunAt             DateTime?
+  onlineEnabled         Boolean  @default(false)
+  onlineTrafficPercent  Int      @default(50)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  lastRun               ExperimentRunRecord?
+  scorecard             ExperimentScorecardRecord?
+  decision              ExperimentDecisionRecord?
+
+  @@index([status])
+  @@index([querySetId])
+  @@index([onlineEnabled])
+}
+
+model ExperimentRunRecord {
+  experimentId String           @id
+  experiment   ExperimentRecord @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  payload      Json
+  runAt        DateTime
+}
+
+model ExperimentScorecardRecord {
+  experimentId String           @id
+  experiment   ExperimentRecord @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  payload      Json
+  generatedAt  DateTime         @default(now())
+}
+
+model ExperimentDecisionRecord {
+  experimentId String           @id
+  experiment   ExperimentRecord @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  payload      Json
+  decidedAt    DateTime         @default(now())
+}
+
+model SearchContentModule {
+  id          String   @id @default(cuid())
+  name        String
+  active      Boolean  @default(true)
+  environment String   @default("staging")
+  moduleType  String
+  priority    Int      @default(100)
+  condition   Json
+  content     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([environment, active])
+}
+
+model ProductEmbedding {
+  productId   String   @id
+  embedding   Json
+  textHash    String?
+  model       String   @default("mock-hash-v1")
+  provider    String   @default("mock")
+  dimensions  Int      @default(64)
+  updatedAt   DateTime @updatedAt
+}
+
+model EmbeddingJob {
+  id                String   @id @default(cuid())
+  status            String   @default("queued")
+  jobType           String   @default("backfill")
+  totalProducts     Int      @default(0)
+  processedProducts Int      @default(0)
+  failedProducts    Int      @default(0)
+  model             String   @default("mock-hash-v1")
+  provider          String   @default("mock")
+  errorMessage      String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model ShopperProfile {
+  sessionId  String   @id
+  tenantId   String   @default("default")
+  affinities Json
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+model CommerceEvent {
+  id          String   @id @default(cuid())
+  type        String
+  sessionId   String?
+  tenantId    String   @default("default")
+  query       String?
+  productId   String?
+  amountCents Int?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@index([sessionId])
+  @@index([tenantId])
 }

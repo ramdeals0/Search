@@ -10,3 +10,4 @@ coverage/
 .DS_Store
 Thumbs.db
 *.tsbuildinfo
+services/search-api/prisma/seed-data/generated/catalog.json

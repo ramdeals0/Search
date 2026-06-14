@@ -1,4 +1,5 @@
 import type {
+  DiscoveryRecentQueryDto,
   NoResultQueryDto,
   SearchAnalyticsSummaryDto,
   SearchClickEventDto,
@@ -11,6 +12,7 @@ import { recordAnalyticsPersisted } from "./observability/search-metrics.js";
 
 const searchEvents: SearchEventDto[] = [];
 const clickEvents: SearchClickEventDto[] = [];
+const sessionSearchEvents = new Map<string, DiscoveryRecentQueryDto[]>();
 let persistenceEnabled = false;
 
 function normalizeQuery(query: string): string {
@@ -60,13 +62,23 @@ export async function hydrateAnalyticsStore(): Promise<void> {
 
     searchEvents.length = 0;
     clickEvents.length = 0;
+    sessionSearchEvents.clear();
 
     for (const row of recentSearchEvents.reverse()) {
-      searchEvents.push({
+      const event = {
         query: row.query,
         resultCount: row.resultCount,
         timestamp: row.createdAt.toISOString(),
-      });
+      };
+      searchEvents.push(event);
+      if (row.sessionId) {
+        const existing = sessionSearchEvents.get(row.sessionId) ?? [];
+        existing.push({
+          query: event.query,
+          searchedAt: event.timestamp,
+        });
+        sessionSearchEvents.set(row.sessionId, existing);
+      }
     }
 
     for (const row of recentClickEvents.reverse()) {
@@ -99,6 +111,17 @@ export function recordSearchEvent(
     timestamp: new Date().toISOString(),
   };
   searchEvents.push(stored);
+  if (options.sessionId) {
+    const existing = sessionSearchEvents.get(options.sessionId) ?? [];
+    existing.push({
+      query: stored.query,
+      searchedAt: stored.timestamp,
+    });
+    if (existing.length > 100) {
+      existing.splice(0, existing.length - 100);
+    }
+    sessionSearchEvents.set(options.sessionId, existing);
+  }
 
   if (persistenceEnabled) {
     void prisma.searchEvent
@@ -244,7 +267,7 @@ export function getQueryAnalytics(): QueryAnalyticsRow[] {
     .sort((a, b) => b.searches - a.searches);
 }
 
-export function getAnalyticsSummary(): SearchAnalyticsSummaryDto {
+function getInMemoryAnalyticsSummary(): SearchAnalyticsSummaryDto {
   const allQueries = searchEvents.map((event) => event.query);
   const noResultQueries = searchEvents
     .filter((event) => event.resultCount === 0)
@@ -256,6 +279,126 @@ export function getAnalyticsSummary(): SearchAnalyticsSummaryDto {
     topQueries: toTopList(countQueries(allQueries), 10),
     noResultQueries: toNoResultList(countQueries(noResultQueries), 10),
   };
+}
+
+function windowStartFromDays(windowDays: number): Date {
+  const days = Number.isFinite(windowDays) && windowDays > 0 ? windowDays : 7;
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+}
+
+export async function getTrendingQueries(
+  limit = 10,
+  windowDays = 7,
+): Promise<TopQueryDto[]> {
+  const safeLimit = Math.max(1, Math.min(100, limit));
+
+  if (persistenceEnabled) {
+    try {
+      const grouped = await prisma.searchEvent.groupBy({
+        by: ["normalizedQuery"],
+        where: {
+          createdAt: { gte: windowStartFromDays(windowDays) },
+        },
+        _count: { _all: true },
+        orderBy: { _count: { normalizedQuery: "desc" } },
+        take: safeLimit,
+      });
+
+      return grouped.map((row: {
+        normalizedQuery: string;
+        _count: { _all: number };
+      }) => ({
+        query: row.normalizedQuery,
+        count: row._count._all,
+      }));
+    } catch {
+      // Fall back to in-memory aggregation.
+    }
+  }
+
+  const inWindow = searchEvents
+    .filter((event) => new Date(event.timestamp) >= windowStartFromDays(windowDays))
+    .map((event) => event.query);
+
+  return toTopList(countQueries(inWindow), safeLimit);
+}
+
+export async function getRecentQueriesForSession(
+  sessionId: string,
+  limit = 10,
+): Promise<DiscoveryRecentQueryDto[]> {
+  const safeLimit = Math.max(1, Math.min(100, limit));
+  const normalizedSessionId = sessionId.trim();
+  if (!normalizedSessionId) {
+    return [];
+  }
+
+  if (persistenceEnabled) {
+    try {
+      const rows = await prisma.searchEvent.findMany({
+        where: { sessionId: normalizedSessionId },
+        orderBy: { createdAt: "desc" },
+        take: safeLimit,
+        select: {
+          query: true,
+          createdAt: true,
+        },
+      });
+
+      return rows.map((row) => ({
+        query: row.query,
+        searchedAt: row.createdAt.toISOString(),
+      }));
+    } catch {
+      // Fall back to in-memory events.
+    }
+  }
+
+  return [...(sessionSearchEvents.get(normalizedSessionId) ?? [])]
+    .reverse()
+    .slice(0, safeLimit);
+}
+
+export async function getAnalyticsSummary(): Promise<SearchAnalyticsSummaryDto> {
+  if (!persistenceEnabled) {
+    return getInMemoryAnalyticsSummary();
+  }
+
+  try {
+    const [totalSearches, totalClicks, topGrouped, zeroResultGrouped] =
+      await Promise.all([
+        prisma.searchEvent.count(),
+        prisma.searchClickEvent.count(),
+        prisma.searchEvent.groupBy({
+          by: ["normalizedQuery"],
+          _count: { _all: true },
+          orderBy: { _count: { normalizedQuery: "desc" } },
+          take: 10,
+        }),
+        prisma.searchEvent.groupBy({
+          by: ["normalizedQuery"],
+          where: { resultCount: 0 },
+          _count: { _all: true },
+          orderBy: { _count: { normalizedQuery: "desc" } },
+          take: 10,
+        }),
+      ]);
+
+    return {
+      totalSearches,
+      totalClicks,
+      topQueries: topGrouped.map((row) => ({
+        query: row.normalizedQuery,
+        count: row._count._all,
+      })),
+      noResultQueries: zeroResultGrouped.map((row) => ({
+        query: row.normalizedQuery,
+        count: row._count._all,
+      })),
+    };
+  } catch {
+    return getInMemoryAnalyticsSummary();
+  }
 }
 
 export async function getZeroResultInsights(

@@ -87,6 +87,12 @@ importers:
         specifier: ^22.10.5
         version: 22.19.20
 
+  packages/plugin-sdk:
+    dependencies:
+      '@retailer-search/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+
   packages/search-core:
     dependencies:
       '@retailer-search/shared-types':
@@ -107,6 +113,9 @@ importers:
       '@retailer-search/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@retailer-search/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
       '@retailer-search/search-core':
         specifier: workspace:*
         version: link:../../packages/search-core

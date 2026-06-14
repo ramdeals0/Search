@@ -682,7 +682,7 @@ Issue scoped API keys for storefront apps, partner integrations, and automation.
 
 ## 15. Demo data and sample queries
 
-The demo catalog is synthetic home-improvement data (~1,000 products, 80+ brands).
+The demo catalog is synthetic home-improvement data (~50,000 products, 80+ brands).
 
 ### Storefront queries worth trying
 
@@ -905,7 +905,7 @@ pnpm exec prisma migrate deploy
 pnpm exec prisma db seed
 ```
 
-This loads ~1,000 demo products and the demo user accounts listed in [Demo environment](#demo-environment-pre-seeded). Seeding marks setup as complete so `/setup` is skipped.
+This loads ~50,000 demo products and the demo user accounts listed in [Demo environment](#demo-environment-pre-seeded). Seeding marks setup as complete so `/setup` is skipped.
 
 ### Operator checklist after deploy
 

@@ -208,11 +208,11 @@ function resolveProductFromClick(
   );
 }
 
-export function getCatalogAnalyticsInsights(
+export async function getCatalogAnalyticsInsights(
   products: ProductDocument[],
   limit = 10,
-): CatalogAnalyticsInsightsDto {
-  const summary = getAnalyticsSummary();
+): Promise<CatalogAnalyticsInsightsDto> {
+  const summary = await getAnalyticsSummary();
   const queryRows = getQueryAnalytics();
   const clicks = getClickEventsForInsights();
   const productById = new Map(products.map((product) => [product.id, product]));

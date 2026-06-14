@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/shared-types" },
     { "path": "./packages/config" },
+    { "path": "./packages/plugin-sdk" },
     { "path": "./packages/search-core" },
     { "path": "./services/search-api" },
     { "path": "./services/catalog-ingestion" },

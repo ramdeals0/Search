@@ -4,6 +4,7 @@ import type {
 } from "@retailer-search/shared-types";
 import { getSearchApiUrl } from "../../lib/search-api-url";
 import { AdminPageHeader } from "../admin-page-header";
+import { CatalogAdminPanel } from "../../catalog-admin-panel";
 import { ProductsWorkspace } from "../../products-workspace";
 
 const EMPTY_INSIGHTS: CatalogAnalyticsInsightsDto = {
@@ -62,6 +63,7 @@ export default async function AdminProductsPage() {
         productCount={catalogHealth.productCount}
         catalogSource={catalogHealth.catalogSource}
       />
+      <CatalogAdminPanel />
     </>
   );
 }

@@ -1,0 +1,31 @@
+# Local on-prem stack for the Retailer Search Platform (P4).
+# Usage:
+#   docker compose up -d postgres
+#   copy .env.docker.example to .env and set DATABASE_URL
+#   pnpm install && pnpm --filter @retailer-search/search-api exec prisma migrate deploy
+#   pnpm --filter @retailer-search/search-api exec prisma db seed
+#   pnpm --filter @retailer-search/search-api dev
+#   pnpm --filter @retailer-search/admin dev
+#   pnpm --filter @retailer-search/storefront dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rsp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: retailer_search
+    ports:
+      - "5432:5432"
+    volumes:
+      - rsp_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d retailer_search"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  rsp_pgdata:

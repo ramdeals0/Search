@@ -3,4 +3,5 @@ export type UserRole =
   | "reviewer"
   | "approver"
   | "release_manager"
+  | "developer"
   | "admin";

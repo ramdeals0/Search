@@ -3,14 +3,15 @@ import type {
   SearchFiltersDto,
   SearchResponseDto,
 } from "@retailer-search/shared-types";
+import { cookies } from "next/headers";
 import { Suspense } from "react";
 import { HomeHero } from "./components/home-hero";
 import { EmptyState } from "./empty-state";
 import { Filters } from "./filters";
 import { SearchResults } from "./search-results";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
+const SESSION_COOKIE_NAME = "shopper-session-id";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 12;
@@ -71,7 +72,7 @@ function buildActiveFilters(params: SearchParams): SearchFiltersDto {
 
 async function fetchBrowseCategories(): Promise<BrowseCategoryDto[]> {
   try {
-    const response = await fetch(`${SEARCH_API_URL}/api/v1/browse/categories`, {
+    const response = await fetch(`${getSearchApiUrl()}/api/v1/browse/categories`, {
       cache: "no-store",
     });
     if (!response.ok) {
@@ -90,8 +91,9 @@ async function fetchSearchResults(
   pageSize: number,
   filters: SearchFiltersDto,
   debug: boolean,
+  sessionId?: string,
 ): Promise<{ data?: SearchResponseDto; error?: string }> {
-  const url = new URL("/api/v1/search", SEARCH_API_URL);
+  const url = new URL("/api/v1/search", getSearchApiUrl());
   url.searchParams.set("query", query);
   url.searchParams.set("page", String(page));
   url.searchParams.set("pageSize", String(pageSize));
@@ -110,7 +112,10 @@ async function fetchSearchResults(
   }
 
   try {
-    const response = await fetch(url, { cache: "no-store" });
+    const response = await fetch(url, {
+      cache: "no-store",
+      headers: sessionId ? { "x-session-id": sessionId } : undefined,
+    });
 
     if (!response.ok) {
       return { error: `Search API returned HTTP ${response.status}` };
@@ -125,6 +130,8 @@ async function fetchSearchResults(
 }
 
 export default async function HomePage({ searchParams }: PageProps) {
+  const cookieStore = await cookies();
+  const sessionId = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   const params = await searchParams;
   const query = readParam(params, "query", "").trim();
   const page = parsePositiveInt(
@@ -142,7 +149,14 @@ export default async function HomePage({ searchParams }: PageProps) {
   const [categories, searchResult] = await Promise.all([
     hasQuery ? Promise.resolve([]) : fetchBrowseCategories(),
     hasQuery
-      ? fetchSearchResults(query, page, pageSize, activeFilters, debug)
+      ? fetchSearchResults(
+          query,
+          page,
+          pageSize,
+          activeFilters,
+          debug,
+          sessionId,
+        )
       : Promise.resolve(null),
   ]);
 

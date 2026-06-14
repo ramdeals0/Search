@@ -10,6 +10,7 @@ import type {
 import { prisma } from "../db.js";
 
 const ROLE_RANK: Record<UserRole, number> = {
+  developer: 0,
   merchandiser: 1,
   reviewer: 2,
   approver: 3,

@@ -95,6 +95,30 @@ export const ADMIN_DASHBOARD_LINKS: AdminWorkspaceLink[] = [
     allowedRoles: ["admin"],
   },
   {
+    href: "/admin/integrations/usage",
+    label: "API usage",
+    hint: "Request volume by route and key",
+    allowedRoles: ["admin", "developer"],
+  },
+  {
+    href: "/admin/developer",
+    label: "Developer portal",
+    hint: "Self-service API keys and usage",
+    allowedRoles: ["developer", "admin"],
+  },
+  {
+    href: "/admin/platform/catalogs",
+    label: "Catalogs",
+    hint: "Multi-catalog registry",
+    allowedRoles: ["admin"],
+  },
+  {
+    href: "/admin/platform/plugins",
+    label: "Plugins",
+    hint: "Search pipeline plugins",
+    allowedRoles: ["admin"],
+  },
+  {
     href: "/admin/settings",
     label: "Settings",
     hint: "Platform and environment defaults",

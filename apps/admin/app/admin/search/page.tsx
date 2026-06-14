@@ -1,6 +1,7 @@
 import { AnalyticsPanel } from "../../analytics-panel";
 import { ZeroResultsPanel } from "../../zero-results-panel";
 import { QueryPreview } from "../../query-preview";
+import { RevenueMetricsPanel } from "../../revenue-metrics-panel";
 import { SuggestionsPanel } from "../../suggestions-panel";
 import { AdminPageHeader } from "../admin-page-header";
 
@@ -14,6 +15,7 @@ export default function AdminSearchPage() {
       />
 
       <AnalyticsPanel />
+      <RevenueMetricsPanel />
       <ZeroResultsPanel />
       <SuggestionsPanel />
       <QueryPreview />

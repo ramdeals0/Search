@@ -26,6 +26,29 @@ const emptyForm: CreateMerchandisingRuleDto = {
   boostAmount: 10,
 };
 
+function toDateTimeLocalInput(value?: string): string {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const adjusted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return adjusted.toISOString().slice(0, 16);
+}
+
+function toIsoDateTime(value: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return date.toISOString();
+}
+
 function buildConditionPayload(
   condition: MerchandisingRuleCondition,
 ): MerchandisingRuleCondition {
@@ -57,6 +80,8 @@ export function RuleForm({ initialRule, catalogVocabulary, onSubmit, onCancel }:
   const [productIds, setProductIds] = useState(
     initialRule?.productIds?.join(", ") ?? "",
   );
+  const [activeFrom, setActiveFrom] = useState(toDateTimeLocalInput(initialRule?.activeFrom));
+  const [activeTo, setActiveTo] = useState(toDateTimeLocalInput(initialRule?.activeTo));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,6 +101,8 @@ export function RuleForm({ initialRule, catalogVocabulary, onSubmit, onCancel }:
       ...form,
       condition: buildConditionPayload(form.condition),
       brand: form.brand?.trim() ? form.brand.trim() : "",
+      activeFrom: toIsoDateTime(activeFrom),
+      activeTo: toIsoDateTime(activeTo),
       productIds: productIds
         .split(",")
         .map((item) => item.trim())
@@ -169,6 +196,33 @@ export function RuleForm({ initialRule, catalogVocabulary, onSubmit, onCancel }:
             onChange={(event) => updateField("active", event.target.checked)}
           />
           Active
+        </label>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: "0.75rem",
+        }}
+      >
+        <label style={{ display: "grid", gap: 4, fontSize: 14 }}>
+          Active from (optional)
+          <input
+            type="datetime-local"
+            value={activeFrom}
+            onChange={(event) => setActiveFrom(event.target.value)}
+            style={inputStyle}
+          />
+        </label>
+        <label style={{ display: "grid", gap: 4, fontSize: 14 }}>
+          Active to (optional)
+          <input
+            type="datetime-local"
+            value={activeTo}
+            onChange={(event) => setActiveTo(event.target.value)}
+            style={inputStyle}
+          />
         </label>
       </div>
 

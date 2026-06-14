@@ -94,6 +94,25 @@ export function normalizeQuery(input: string): string {
   return input.trim().toLowerCase();
 }
 
+export function isRuleActiveNow(
+  rule: MerchandisingRule,
+  now = new Date(),
+): boolean {
+  if (!rule.active) {
+    return false;
+  }
+  const at = now.getTime();
+  const startAt = rule.activeFrom ? new Date(rule.activeFrom).getTime() : undefined;
+  const endAt = rule.activeTo ? new Date(rule.activeTo).getTime() : undefined;
+  if (startAt !== undefined && at < startAt) {
+    return false;
+  }
+  if (endAt !== undefined && at > endAt) {
+    return false;
+  }
+  return true;
+}
+
 function normalizeSynonyms(query: string): string {
   let result = query.trim().toLowerCase();
 
@@ -651,7 +670,7 @@ export function searchProducts(
   const query = processed.searchQuery;
   const page = Math.max(1, request.page);
   const pageSize = Math.max(1, Math.min(100, request.pageSize));
-  const rules = options.rules ?? [];
+  const rules = (options.rules ?? []).filter((rule) => isRuleActiveNow(rule));
   const debug = options.debug ?? false;
 
   const catalog =

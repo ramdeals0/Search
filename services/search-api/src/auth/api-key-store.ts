@@ -3,10 +3,12 @@ import type {
   ApiKeyDto,
   CreateApiKeyRequestDto,
   CreateApiKeyResponseDto,
+  RotateApiKeyResponseDto,
 } from "@retailer-search/shared-types";
 import { prisma } from "../db.js";
 
 const DEFAULT_SCOPES = ["search:read", "browse:read", "events:write"];
+const DEVELOPER_SCOPES = ["search:read", "browse:read", "events:write"];
 
 export interface ValidatedApiKey {
   id: string;
@@ -38,6 +40,7 @@ function toDto(row: {
   name: string;
   keyPrefix: string;
   tenantId: string;
+  ownerUserId: string | null;
   scopes: string[];
   enabled: boolean;
   lastUsedAt: Date | null;
@@ -49,6 +52,7 @@ function toDto(row: {
     name: row.name,
     keyPrefix: row.keyPrefix,
     tenantId: row.tenantId,
+    ownerUserId: row.ownerUserId ?? undefined,
     scopes: row.scopes,
     enabled: row.enabled,
     lastUsedAt: row.lastUsedAt?.toISOString(),
@@ -59,6 +63,7 @@ function toDto(row: {
 
 export async function createApiKey(
   request: CreateApiKeyRequestDto,
+  ownerUserId?: string,
 ): Promise<CreateApiKeyResponseDto> {
   const secret = `rsp_${randomBytes(24).toString("hex")}`;
   const keyPrefix = secret.slice(0, 12);
@@ -68,6 +73,7 @@ export async function createApiKey(
       keyHash: hashApiKey(secret),
       keyPrefix,
       tenantId: request.tenantId?.trim() || "default",
+      ownerUserId: ownerUserId ?? null,
       scopes: request.scopes?.length ? request.scopes : DEFAULT_SCOPES,
       rateLimitPerMinute: request.rateLimitPerMinute,
       expiresAt: request.expiresAt ? new Date(request.expiresAt) : null,
@@ -80,8 +86,30 @@ export async function createApiKey(
   };
 }
 
+export async function createDeveloperApiKey(
+  ownerUserId: string,
+  request: CreateApiKeyRequestDto,
+): Promise<CreateApiKeyResponseDto> {
+  return createApiKey(
+    {
+      ...request,
+      tenantId: request.tenantId?.trim() || "default",
+      scopes: request.scopes?.length ? request.scopes : DEVELOPER_SCOPES,
+    },
+    ownerUserId,
+  );
+}
+
 export async function listApiKeys(): Promise<ApiKeyDto[]> {
   const rows = await prisma.apiKey.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+  return rows.map(toDto);
+}
+
+export async function listApiKeysForOwner(ownerUserId: string): Promise<ApiKeyDto[]> {
+  const rows = await prisma.apiKey.findMany({
+    where: { ownerUserId },
     orderBy: { createdAt: "desc" },
   });
   return rows.map(toDto);
@@ -97,6 +125,47 @@ export async function revokeApiKey(id: string): Promise<ApiKeyDto | null> {
   } catch {
     return null;
   }
+}
+
+export async function revokeOwnedApiKey(
+  id: string,
+  ownerUserId: string,
+): Promise<ApiKeyDto | null> {
+  const existing = await prisma.apiKey.findFirst({
+    where: { id, ownerUserId },
+  });
+  if (!existing) {
+    return null;
+  }
+  return revokeApiKey(id);
+}
+
+export async function rotateApiKey(
+  id: string,
+  ownerUserId?: string,
+): Promise<RotateApiKeyResponseDto | null> {
+  const existing = await prisma.apiKey.findFirst({
+    where: ownerUserId ? { id, ownerUserId } : { id },
+  });
+  if (!existing || !existing.enabled) {
+    return null;
+  }
+
+  const secret = `rsp_${randomBytes(24).toString("hex")}`;
+  const keyPrefix = secret.slice(0, 12);
+  const row = await prisma.apiKey.update({
+    where: { id },
+    data: {
+      keyHash: hashApiKey(secret),
+      keyPrefix,
+      updatedAt: new Date(),
+    },
+  });
+
+  return {
+    apiKey: toDto(row),
+    secret,
+  };
 }
 
 export async function validateApiKey(

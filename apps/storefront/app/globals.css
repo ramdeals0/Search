@@ -599,6 +599,46 @@ img {
   color: var(--store-text);
 }
 
+.store-modules {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.store-module {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--store-radius-sm);
+  border: 1px solid var(--store-border);
+  background: var(--store-surface);
+  text-decoration: none;
+  color: inherit;
+}
+
+.store-module--banner {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.store-module--message {
+  border-color: #dbeafe;
+  background: #eff6ff;
+}
+
+.store-module--category-rail {
+  border-color: #d9f99d;
+  background: #f7fee7;
+}
+
+.store-module__eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--store-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .store-browse-toolbar {
   display: flex;
   flex-wrap: wrap;

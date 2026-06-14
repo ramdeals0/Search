@@ -65,6 +65,11 @@ const WORKSPACE_LINKS = [
     hint: "Query normalization mappings for shopper language",
   },
   {
+    href: "/admin/merchandising/modules",
+    title: "Content modules",
+    hint: "Banner, rail, and message targeting",
+  },
+  {
     href: "/admin/merchandising/snapshots",
     title: "Snapshots",
     hint: "Capture, diff, and roll back configuration",

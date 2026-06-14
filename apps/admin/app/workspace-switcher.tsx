@@ -10,6 +10,7 @@ const ROLES: { id: WorkspaceRole; label: string }[] = [
   { id: "reviewer", label: "Reviewer" },
   { id: "approver", label: "Approver" },
   { id: "release_manager", label: "Release manager" },
+  { id: "developer", label: "Developer" },
   { id: "admin", label: "Admin" },
 ];
 

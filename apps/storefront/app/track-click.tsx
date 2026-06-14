@@ -1,9 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-
-const SEARCH_API_URL =
-  process.env.NEXT_PUBLIC_SEARCH_API_URL ?? "http://localhost:4001";
+import { fetchSearchApi } from "./lib/search-api-client";
+import { getOrCreateSessionId } from "./lib/session-id";
 
 interface TrackClickProps {
   query: string;
@@ -20,10 +19,10 @@ async function sendClickEvent(
   productTitle: string,
 ): Promise<void> {
   try {
-    await fetch(`${SEARCH_API_URL}/api/v1/events/click`, {
+    await fetchSearchApi("/api/v1/events/click", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, productId, productTitle }),
+      sessionId: getOrCreateSessionId(),
+      body: { query, productId, productTitle },
     });
   } catch {
     // Analytics should not block navigation or interaction.

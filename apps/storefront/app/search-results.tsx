@@ -1,7 +1,9 @@
 import type {
+  SearchContentModuleHitDto,
   SearchFiltersDto,
   SearchResponseDto,
 } from "@retailer-search/shared-types";
+import Link from "next/link";
 import { ProductCard } from "./components/product-card";
 import { EmptyState } from "./empty-state";
 import { Pagination } from "./pagination";
@@ -43,6 +45,63 @@ function ActiveFilters({ activeFilters }: { activeFilters: SearchFiltersDto }) {
   );
 }
 
+function SearchModules({ modules }: { modules: SearchContentModuleHitDto[] }) {
+  if (modules.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="store-modules">
+      {modules.map((module) => {
+        if (module.moduleType === "category_rail") {
+          if (!module.category) {
+            return null;
+          }
+          return (
+            <Link
+              key={module.id}
+              href={`/?query=${encodeURIComponent(module.category)}`}
+              className="store-module store-module--category-rail"
+            >
+              <span className="store-module__eyebrow">Explore category</span>
+              <strong>{module.category}</strong>
+              {module.title ? <span>{module.title}</span> : null}
+            </Link>
+          );
+        }
+
+        const content = (
+          <>
+            {module.title ? <strong>{module.title}</strong> : null}
+            {module.body ? <span>{module.body}</span> : null}
+          </>
+        );
+
+        if (module.href) {
+          return (
+            <a
+              key={module.id}
+              href={module.href}
+              className={`store-module ${module.moduleType === "banner" ? "store-module--banner" : "store-module--message"}`}
+            >
+              {content}
+            </a>
+          );
+        }
+
+        return (
+          <div
+            key={module.id}
+            className={`store-module ${module.moduleType === "banner" ? "store-module--banner" : "store-module--message"}`}
+          >
+            {content}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SearchResults({
   data,
   activeFilters,
@@ -71,6 +130,8 @@ export function SearchResults({
           Promotions applied: {data.appliedRuleNames?.join(", ")}
         </p>
       )}
+
+      <SearchModules modules={data.modules ?? []} />
 
       <ul className="store-product-grid">
         {data.hits.map((hit) => (

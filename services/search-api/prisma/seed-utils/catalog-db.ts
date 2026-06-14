@@ -33,11 +33,30 @@ export async function clearCatalogTables(
   await prisma.brand.deleteMany();
 }
 
+async function ensureDefaultCatalogRecord(
+  prisma: PrismaClient,
+): Promise<void> {
+  await prisma.catalog.upsert({
+    where: { id: "default" },
+    create: {
+      id: "default",
+      tenantId: "default",
+      slug: "default",
+      name: "Default catalog",
+      description: "Primary product catalog for this tenant",
+      isDefault: true,
+      active: true,
+    },
+    update: {},
+  });
+}
+
 export async function seedCatalogTables(
   prisma: PrismaClient,
   products: ProductDocument[],
 ): Promise<{ brands: number; categories: number; products: number }> {
   await clearCatalogTables(prisma);
+  await ensureDefaultCatalogRecord(prisma);
 
   const brandIds = new Map<string, string>();
   const categoryIds = new Map<string, string>();
@@ -80,6 +99,7 @@ export async function seedCatalogTables(
     title: product.title,
     brandId: brandIds.get(product.brand)!,
     categoryId: categoryIds.get(`${product.category}::${product.subcategory}`)!,
+    catalogId: "default",
     description: product.description,
     price: product.price,
     inventory: product.inventory,
@@ -90,7 +110,7 @@ export async function seedCatalogTables(
     updatedAt: new Date(product.updatedAt),
   }));
 
-  for (const batch of chunk(productRows, 100)) {
+  for (const batch of chunk(productRows, 500)) {
     await prisma.product.createMany({ data: batch });
   }
 

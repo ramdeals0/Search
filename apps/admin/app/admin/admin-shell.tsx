@@ -2,13 +2,14 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import type { SearchAnalyticsSummaryDto, WorkspaceRole } from "@retailer-search/shared-types";
+import { BrandedSidebarBrand, BrandingProvider } from "../branding-provider";
+import { CatalogSwitcher } from "../catalog-switcher";
 import { CurrentUserBadge } from "../components/current-user-badge";
 import { WorkspaceSummaryCards } from "../workspace-summary-cards";
 import {
   WORKSPACE_ROLE_STORAGE_KEY,
   WorkspaceSwitcher,
 } from "../workspace-switcher";
-import { ForgeOpsLogo } from "./admin-page-header";
 import { AdminNav } from "./admin-nav";
 
 interface AdminShellProps {
@@ -34,12 +35,11 @@ export function AdminShell({ children }: AdminShellProps) {
   }, [isMobile]);
 
   return (
+    <BrandingProvider>
     <div className={`forge-shell${isMobile ? " forge-shell--mobile" : ""}`}>
       {!isMobile ? (
         <aside className="forge-sidebar">
-          <div className="forge-sidebar__brand">
-            <ForgeOpsLogo />
-          </div>
+          <BrandedSidebarBrand />
           <div className="forge-sidebar__nav">
             <AdminNav mobileOpen onNavigate={() => setMobileNavOpen(false)} />
           </div>
@@ -62,15 +62,18 @@ export function AdminShell({ children }: AdminShellProps) {
               {mobileNavOpen ? "Close" : "Menu"}
             </button>
           ) : (
-            <span className="forge-header__title">Operations Console</span>
+            <>
+              <span className="forge-header__title">Operations Console</span>
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <CatalogSwitcher />
+              </div>
+            </>
           )}
         </header>
 
         {isMobile && mobileNavOpen ? (
           <div id="forge-mobile-nav" className="forge-mobile-nav">
-            <div className="forge-sidebar__brand">
-              <ForgeOpsLogo />
-            </div>
+            <BrandedSidebarBrand />
             <AdminNav mobileOpen={mobileNavOpen} onNavigate={() => setMobileNavOpen(false)} />
             <div className="forge-sidebar__footer">
               <CurrentUserBadge variant="sidebar" />
@@ -81,6 +84,7 @@ export function AdminShell({ children }: AdminShellProps) {
         <main className="forge-content">{children}</main>
       </div>
     </div>
+    </BrandingProvider>
   );
 }
 
@@ -97,7 +101,7 @@ export function DashboardOverviewWidgets({
     ) as WorkspaceRole | null;
     if (
       stored &&
-      ["merchandiser", "reviewer", "approver", "release_manager", "admin"].includes(
+      ["merchandiser", "reviewer", "approver", "release_manager", "developer", "admin"].includes(
         stored,
       )
     ) {
