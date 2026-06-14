@@ -150,7 +150,10 @@ export default async function HomePage({ searchParams }: PageProps) {
     <main style={{ maxWidth: 960, margin: "0 auto", padding: "2rem 1.5rem" }}>
       <h1 style={{ marginTop: 0 }}>Retail Discovery Platform</h1>
       <p style={{ color: "#475569", marginBottom: 0 }}>
-        Search products across our store network.
+        Search products across our store network.{" "}
+        <a href="/browse" style={{ color: "#2563eb" }}>
+          Browse catalog
+        </a>
       </p>
 
       <SearchBar

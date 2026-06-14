@@ -639,12 +639,21 @@ const createQuerySetSchema = z.object({
   queries: z.array(evaluationQuerySchema).min(1),
 });
 
+const experimentLlmOverridesSchema = z
+  .object({
+    queryRewriteEnabled: z.boolean().optional(),
+    zeroResultsEnabled: z.boolean().optional(),
+    rerankEnabled: z.boolean().optional(),
+  })
+  .optional();
+
 const createExperimentSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   baselineSnapshotId: z.string().min(1),
   candidateSnapshotId: z.string().min(1),
   querySetId: z.string().min(1),
+  candidateLlmOverrides: experimentLlmOverridesSchema,
 });
 
 const saveExperimentDecisionSchema = z.object({
@@ -5153,12 +5162,13 @@ app.post("/api/v1/admin/experiments/:id/run", async (req, res) => {
   }
 
   const products = await getSearchProductCatalog();
-  const run = runExperimentEvaluation({
+  const run = await runExperimentEvaluation({
     experimentId: experiment.id,
     baseline,
     candidate,
     querySet,
     products,
+    candidateLlmOverrides: experiment.candidateLlmOverrides,
   });
 
   saveExperimentRun(run);

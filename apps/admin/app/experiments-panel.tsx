@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import type {
   EvaluationQuerySetDto,
   ExperimentDto,
+  ExperimentLlmOverridesDto,
   ExperimentRunSummaryDto,
   MerchandisingConfigSnapshotDto,
 } from "@retailer-search/shared-types";
@@ -28,6 +29,9 @@ export function ExperimentsPanel() {
   const [baselineSnapshotId, setBaselineSnapshotId] = useState("");
   const [candidateSnapshotId, setCandidateSnapshotId] = useState("");
   const [querySetId, setQuerySetId] = useState("");
+  const [llmQueryRewrite, setLlmQueryRewrite] = useState(false);
+  const [llmZeroResults, setLlmZeroResults] = useState(false);
+  const [llmRerank, setLlmRerank] = useState(false);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -94,6 +98,15 @@ export function ExperimentsPanel() {
     setError(null);
 
     try {
+      const candidateLlmOverrides: ExperimentLlmOverridesDto | undefined =
+        llmQueryRewrite || llmZeroResults || llmRerank
+          ? {
+              queryRewriteEnabled: llmQueryRewrite || undefined,
+              zeroResultsEnabled: llmZeroResults || undefined,
+              rerankEnabled: llmRerank || undefined,
+            }
+          : undefined;
+
       const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/experiments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -103,6 +116,7 @@ export function ExperimentsPanel() {
           baselineSnapshotId,
           candidateSnapshotId,
           querySetId,
+          candidateLlmOverrides,
         }),
       });
 
@@ -112,6 +126,9 @@ export function ExperimentsPanel() {
 
       setName("");
       setDescription("");
+      setLlmQueryRewrite(false);
+      setLlmZeroResults(false);
+      setLlmRerank(false);
       setFeedback("Experiment created.");
       await loadData();
     } catch (createError) {
@@ -264,6 +281,49 @@ export function ExperimentsPanel() {
           </label>
         </div>
 
+        <fieldset
+          style={{
+            margin: 0,
+            padding: "0.65rem 0.75rem",
+            border: "1px solid #e2e8f0",
+            borderRadius: 6,
+          }}
+        >
+          <legend style={{ fontSize: 13, padding: "0 0.25rem" }}>
+            Candidate LLM overrides (optional)
+          </legend>
+          <p style={{ margin: "0 0 0.5rem", fontSize: 12, color: "#64748b" }}>
+            Enable LLM features on the candidate arm only. Baseline stays on
+            standard search.
+          </p>
+          <div style={{ display: "grid", gap: "0.35rem", fontSize: 13 }}>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={llmQueryRewrite}
+                onChange={(event) => setLlmQueryRewrite(event.target.checked)}
+              />
+              Query rewrite
+            </label>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={llmZeroResults}
+                onChange={(event) => setLlmZeroResults(event.target.checked)}
+              />
+              Zero-results recovery
+            </label>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={llmRerank}
+                onChange={(event) => setLlmRerank(event.target.checked)}
+              />
+              LLM rerank (page 1)
+            </label>
+          </div>
+        </fieldset>
+
         <button
           type="submit"
           disabled={creating || snapshots.length === 0 || querySets.length === 0}
@@ -342,6 +402,24 @@ export function ExperimentsPanel() {
                   ? `Last run ${new Date(experiment.lastRunAt).toLocaleString()}`
                   : "Not run yet"}
               </p>
+              {experiment.candidateLlmOverrides ? (
+                <p style={{ margin: "0 0 0.5rem", color: "#64748b" }}>
+                  LLM candidate:{" "}
+                  {[
+                    experiment.candidateLlmOverrides.queryRewriteEnabled
+                      ? "rewrite"
+                      : null,
+                    experiment.candidateLlmOverrides.zeroResultsEnabled
+                      ? "zero-results"
+                      : null,
+                    experiment.candidateLlmOverrides.rerankEnabled
+                      ? "rerank"
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || "none"}
+                </p>
+              ) : null}
               <button
                 type="button"
                 onClick={() => void runExperiment(experiment)}

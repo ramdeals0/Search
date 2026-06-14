@@ -5,7 +5,11 @@ import type {
   SearchRequestDto,
 } from "@retailer-search/shared-types";
 import { createLlmProvider } from "../llm/provider.js";
-import type { EnhancedSearchResponseDto, LlmSearchDebugDto } from "../llm/types.js";
+import type {
+  EnhancedSearchResponseDto,
+  LlmConfig,
+  LlmSearchDebugDto,
+} from "../llm/types.js";
 import { understandQuery } from "../llm/query-understanding-service.js";
 import { buildRetrievalQuery } from "./query-normalization.js";
 import { getSearchFeatureFlags } from "./search-feature-flags.js";
@@ -17,6 +21,9 @@ export interface LlmEnhancedSearchOptions {
   debug?: boolean;
   index?: import("@retailer-search/search-core").ProductSearchIndex;
   queryProcessorConfig?: import("@retailer-search/search-core").QueryProcessorConfig;
+  featureFlagOverride?: Partial<
+    Pick<LlmConfig, "queryRewriteEnabled" | "zeroResultsEnabled" | "rerankEnabled">
+  >;
 }
 
 let cachedProviderKey = "";
@@ -50,7 +57,10 @@ export async function llmEnhancedSearch(
   request: SearchRequestDto,
   options: LlmEnhancedSearchOptions,
 ): Promise<EnhancedSearchResponseDto> {
-  const config = getSearchFeatureFlags();
+  const config: LlmConfig = {
+    ...getSearchFeatureFlags(),
+    ...options.featureFlagOverride,
+  };
   const provider = getProvider(config);
   const llmDebug: LlmSearchDebugDto = {};
   const started = Date.now();

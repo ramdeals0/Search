@@ -1,3 +1,4 @@
+import { ApiKeysPanel } from "../../api-keys-panel";
 import { WebhookManagementPanel } from "../../webhook-management-panel";
 import { AdminPageHeader } from "../admin-page-header";
 
@@ -11,6 +12,8 @@ export default function AdminIntegrationsPage() {
       />
 
       <WebhookManagementPanel />
+
+      <ApiKeysPanel />
 
       <div className="forge-callout forge-callout--dashed">
         Additional connectors (catalog feeds, identity providers, observability) can be added

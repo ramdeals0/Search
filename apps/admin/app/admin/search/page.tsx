@@ -1,5 +1,6 @@
 import type { SearchAnalyticsSummaryDto } from "@retailer-search/shared-types";
 import { AnalyticsPanel } from "../../analytics-panel";
+import { ZeroResultsPanel } from "../../zero-results-panel";
 import { QueryPreview } from "../../query-preview";
 import { SuggestionsPanel } from "../../suggestions-panel";
 import { AdminPageHeader } from "../admin-page-header";
@@ -27,6 +28,7 @@ export default async function AdminSearchPage() {
       />
 
       <AnalyticsPanel analytics={analytics} />
+      <ZeroResultsPanel />
       <SuggestionsPanel />
       <QueryPreview />
     </div>

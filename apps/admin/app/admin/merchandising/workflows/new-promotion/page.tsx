@@ -33,6 +33,8 @@ export default function NewPromotionWorkflowPage() {
   const [reason, setReason] = useState("");
   const [sourceExperimentId, setSourceExperimentId] = useState("");
   const [launchMode, setLaunchMode] = useState<"approval" | "direct">("approval");
+  const [launchTiming, setLaunchTiming] = useState<"immediate" | "scheduled">("immediate");
+  const [scheduledAt, setScheduledAt] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,8 +89,13 @@ export default function NewPromotionWorkflowPage() {
     if (step === 2) {
       return Boolean(snapshotId);
     }
+    if (step === 4) {
+      if (launchTiming === "scheduled") {
+        return scheduledAt.trim().length > 0;
+      }
+    }
     return true;
-  }, [campaignName, reason, snapshotId, step]);
+  }, [campaignName, reason, snapshotId, step, launchTiming, scheduledAt]);
 
   const submitApprovalRequest = async () => {
     setSubmitting(true);
@@ -124,6 +131,44 @@ export default function NewPromotionWorkflowPage() {
       }, 900);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Request failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitScheduledRelease = async () => {
+    setSubmitting(true);
+    setError(null);
+    setFeedback(null);
+
+    try {
+      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/scheduled-releases`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "promote_snapshot",
+          snapshotId,
+          reason: `[${campaignName.trim()}] ${reason.trim()}`,
+          scheduledAt: new Date(scheduledAt).toISOString(),
+          linkedExperimentId: sourceExperimentId.trim() || undefined,
+        }),
+      });
+
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(body?.error ?? `Schedule failed with HTTP ${response.status}`);
+      }
+
+      setFeedback("Promotion scheduled successfully.");
+      window.dispatchEvent(new CustomEvent("admin:scheduled-releases-changed"));
+      window.setTimeout(() => {
+        router.push("/admin/merchandising/promotions");
+      }, 900);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Schedule failed");
     } finally {
       setSubmitting(false);
     }
@@ -287,8 +332,33 @@ export default function NewPromotionWorkflowPage() {
         return (
           <div style={{ display: "grid", gap: "0.75rem" }}>
             <p style={{ margin: 0, fontSize: 14, color: "#64748b" }}>
-              Choose how this promotion should launch. Approval-gated release is recommended.
+              Choose launch timing and mode. Scheduled releases run automatically via the
+              search-api scheduler.
             </p>
+            <label style={{ display: "grid", gap: 4, fontSize: 14 }}>
+              Launch timing
+              <select
+                value={launchTiming}
+                onChange={(event) =>
+                  setLaunchTiming(event.target.value as "immediate" | "scheduled")
+                }
+                style={workflowInputStyle}
+              >
+                <option value="immediate">Launch immediately</option>
+                <option value="scheduled">Schedule for later</option>
+              </select>
+            </label>
+            {launchTiming === "scheduled" ? (
+              <label style={{ display: "grid", gap: 4, fontSize: 14 }}>
+                Scheduled date & time
+                <input
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={(event) => setScheduledAt(event.target.value)}
+                  style={workflowInputStyle}
+                />
+              </label>
+            ) : null}
             <label style={{ display: "grid", gap: 4, fontSize: 14 }}>
               Launch mode
               <select
@@ -303,9 +373,11 @@ export default function NewPromotionWorkflowPage() {
               </select>
             </label>
             <p style={{ margin: 0, fontSize: 13, color: "#64748b" }}>
-              {launchMode === "approval"
-                ? "Creates an approval request. Live search changes only after execution in Approvals."
-                : "Promotes immediately to active configuration without waiting for approval execution."}
+              {launchTiming === "scheduled"
+                ? "Creates a scheduled promote job. Approval policy is enforced when the job runs."
+                : launchMode === "approval"
+                  ? "Creates an approval request. Live search changes only after execution in Approvals."
+                  : "Promotes immediately to active configuration without waiting for approval execution."}
             </p>
           </div>
         );
@@ -332,6 +404,7 @@ export default function NewPromotionWorkflowPage() {
                 `Snapshot: ${selectedSnapshot?.name ?? snapshotId}`,
                 `Experiment: ${sourceExperimentId.trim() || "—"}`,
                 `Launch mode: ${launchMode === "approval" ? "Approval request" : "Direct promote"}`,
+                `Launch timing: ${launchTiming === "scheduled" ? `Scheduled ${scheduledAt}` : "Immediate"}`,
               ].join("\n")}
             </pre>
           </div>
@@ -351,18 +424,24 @@ export default function NewPromotionWorkflowPage() {
             <button
               type="button"
               disabled={submitting || Boolean(feedback) || !snapshotId}
-              onClick={() =>
+              onClick={() => {
+                if (launchTiming === "scheduled") {
+                  void submitScheduledRelease();
+                  return;
+                }
                 void (launchMode === "approval"
                   ? submitApprovalRequest()
-                  : submitPromotion())
-              }
+                  : submitPromotion());
+              }}
               style={workflowButtonStyle("primary")}
             >
               {submitting
                 ? "Submitting..."
-                : launchMode === "approval"
-                  ? "Request approval"
-                  : "Promote snapshot"}
+                : launchTiming === "scheduled"
+                  ? "Schedule promotion"
+                  : launchMode === "approval"
+                    ? "Request approval"
+                    : "Promote snapshot"}
             </button>
           </div>
         );

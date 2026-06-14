@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { PromotionHistoryResponseDto } from "@retailer-search/shared-types";
 import { PromotionPanel } from "../../../promotion-panel";
+import { ScheduledReleasesPanel } from "../../../scheduled-releases-panel";
 import { AdminMetricCard, AdminPageHeader } from "../../admin-page-header";
 import { getSearchApiUrl } from "../../../lib/search-api-url";
 
@@ -73,6 +74,11 @@ export default async function MerchandisingPromotionsPage() {
           </div>
         ) : null}
         <PromotionPanel />
+      </section>
+
+      <section>
+        <h2 className="forge-section-title">Scheduled releases</h2>
+        <ScheduledReleasesPanel />
       </section>
     </div>
   );

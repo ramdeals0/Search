@@ -2,11 +2,13 @@ import { searchProducts } from "@retailer-search/search-core";
 import type {
   EvaluationQueryDto,
   EvaluationQuerySetDto,
+  ExperimentLlmOverridesDto,
   ExperimentRunSummaryDto,
   MerchandisingRule,
   ProductDocument,
   QueryEvaluationResultDto,
 } from "@retailer-search/shared-types";
+import { llmEnhancedSearch } from "./search/llm-enhanced-search.js";
 
 const TOP_N = 10;
 const SEARCH_PAGE_SIZE = 20;
@@ -22,6 +24,7 @@ export interface RunExperimentEvaluationParams {
   candidate: SnapshotSearchConfig;
   querySet: EvaluationQuerySetDto;
   products: ProductDocument[];
+  candidateLlmOverrides?: ExperimentLlmOverridesDto;
 }
 
 function applySynonymMap(query: string, synonyms: Record<string, string>): string {
@@ -38,6 +41,20 @@ function getActiveRules(rules: MerchandisingRule[]): MerchandisingRule[] {
   return rules.filter((rule) => rule.active);
 }
 
+function hasCandidateLlmOverrides(
+  overrides?: ExperimentLlmOverridesDto,
+): boolean {
+  if (!overrides) {
+    return false;
+  }
+
+  return Boolean(
+    overrides.queryRewriteEnabled ||
+      overrides.zeroResultsEnabled ||
+      overrides.rerankEnabled,
+  );
+}
+
 function runSearchForConfig(
   products: ProductDocument[],
   rawQuery: string,
@@ -49,6 +66,32 @@ function runSearchForConfig(
     { query, page: 1, pageSize: SEARCH_PAGE_SIZE },
     { rules: getActiveRules(config.rules) },
   );
+}
+
+async function runCandidateSearchForConfig(
+  products: ProductDocument[],
+  rawQuery: string,
+  config: SnapshotSearchConfig,
+  candidateLlmOverrides?: ExperimentLlmOverridesDto,
+) {
+  const query = applySynonymMap(rawQuery, config.synonyms);
+
+  if (hasCandidateLlmOverrides(candidateLlmOverrides)) {
+    return llmEnhancedSearch(
+      products,
+      { query, page: 1, pageSize: SEARCH_PAGE_SIZE },
+      {
+        rules: getActiveRules(config.rules),
+        featureFlagOverride: {
+          queryRewriteEnabled: candidateLlmOverrides?.queryRewriteEnabled ?? false,
+          zeroResultsEnabled: candidateLlmOverrides?.zeroResultsEnabled ?? false,
+          rerankEnabled: candidateLlmOverrides?.rerankEnabled ?? false,
+        },
+      },
+    );
+  }
+
+  return runSearchForConfig(products, rawQuery, config);
 }
 
 function countExpectedMatches(
@@ -68,21 +111,23 @@ function countOverlap(a: string[], b: string[]): number {
   return a.filter((id) => setB.has(id)).length;
 }
 
-function evaluateQuery(
+async function evaluateQuery(
   evaluationQuery: EvaluationQueryDto,
   products: ProductDocument[],
   baseline: SnapshotSearchConfig,
   candidate: SnapshotSearchConfig,
-): QueryEvaluationResultDto {
+  candidateLlmOverrides?: ExperimentLlmOverridesDto,
+): Promise<QueryEvaluationResultDto> {
   const baselineResult = runSearchForConfig(
     products,
     evaluationQuery.query,
     baseline,
   );
-  const candidateResult = runSearchForConfig(
+  const candidateResult = await runCandidateSearchForConfig(
     products,
     evaluationQuery.query,
     candidate,
+    candidateLlmOverrides,
   );
 
   const topBaselineIds = baselineResult.hits.slice(0, TOP_N).map((hit) => hit.id);
@@ -144,17 +189,22 @@ function classifyQueryOutcome(result: QueryEvaluationResultDto): {
   return { improved: false, regressed: false, unchanged: false };
 }
 
-export function runExperimentEvaluation(
+export async function runExperimentEvaluation(
   params: RunExperimentEvaluationParams,
-): ExperimentRunSummaryDto {
-  const results = params.querySet.queries.map((evaluationQuery) =>
-    evaluateQuery(
-      evaluationQuery,
-      params.products,
-      params.baseline,
-      params.candidate,
-    ),
-  );
+): Promise<ExperimentRunSummaryDto> {
+  const results: QueryEvaluationResultDto[] = [];
+
+  for (const evaluationQuery of params.querySet.queries) {
+    results.push(
+      await evaluateQuery(
+        evaluationQuery,
+        params.products,
+        params.baseline,
+        params.candidate,
+        params.candidateLlmOverrides,
+      ),
+    );
+  }
 
   let changedQueries = 0;
   let improvedQueries = 0;

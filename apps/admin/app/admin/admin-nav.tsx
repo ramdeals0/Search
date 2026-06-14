@@ -94,6 +94,19 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         ),
       },
       {
+        href: "/admin/search/zero-results",
+        label: "Zero-results inbox",
+        allowedRoles: "all",
+        icon: (
+          <NavIcon>
+            <svg {...iconProps}>
+              <path d="M3 8.5h10" />
+              <path d="M8 3.5v10" />
+            </svg>
+          </NavIcon>
+        ),
+      },
+      {
         href: "/admin/experiments",
         label: "Experiments",
         allowedRoles: "all",
@@ -208,6 +221,20 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       {
         href: "/admin/integrations",
         label: "Integrations",
+        allowedRoles: ["admin"],
+        icon: (
+          <NavIcon>
+            <svg {...iconProps}>
+              <path d="M5 8.5h6" />
+              <circle cx="4" cy="8.5" r="1.5" />
+              <circle cx="12" cy="8.5" r="1.5" />
+            </svg>
+          </NavIcon>
+        ),
+      },
+      {
+        href: "/admin/integrations/api-keys",
+        label: "API keys",
         allowedRoles: ["admin"],
         icon: (
           <NavIcon>
