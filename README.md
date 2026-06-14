@@ -533,6 +533,84 @@ try {
 - Query normalization is lightweight (lowercase/trim); advanced synonym/typo canonicalization is not wired into runtime yet.
 - Compiled snapshot production from authoring UI is a separate pipeline (loader hooks are ready for DB/Redis).
 
+## LLM-enhanced search (optional)
+
+The search API includes a modular, **fail-open** LLM layer under `services/search-api/src/llm/` and `services/search-api/src/search/`. Retrieval and merchandising rules remain authoritative; LLM output is advisory and schema-validated.
+
+### Architecture
+
+1. **Normalize query** (`search/query-normalization.ts`)
+2. **Optional query understanding** — validated rewrite for retrieval (`llm/query-understanding-service.ts`)
+3. **Primary retrieval** — existing `searchProducts()` + live merchandising rules
+4. **Zero-results recovery** — up to 3 broader LLM rewrites, tried sequentially (`search/zero-results-recovery.ts`)
+5. **Optional rerank** — top-K advisory reorder only (`search/candidate-rerank.ts`, disabled by default)
+
+If the provider fails, times out, or returns invalid JSON, the API falls back to baseline search behavior.
+
+### Providers
+
+OpenAI-compatible clients with swappable providers:
+
+| Provider | Env | Default model |
+|----------|-----|---------------|
+| `openrouter` | `OPENROUTER_API_KEY` | `meta-llama/llama-3.1-8b-instruct:free` |
+| `groq` | `GROQ_API_KEY` | `llama-3.1-8b-instant` |
+| `none` | — | LLM features no-op |
+
+Set `LLM_PROVIDER` and optional `LLM_MODEL`. `HF_TOKEN` is reserved for a future Hugging Face provider.
+
+### Environment variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `LLM_PROVIDER` | `none` | `openrouter`, `groq`, or `none` |
+| `LLM_MODEL` | provider default | Model id |
+| `OPENROUTER_API_KEY` | — | OpenRouter API key |
+| `GROQ_API_KEY` | — | Groq API key |
+| `HF_TOKEN` | — | Reserved |
+| `LLM_QUERY_REWRITE_ENABLED` | `false` | Query understanding / rewrite |
+| `LLM_ZERO_RESULTS_ENABLED` | `false` | Zero-results recovery |
+| `LLM_RERANK_ENABLED` | `false` | Top-K rerank (off by default) |
+| `LLM_TIMEOUT_MS` | `4000` | Provider timeout |
+| `LLM_CACHE_TTL_MS` | `300000` | Query understanding cache TTL |
+| `LLM_RERANK_TOP_K` | `12` | Max candidates to rerank |
+| `LLM_MAX_QUERY_CHARS` | `160` | Input truncation |
+| `LLM_DEBUG_LOGGING` | `false` | Log advisory LLM decisions |
+
+### Internal debug routes
+
+| Route | Purpose |
+|-------|---------|
+| `GET /api/v1/internal/llm/query-understanding?query=` | Inspect validated understanding |
+| `GET /api/v1/internal/llm/search-preview?query=&pageSize=` | Full LLM-enhanced search with `llmDebug` |
+| `GET /api/v1/internal/llm/metrics` | Calls, failures, cache hits, rewrite/recovery/rerank counters |
+
+Public search: `GET /api/v1/search?debug=true` includes `llmDebug` when any LLM feature flag is enabled.
+
+### Local smoke test
+
+```bash
+cd services/search-api
+# .env example:
+# LLM_PROVIDER=groq
+# GROQ_API_KEY=...
+# LLM_QUERY_REWRITE_ENABLED=true
+# LLM_ZERO_RESULTS_ENABLED=true
+
+pnpm dev
+curl "http://localhost:4001/api/v1/internal/llm/query-understanding?query=cordless%20dril"
+curl "http://localhost:4001/api/v1/search?query=dril&debug=true"
+curl "http://localhost:4001/api/v1/internal/llm/metrics"
+```
+
+### Rollout
+
+| Stage | Flags | Notes |
+|-------|-------|-------|
+| **Local** | Enable rewrite + zero-results; keep rerank off | Use Groq/OpenRouter free tier; watch `/internal/llm/metrics` |
+| **Staging** | Same as local on staging API service | Compare baseline vs `search-preview`; validate latency p95 |
+| **Production** | Enable rewrite + zero-results first | Keep `LLM_RERANK_ENABLED=false` until latency/error budget proven; monitor cache hit rate |
+
 ## Deploy to Railway
 
 This monorepo runs as **three Railway services** from the same GitHub repo (root directory `/` for each):

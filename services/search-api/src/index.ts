@@ -1,7 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { env } from "@retailer-search/config";
-import { getAutocompleteSuggestions, searchProducts } from "@retailer-search/search-core";
+import { getAutocompleteSuggestions, searchFederatedIndexes, searchProducts } from "@retailer-search/search-core";
 import type {
   ApprovalEligibilityResponseDto,
   ApprovalListResponseDto,
@@ -32,9 +32,12 @@ import type {
   QueryPreviewResponseDto,
   ReviewerListResponseDto,
   RollbackSnapshotResponseDto,
+  RuleDraftListResponseDto,
+  ScheduledReleaseListResponseDto,
   SavedViewListResponseDto,
   SearchFiltersDto,
   SearchRequestDto,
+  SearchMetricsSnapshotDto,
   SnapshotDiffResponseDto,
   SnapshotListResponseDto,
   SuggestionsResponseDto,
@@ -44,6 +47,11 @@ import type {
   LoginResponseDto,
   UserDto,
   ActivePrivilegeListResponseDto,
+  ApiKeyListResponseDto,
+  AuditHashChainReportDto,
+  BackgroundJobDto,
+  BrowseResponseDto,
+  FederatedSearchDebugDto,
   ExportJobListResponseDto,
   ExportTargetType,
   JitElevationRequestListResponseDto,
@@ -52,9 +60,11 @@ import type {
   WebhookDeliveryLogListResponseDto,
   WebhookEndpointListResponseDto,
   WebhookEventType,
+  ZeroResultInsightsResponseDto,
   WorkspaceStateDto,
 } from "@retailer-search/shared-types";
 import {
+  getLatestExecutedApprovalForSnapshot,
   approveApprovalRequest,
   assignReviewersToApprovalRequest,
   cancelApprovalRequest,
@@ -63,7 +73,6 @@ import {
   getApprovalEligibility,
   getApprovalRequestById,
   getApprovalSlaPolicy,
-  getLatestExecutedApprovalForSnapshot,
   listApprovalRequests,
   listApprovalAssignmentHistory,
   listOpenApprovalExceptions,
@@ -125,6 +134,7 @@ import {
   recordForbiddenAccess,
   recordRateLimitExceeded,
   recordUnauthorizedAccess,
+  verifyAuditHashChain,
 } from "./audit-trail-store.js";
 import {
   completeBootstrap,
@@ -133,6 +143,7 @@ import {
   createBootstrapAdmin,
   ensureBootstrapState,
   hydrateBootstrapStore,
+  getPlatformConfig,
   isSetupRequired,
 } from "./bootstrap-store.js";
 import { connectDatabase } from "./db.js";
@@ -167,9 +178,47 @@ import {
 import {
   getAnalyticsSummary,
   getQueryAnalytics,
+  getZeroResultInsights,
+  hydrateAnalyticsStore,
   recordSearchClick,
   recordSearchEvent,
 } from "./analytics-store.js";
+import {
+  createApiKey,
+  listApiKeys,
+  revokeApiKey,
+} from "./auth/api-key-store.js";
+import {
+  attachApiKeyContext,
+  enforceApiKeyRateLimit,
+  requireApiKeyScope,
+} from "./auth/require-api-key.js";
+import { enqueueCatalogReindex } from "./jobs/handlers/reindex-catalog.js";
+import { getJobById, listJobs } from "./jobs/job-queue.js";
+import { startReleaseScheduler } from "./jobs/release-scheduler.js";
+import {
+  approveRuleDraft,
+  generateRuleDraft,
+  getRuleDraftById,
+  listRuleDrafts,
+  markRuleDraftApplied,
+  rejectRuleDraft,
+} from "./llm/rule-draft-service.js";
+import {
+  listRegisteredIndexes,
+  resolveFederatedSources,
+} from "./index/federated-index-registry.js";
+import {
+  cancelScheduledRelease,
+  createScheduledRelease,
+  listScheduledReleases,
+} from "./scheduled-release-store.js";
+import { hybridSearchProducts } from "./search/hybrid-search.js";
+import { isHybridVectorEnabled } from "./search/search-feature-flags.js";
+import {
+  browseCategoriesResponse,
+  browseProducts,
+} from "./browse/browse-service.js";
 import { getCatalogAnalyticsInsights } from "./catalog-analytics.js";
 import { getCatalogVocabulary } from "./catalog-vocabulary.js";
 import {
@@ -221,6 +270,18 @@ import {
   hydrateProductCatalog,
 } from "./catalog-store.js";
 import {
+  getProductSearchIndex,
+  syncProductSearchIndexFromCatalog,
+} from "./index/product-index-manager.js";
+import {
+  getSearchMetricsSnapshot,
+  recordAutocompleteRequest,
+  recordBrowseRequest,
+  recordSearchRequest,
+  renderPrometheusMetrics,
+} from "./observability/search-metrics.js";
+import { buildLiveQueryProcessorConfig } from "./ranking/query-processor.js";
+import {
   buildEvalContext,
   buildSnapshotScopeKey,
   createCompiledRuleSnapshot,
@@ -236,6 +297,9 @@ import {
   type CompiledRuleSnapshot,
   type SearchCandidate,
 } from "./merch-runtime/index.js";
+import { registerInternalLlmDebugRoutes } from "./routes/internal-llm-debug.js";
+import { llmEnhancedSearch } from "./search/llm-enhanced-search.js";
+import { isAnyLlmFeatureEnabled } from "./search/search-feature-flags.js";
 import {
   completeAccessReviewRun,
   createAccessRequest,
@@ -331,6 +395,48 @@ function buildFilters(input: {
   return Object.keys(filters).length > 0 ? filters : undefined;
 }
 
+function getSearchPipelineOptions() {
+  return {
+    index: getProductSearchIndex(),
+    queryProcessorConfig: buildLiveQueryProcessorConfig(),
+  };
+}
+
+function getAnalyticsContext(req: express.Request) {
+  return {
+    tenantId: req.apiKey?.tenantId ?? "default",
+    apiKeyId: req.apiKey?.id,
+    sessionId: req.header("x-session-id") ?? undefined,
+  };
+}
+
+function parseIndexNames(
+  raw: string | string[] | undefined,
+): string[] {
+  if (!raw) {
+    return ["catalog"];
+  }
+  const values = Array.isArray(raw) ? raw : raw.split(",");
+  return values.map((value) => value.trim()).filter(Boolean);
+}
+
+async function assertDirectLivePromotionAllowed(
+  snapshotId: string,
+  approvalRequestId?: string,
+): Promise<string | null> {
+  const platform = await getPlatformConfig();
+  if (!platform?.requireApprovalForLivePromotion) {
+    return null;
+  }
+
+  const executed = getLatestExecutedApprovalForSnapshot(snapshotId);
+  if (executed && (!approvalRequestId || executed.id === approvalRequestId)) {
+    return null;
+  }
+
+  return "Live promotion requires an executed approval request when policy is enabled.";
+}
+
 const searchQuerySchema = z.object({
   query: z.string().default(""),
   page: z.coerce.number().int().positive().default(1),
@@ -338,6 +444,7 @@ const searchQuerySchema = z.object({
   brand: z.union([z.string(), z.array(z.string())]).optional(),
   category: z.union([z.string(), z.array(z.string())]).optional(),
   inStock: z.union([z.string(), z.array(z.string())]).optional(),
+  indexes: z.union([z.string(), z.array(z.string())]).optional(),
   debug: z
     .union([z.literal("true"), z.literal("false"), z.boolean()])
     .optional()
@@ -346,6 +453,47 @@ const searchQuerySchema = z.object({
 
 const autocompleteQuerySchema = z.object({
   query: z.string().default(""),
+});
+
+const browseQuerySchema = z.object({
+  category: z.string().optional(),
+  brand: z.string().optional(),
+  inStock: z
+    .union([z.literal("true"), z.literal("false"), z.boolean()])
+    .optional()
+    .transform((value) => {
+      if (value === undefined) {
+        return undefined;
+      }
+      return value === true || value === "true";
+    }),
+  sort: z
+    .enum(["relevance", "price_asc", "price_desc", "title_asc"])
+    .optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+});
+
+const createApiKeySchema = z.object({
+  name: z.string().min(1),
+  tenantId: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  rateLimitPerMinute: z.coerce.number().int().positive().max(10_000).optional(),
+  expiresAt: z.string().datetime().optional(),
+});
+
+const createScheduledReleaseSchema = z.object({
+  type: z.enum(["promote_snapshot", "rollback_snapshot"]),
+  snapshotId: z.string().min(1),
+  reason: z.string().min(1),
+  scheduledAt: z.string().datetime(),
+  linkedExperimentId: z.string().optional(),
+  approvalRequestId: z.string().optional(),
+});
+
+const generateRuleDraftSchema = z.object({
+  query: z.string().min(1),
+  productId: z.string().optional(),
 });
 
 const environmentKeySchema = z.enum(["staging", "live"]);
@@ -508,6 +656,7 @@ const promoteSnapshotSchema = z.object({
   snapshotId: z.string().min(1),
   reason: z.string().min(1),
   sourceExperimentId: z.string().optional(),
+  approvalRequestId: z.string().optional(),
 });
 
 const createApprovalRequestSchema = z.object({
@@ -1152,6 +1301,7 @@ function requireAdminUser(
 const app = express();
 app.set("trust proxy", true);
 app.use(express.json());
+app.use(attachApiKeyContext);
 
 app.use((req, res, next) => {
   attachSecurityHeaders(req, res);
@@ -1169,7 +1319,7 @@ app.use((req, res, next) => {
   );
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-Request-Id",
+    "Content-Type, Authorization, X-Request-Id, X-API-Key, X-Session-Id",
   );
   res.setHeader(
     "Access-Control-Expose-Headers",
@@ -1201,6 +1351,16 @@ app.get("/health", async (_req, res) => {
       catalogSource: getProductCatalogSource(),
     },
   };
+  res.json(body);
+});
+
+app.get("/metrics", (_req, res) => {
+  res.type("text/plain; version=0.0.4; charset=utf-8");
+  res.send(renderPrometheusMetrics());
+});
+
+app.get("/api/v1/internal/metrics", (_req, res) => {
+  const body: SearchMetricsSnapshotDto = getSearchMetricsSnapshot();
   res.json(body);
 });
 
@@ -1341,7 +1501,8 @@ app.post("/api/v1/setup/complete", async (req, res) => {
   }
 });
 
-app.get("/api/v1/search", async (req, res) => {
+app.get("/api/v1/search", requireApiKeyScope("search:read"), enforceApiKeyRateLimit("search"), async (req, res) => {
+  const started = Date.now();
   const parsed = searchQuerySchema.safeParse(req.query);
   if (!assertValidBody(parsed, res, req, "Invalid query parameters")) {
     return;
@@ -1355,22 +1516,99 @@ app.get("/api/v1/search", async (req, res) => {
   };
 
   const products = await getSearchProductCatalog();
+  const rules = getActiveMerchandisingRules("live");
+  const debug = parsed.data.debug ?? false;
+  const pipeline = getSearchPipelineOptions();
+  const indexNames = parseIndexNames(parsed.data.indexes);
+  const federatedSources = resolveFederatedSources(indexNames);
+
+  if (
+    federatedSources.length > 1 ||
+    (indexNames.length === 1 && indexNames[0] !== "catalog")
+  ) {
+    const result = searchFederatedIndexes(request, {
+      sources: federatedSources.map((source) => ({
+        name: source.name,
+        getProducts: source.getProducts,
+      })),
+      rules,
+      debug,
+      ...pipeline,
+    });
+    const federatedDebug: FederatedSearchDebugDto = {
+      indexes: indexNames,
+      mergedHitCount: result.totalHits,
+      hybridVectorEnabled: isHybridVectorEnabled(),
+    };
+    res.json({ ...result, federatedDebug });
+    recordSearchRequest(Date.now() - started);
+    return;
+  }
+
+  if (isAnyLlmFeatureEnabled()) {
+    res.json(
+      await llmEnhancedSearch(products, request, {
+        rules,
+        debug,
+        ...pipeline,
+      }),
+    );
+    recordSearchRequest(Date.now() - started);
+    return;
+  }
+
+  if (isHybridVectorEnabled()) {
+    res.json(
+      await hybridSearchProducts(products, request, {
+        rules,
+        debug,
+        ...pipeline,
+      }),
+    );
+    recordSearchRequest(Date.now() - started);
+    return;
+  }
+
   res.json(
     searchProducts(products, request, {
-      rules: getActiveMerchandisingRules("live"),
-      debug: parsed.data.debug ?? false,
+      rules,
+      debug,
+      ...pipeline,
     }),
   );
+  recordSearchRequest(Date.now() - started);
 });
 
-app.get("/api/v1/autocomplete", async (req, res) => {
+app.get("/api/v1/autocomplete", requireApiKeyScope("search:read"), enforceApiKeyRateLimit("autocomplete"), async (req, res) => {
+  const started = Date.now();
   const parsed = autocompleteQuerySchema.safeParse(req.query);
   if (!assertValidBody(parsed, res, req, "Invalid query parameters")) {
     return;
   }
 
   const products = await getSearchProductCatalog();
-  res.json(getAutocompleteSuggestions(products, parsed.data.query));
+  res.json(
+    getAutocompleteSuggestions(products, parsed.data.query, getSearchPipelineOptions()),
+  );
+  recordAutocompleteRequest(Date.now() - started);
+});
+
+app.get("/api/v1/browse", requireApiKeyScope("browse:read"), enforceApiKeyRateLimit("browse"), async (req, res) => {
+  const started = Date.now();
+  const parsed = browseQuerySchema.safeParse(req.query);
+  if (!assertValidBody(parsed, res, req, "Invalid browse parameters")) {
+    return;
+  }
+
+  const products = await getSearchProductCatalog();
+  const body: BrowseResponseDto = browseProducts(products, parsed.data);
+  res.json(body);
+  recordBrowseRequest(Date.now() - started);
+});
+
+app.get("/api/v1/browse/categories", requireApiKeyScope("browse:read"), async (_req, res) => {
+  const products = await getSearchProductCatalog();
+  res.json(browseCategoriesResponse(products));
 });
 
 app.post("/api/v1/auth/login", (req, res) => {
@@ -2206,7 +2444,7 @@ app.get("/api/v1/admin/exports", (req, res) => {
   res.json(body);
 });
 
-app.post("/api/v1/admin/exports", (req, res) => {
+app.post("/api/v1/admin/exports", async (req, res) => {
   const parsed = createExportJobSchema.safeParse(req.body);
   if (!assertValidBody(parsed, res, req, "Invalid export job payload")) {
     return;
@@ -2217,7 +2455,7 @@ app.post("/api/v1/admin/exports", (req, res) => {
     return;
   }
 
-  const job = createExportJob(parsed.data, user);
+  const job = await createExportJob(parsed.data, user);
 
   if (job.status === "generated") {
     recordAuditLog({
@@ -2253,7 +2491,7 @@ app.post("/api/v1/admin/exports", (req, res) => {
   res.status(400).json({ error: job.errorMessage ?? "Failed to create export job" });
 });
 
-app.get("/api/v1/admin/exports/:id/download", (req, res) => {
+app.get("/api/v1/admin/exports/:id/download", async (req, res) => {
   const user = requireAuthenticatedUser(req, res);
   if (!user) {
     return;
@@ -2280,7 +2518,7 @@ app.get("/api/v1/admin/exports/:id/download", (req, res) => {
   }
 
   try {
-    const generated = generateExportData(
+    const generated = await generateExportData(
       job.targetType,
       job.format,
       job.filters ?? {},
@@ -2678,6 +2916,262 @@ app.get("/api/v1/admin/analytics/summary", (_req, res) => {
   res.json(getAnalyticsSummary());
 });
 
+app.get("/api/v1/admin/analytics/zero-results", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const limit = z.coerce.number().int().positive().max(100).default(25).parse(
+    req.query.limit ?? 25,
+  );
+  const body: ZeroResultInsightsResponseDto = await getZeroResultInsights(limit);
+  res.json(body);
+});
+
+app.get("/api/v1/admin/api-keys", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const apiKeys = await listApiKeys();
+  const body: ApiKeyListResponseDto = {
+    total: apiKeys.length,
+    apiKeys,
+  };
+  res.json(body);
+});
+
+app.post("/api/v1/admin/api-keys", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  if (!requireJsonContentType(req, res)) {
+    return;
+  }
+
+  const parsed = createApiKeySchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid API key payload")) {
+    return;
+  }
+
+  const body = await createApiKey(parsed.data);
+  res.status(201).json(body);
+});
+
+app.delete("/api/v1/admin/api-keys/:id", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const revoked = await revokeApiKey(req.params.id);
+  if (!revoked) {
+    res.status(404).json({ error: "API key not found" });
+    return;
+  }
+
+  res.json({ apiKey: revoked });
+});
+
+app.post("/api/v1/admin/search-index/rebuild", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+
+  const job = enqueueCatalogReindex();
+  res.status(202).json(job satisfies BackgroundJobDto);
+});
+
+app.get("/api/v1/admin/jobs", (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+  res.json({ total: listJobs().length, jobs: listJobs() });
+});
+
+app.get("/api/v1/admin/jobs/:id", (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+  const job = getJobById(req.params.id);
+  if (!job) {
+    res.status(404).json({ error: "Job not found" });
+    return;
+  }
+  res.json(job satisfies BackgroundJobDto);
+});
+
+app.get("/api/v1/admin/search-indexes", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+  res.json({ indexes: listRegisteredIndexes() });
+});
+
+app.get("/api/v1/admin/scheduled-releases", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+  const releases = await listScheduledReleases();
+  const body: ScheduledReleaseListResponseDto = {
+    total: releases.length,
+    releases,
+  };
+  res.json(body);
+});
+
+app.post("/api/v1/admin/scheduled-releases", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+  if (!requireJsonContentType(req, res)) {
+    return;
+  }
+  const parsed = createScheduledReleaseSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid scheduled release payload")) {
+    return;
+  }
+  const release = await createScheduledRelease(parsed.data, {
+    userId: admin.id,
+    email: admin.email,
+  });
+  res.status(201).json(release);
+});
+
+app.delete("/api/v1/admin/scheduled-releases/:id", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+  const cancelled = await cancelScheduledRelease(req.params.id);
+  if (!cancelled) {
+    res.status(404).json({ error: "Scheduled release not found" });
+    return;
+  }
+  res.json(cancelled);
+});
+
+app.get("/api/v1/admin/rule-drafts", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+  const drafts = await listRuleDrafts();
+  const body: RuleDraftListResponseDto = {
+    total: drafts.length,
+    drafts,
+  };
+  res.json(body);
+});
+
+app.post("/api/v1/admin/rule-drafts/generate", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+  if (!requireJsonContentType(req, res)) {
+    return;
+  }
+  const parsed = generateRuleDraftSchema.safeParse(req.body);
+  if (!assertValidBody(parsed, res, req, "Invalid rule draft payload")) {
+    return;
+  }
+  const draft = await generateRuleDraft(parsed.data, admin.id);
+  res.status(201).json(draft);
+});
+
+app.post("/api/v1/admin/rule-drafts/:id/approve", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+  const draft = await approveRuleDraft(req.params.id);
+  if (!draft) {
+    res.status(404).json({ error: "Rule draft not found" });
+    return;
+  }
+  res.json(draft);
+});
+
+app.post("/api/v1/admin/rule-drafts/:id/reject", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+  const draft = await rejectRuleDraft(req.params.id);
+  if (!draft) {
+    res.status(404).json({ error: "Rule draft not found" });
+    return;
+  }
+  res.json(draft);
+});
+
+app.post("/api/v1/admin/rule-drafts/:id/apply", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+  const draft = await getRuleDraftById(req.params.id);
+  if (!draft || draft.status !== "approved") {
+    res.status(400).json({ error: "Approved rule draft required before apply" });
+    return;
+  }
+
+  const ruleInput = draft.suggestedRule as {
+    name?: string;
+    action?: "pin" | "boost" | "bury" | "hide";
+    condition?: Record<string, unknown>;
+    productIds?: string[];
+    boostAmount?: number;
+    buryAmount?: number;
+  };
+
+  if (!ruleInput.name || !ruleInput.action) {
+    res.status(400).json({ error: "Draft is missing required rule fields" });
+    return;
+  }
+
+  createMerchandisingRule(
+    {
+      name: ruleInput.name,
+      active: true,
+      priority: 100,
+      action: ruleInput.action,
+      condition: ruleInput.condition ?? { query: draft.query },
+      productIds: ruleInput.productIds,
+      boostAmount: ruleInput.boostAmount,
+      buryAmount: ruleInput.buryAmount,
+    },
+    "staging",
+  );
+
+  const applied = await markRuleDraftApplied(draft.id);
+  res.json(applied);
+});
+
+app.get("/api/v1/admin/audit/hash-chain", async (req, res) => {
+  const admin = requireAdminUser(req, res);
+  if (!admin) {
+    return;
+  }
+  const report = await verifyAuditHashChain();
+  const body: AuditHashChainReportDto = {
+    ...report,
+    verifiedAt: new Date().toISOString(),
+  };
+  res.json(body);
+});
+
 app.get("/api/v1/admin/analytics/catalog-insights", async (_req, res) => {
   const products = await getSearchProductCatalog();
   res.json(getCatalogAnalyticsInsights(products, 10));
@@ -2908,6 +3402,11 @@ app.get("/api/v1/admin/query-preview", async (req, res) => {
   });
 
   res.json(response);
+});
+
+registerInternalLlmDebugRoutes(app, {
+  getProducts: getSearchProductCatalog,
+  getRules: () => getActiveMerchandisingRules("live"),
 });
 
 app.get("/api/v1/internal/merch-runtime/benchmark", (_req, res) => {
@@ -4275,7 +4774,7 @@ app.post("/api/v1/admin/saved-views/:id/default", (req, res) => {
   res.json(view);
 });
 
-app.post("/api/v1/admin/promote-snapshot", (req, res) => {
+app.post("/api/v1/admin/promote-snapshot", async (req, res) => {
   const parsed = promoteSnapshotSchema.safeParse(req.body);
   if (!parsed.success) {
     recordAuditLog({
@@ -4292,10 +4791,27 @@ app.post("/api/v1/admin/promote-snapshot", (req, res) => {
     return;
   }
 
+  const policyError = await assertDirectLivePromotionAllowed(
+    parsed.data.snapshotId,
+    parsed.data.approvalRequestId,
+  );
+  if (policyError) {
+    recordAuditLog({
+      actionType: "promote_snapshot",
+      entityType: "config_snapshot",
+      entityId: parsed.data.snapshotId,
+      outcome: "failure",
+      summary: policyError,
+    });
+    res.status(403).json({ error: policyError, code: "APPROVAL_REQUIRED" });
+    return;
+  }
+
   const promotion = promoteSnapshotToLive({
     snapshotId: parsed.data.snapshotId,
     reason: parsed.data.reason,
     linkedExperimentId: parsed.data.sourceExperimentId,
+    approvalRequestId: parsed.data.approvalRequestId,
   });
 
   if (!promotion) {
@@ -4673,23 +5189,23 @@ app.get("/api/v1/admin/audit-logs", (req, res) => {
   res.json(body);
 });
 
-app.post("/api/v1/events/search", (req, res) => {
+app.post("/api/v1/events/search", requireApiKeyScope("events:write"), (req, res) => {
   const parsed = searchEventBodySchema.safeParse(req.body);
   if (!assertValidBody(parsed, res, req, "Invalid search event payload")) {
     return;
   }
 
-  const event = recordSearchEvent(parsed.data);
+  const event = recordSearchEvent(parsed.data, getAnalyticsContext(req));
   res.status(201).json(event);
 });
 
-app.post("/api/v1/events/click", (req, res) => {
+app.post("/api/v1/events/click", requireApiKeyScope("events:write"), (req, res) => {
   const parsed = clickEventBodySchema.safeParse(req.body);
   if (!assertValidBody(parsed, res, req, "Invalid click event payload")) {
     return;
   }
 
-  const event = recordSearchClick(parsed.data);
+  const event = recordSearchClick(parsed.data, getAnalyticsContext(req));
   res.status(201).json(event);
 });
 
@@ -4729,10 +5245,12 @@ async function hydratePersistentStores(): Promise<void> {
   await hydrateNotificationStore();
   await hydrateExportStore();
   await hydrateEnvironmentConfigStore();
+  await hydrateAnalyticsStore();
 }
 
 async function loadProductCatalogAtStartup(): Promise<number> {
   const productCount = await hydrateProductCatalog();
+  syncProductSearchIndexFromCatalog();
   if (productCount === 0) {
     console.warn(
       "Product catalog is empty. Run: pnpm prisma:seed (from repo root)",
@@ -4782,6 +5300,15 @@ async function startServer(): Promise<void> {
 
   await loadProductCatalogAtStartup();
   databaseConnected = dbConnected;
+
+  startReleaseScheduler({
+    promoteSnapshot: (input) => {
+      const promotion = promoteSnapshotToLive(input);
+      return promotion
+        ? { restored: promotion.restored }
+        : null;
+    },
+  });
 
   if (dbConnected) {
     if (userCount() === 0 && !isSetupRequired()) {

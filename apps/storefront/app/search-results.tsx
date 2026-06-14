@@ -3,6 +3,7 @@ import type {
   SearchResponseDto,
 } from "@retailer-search/shared-types";
 import { EmptyState } from "./empty-state";
+import { Pagination } from "./pagination";
 import { TrackClick } from "./track-click";
 
 interface SearchResultsProps {
@@ -188,6 +189,15 @@ export function SearchResults({
           </li>
         ))}
       </ul>
+
+      <Pagination
+        page={data.page}
+        totalPages={data.totalPages}
+        query={data.query}
+        pageSize={data.pageSize}
+        activeFilters={activeFilters}
+        debug={debug}
+      />
     </section>
   );
 }

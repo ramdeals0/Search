@@ -576,8 +576,15 @@ export interface ExperimentDto {
   baselineSnapshotId: string;
   candidateSnapshotId: string;
   querySetId: string;
+  candidateLlmOverrides?: ExperimentLlmOverridesDto;
   createdAt: ISODateString;
   lastRunAt?: ISODateString;
+}
+
+export interface ExperimentLlmOverridesDto {
+  queryRewriteEnabled?: boolean;
+  zeroResultsEnabled?: boolean;
+  rerankEnabled?: boolean;
 }
 
 export interface QueryEvaluationResultDto {
@@ -612,6 +619,7 @@ export interface CreateExperimentRequestDto {
   baselineSnapshotId: string;
   candidateSnapshotId: string;
   querySetId: string;
+  candidateLlmOverrides?: ExperimentLlmOverridesDto;
 }
 
 export interface CreateQuerySetRequestDto {
@@ -1370,7 +1378,10 @@ export type ExportTargetType =
   | "approvals"
   | "access_reviews"
   | "security_timeline"
-  | "audit_review_findings";
+  | "audit_review_findings"
+  | "soc2_audit_package"
+  | "audit_hash_chain_report"
+  | "api_usage_meters";
 
 export type ExportJobStatus = "generated" | "failed";
 
@@ -1482,4 +1493,189 @@ export interface SecurityTimelineEntryDto {
 export interface SecurityTimelineResponseDto {
   total: number;
   entries: SecurityTimelineEntryDto[];
+}
+
+export interface BrowseRequestDto {
+  category?: string;
+  brand?: string;
+  inStock?: boolean;
+  sort?: "relevance" | "price_asc" | "price_desc" | "title_asc";
+  page: number;
+  pageSize: number;
+}
+
+export interface BrowseHitDto {
+  id: string;
+  sku: string;
+  title: string;
+  brand: string;
+  category: string;
+  subcategory: string;
+  description: string;
+  price: number;
+  imageUrl?: string;
+  inStock: boolean;
+}
+
+export interface BrowseCategoryDto {
+  category: string;
+  subcategories: string[];
+  productCount: number;
+}
+
+export interface BrowseResponseDto {
+  page: number;
+  pageSize: number;
+  totalHits: number;
+  totalPages: number;
+  processingTimeMs: number;
+  hits: BrowseHitDto[];
+  categories?: BrowseCategoryDto[];
+}
+
+export interface ApiKeyDto {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  tenantId: string;
+  scopes: string[];
+  enabled: boolean;
+  lastUsedAt?: ISODateString;
+  expiresAt?: ISODateString;
+  createdAt: ISODateString;
+}
+
+export interface CreateApiKeyRequestDto {
+  name: string;
+  tenantId?: string;
+  scopes?: string[];
+  rateLimitPerMinute?: number;
+  expiresAt?: ISODateString;
+}
+
+export interface CreateApiKeyResponseDto {
+  apiKey: ApiKeyDto;
+  /** Plaintext key — shown once at creation. */
+  secret: string;
+}
+
+export interface ApiKeyListResponseDto {
+  total: number;
+  apiKeys: ApiKeyDto[];
+}
+
+export interface SearchMetricsSnapshotDto {
+  searchRequests: number;
+  autocompleteRequests: number;
+  browseRequests: number;
+  searchLatencyMsTotal: number;
+  autocompleteLatencyMsTotal: number;
+  browseLatencyMsTotal: number;
+  indexProductCount: number;
+  indexTokenCount: number;
+  analyticsEventsPersisted: number;
+}
+
+export interface ZeroResultQueryInsightDto {
+  query: string;
+  count: number;
+  lastSeenAt: ISODateString;
+}
+
+export interface ZeroResultInsightsResponseDto {
+  total: number;
+  queries: ZeroResultQueryInsightDto[];
+}
+
+export type ScheduledReleaseType = "promote_snapshot" | "rollback_snapshot";
+export type ScheduledReleaseStatus = "pending" | "executed" | "cancelled" | "failed";
+
+export interface ScheduledReleaseDto {
+  id: string;
+  type: ScheduledReleaseType;
+  status: ScheduledReleaseStatus;
+  snapshotId: string;
+  reason: string;
+  scheduledAt: ISODateString;
+  executedAt?: ISODateString;
+  linkedExperimentId?: string;
+  approvalRequestId?: string;
+  errorMessage?: string;
+  createdByUserId?: string;
+  createdByEmail?: string;
+  createdAt: ISODateString;
+}
+
+export interface CreateScheduledReleaseRequestDto {
+  type: ScheduledReleaseType;
+  snapshotId: string;
+  reason: string;
+  scheduledAt: ISODateString;
+  linkedExperimentId?: string;
+  approvalRequestId?: string;
+}
+
+export interface ScheduledReleaseListResponseDto {
+  total: number;
+  releases: ScheduledReleaseDto[];
+}
+
+export type RuleDraftStatus = "pending_review" | "approved" | "rejected" | "applied";
+
+export interface RuleDraftDto {
+  id: string;
+  query: string;
+  status: RuleDraftStatus;
+  suggestedRule: Record<string, unknown>;
+  rationale?: string;
+  source: string;
+  createdByUserId?: string;
+  approvalRequestId?: string;
+  createdAt: ISODateString;
+}
+
+export interface GenerateRuleDraftRequestDto {
+  query: string;
+  productId?: string;
+}
+
+export interface RuleDraftListResponseDto {
+  total: number;
+  drafts: RuleDraftDto[];
+}
+
+export interface AuditHashChainReportDto {
+  valid: boolean;
+  entryCount: number;
+  brokenAtEntryId?: string;
+  verifiedAt: ISODateString;
+}
+
+export interface ApiUsageMeterDto {
+  apiKeyId: string;
+  tenantId: string;
+  route: string;
+  windowStart: ISODateString;
+  requestCount: number;
+}
+
+export interface ApiUsageSummaryDto {
+  totalRequests: number;
+  meters: ApiUsageMeterDto[];
+}
+
+export interface BackgroundJobDto {
+  id: string;
+  type: string;
+  status: "queued" | "running" | "completed" | "failed";
+  createdAt: ISODateString;
+  startedAt?: ISODateString;
+  completedAt?: ISODateString;
+  errorMessage?: string;
+}
+
+export interface FederatedSearchDebugDto {
+  indexes: string[];
+  mergedHitCount: number;
+  hybridVectorEnabled: boolean;
 }

@@ -12,7 +12,9 @@ import type {
 import type { Prisma } from "@prisma/client";
 import { listAccessReviewRuns } from "./access-governance-store.js";
 import { listApprovalRequests } from "./approval-store.js";
-import { listAuditLogs } from "./audit-trail-store.js";
+import { listPromotionHistory } from "./active-config-store.js";
+import { getApiUsageSummary } from "./usage-meter-store.js";
+import { listAuditLogs, exportAllAuditLogs, verifyAuditHashChain } from "./audit-trail-store.js";
 import { prisma } from "./db.js";
 
 const SECURITY_AUDIT_ACTION_TYPES: AuditActionType[] = [
@@ -255,15 +257,15 @@ function buildAuditReviewFindingRecords(
     );
 }
 
-export function generateExportData(
+export async function generateExportData(
   targetType: ExportTargetType,
   format: ExportFormat,
   filters: Record<string, unknown> = {},
-): {
+): Promise<{
   content: string;
   recordCount: number;
   mimeType: string;
-} {
+}> {
   let records: Record<string, unknown>[] = [];
 
   if (targetType === "audit_trail") {
@@ -367,6 +369,61 @@ export function generateExportData(
       .map((entry) => flattenRecord({ ...entry }));
   } else if (targetType === "audit_review_findings") {
     records = buildAuditReviewFindingRecords(filters).map(flattenRecord);
+  } else if (targetType === "audit_hash_chain_report") {
+    const report = await verifyAuditHashChain();
+    records = [
+      flattenRecord({
+        ...report,
+        verifiedAt: new Date().toISOString(),
+      }),
+    ];
+  } else if (targetType === "api_usage_meters") {
+    const summary = await getApiUsageSummary();
+    records = summary.meters.map((meter) => flattenRecord({ ...meter }));
+  } else if (targetType === "soc2_audit_package") {
+    const [auditEntries, chainReport, approvals, promotions, accessReviews] =
+      await Promise.all([
+        exportAllAuditLogs({}, 5000),
+        verifyAuditHashChain(),
+        Promise.resolve(listApprovalRequests().requests),
+        Promise.resolve(listPromotionHistory().entries),
+        Promise.resolve(listAccessReviewRuns().runs),
+      ]);
+
+    if (format === "json") {
+      const packageBody = {
+        exportedAt: new Date().toISOString(),
+        targetType,
+        hashChain: {
+          ...chainReport,
+          verifiedAt: new Date().toISOString(),
+        },
+        auditTrail: auditEntries,
+        approvals,
+        promotionHistory: promotions,
+        accessReviews,
+      };
+      return {
+        content: JSON.stringify(packageBody, null, 2),
+        recordCount:
+          auditEntries.length +
+          approvals.length +
+          promotions.length +
+          accessReviews.length,
+        mimeType: "application/json",
+      };
+    }
+
+    records = auditEntries.map((entry) =>
+      flattenRecord({
+        section: "audit_trail",
+        id: entry.id,
+        timestamp: entry.timestamp,
+        actionType: entry.actionType,
+        summary: entry.summary,
+        outcome: entry.outcome,
+      }),
+    );
   }
 
   if (format === "json") {
@@ -393,10 +450,10 @@ export function generateExportData(
   };
 }
 
-export function createExportJob(
+export async function createExportJob(
   input: CreateExportJobRequestDto,
   actor: UserDto,
-): ExportJobDto {
+): Promise<ExportJobDto> {
   const timestamp = new Date().toISOString();
   const job: ExportJobDto = {
     id: createExportJobId(),
@@ -411,7 +468,7 @@ export function createExportJob(
   };
 
   try {
-    const generated = generateExportData(
+    const generated = await generateExportData(
       input.targetType,
       input.format,
       input.filters ?? {},
@@ -443,12 +500,27 @@ export function getExportJobById(id: string): ExportJobDto | null {
 export function buildSecurityTimelineEntries(
   filters: Record<string, unknown> = {},
 ): SecurityTimelineEntryDto[] {
-  const generated = generateExportData("security_timeline", "json", filters);
-  const parsed = JSON.parse(generated.content) as {
-    records: SecurityTimelineEntryDto[];
-  };
+  const auditEntries = listAuditLogs({
+    keyword: typeof filters.category === "string" ? filters.category : undefined,
+  }).entries;
 
-  return parsed.records;
+  return auditEntries
+    .map((entry) => mapAuditEntryToSecurityTimeline(entry))
+    .filter((entry) => {
+      if (
+        typeof filters.category === "string" &&
+        entry.category !== filters.category
+      ) {
+        return false;
+      }
+      if (
+        typeof filters.severity === "string" &&
+        entry.severity !== filters.severity
+      ) {
+        return false;
+      }
+      return true;
+    });
 }
 
 export { SECURITY_AUDIT_ACTION_TYPES };

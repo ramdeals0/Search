@@ -52,6 +52,28 @@ enum ExportTargetType {
   access_reviews
   security_timeline
   audit_review_findings
+  soc2_audit_package
+  audit_hash_chain_report
+  api_usage_meters
+}
+
+enum ScheduledReleaseType {
+  promote_snapshot
+  rollback_snapshot
+}
+
+enum ScheduledReleaseStatus {
+  pending
+  executed
+  cancelled
+  failed
+}
+
+enum RuleDraftStatus {
+  pending_review
+  approved
+  rejected
+  applied
 }
 
 model User {
@@ -382,4 +404,106 @@ model Product {
   @@index([categoryId])
   @@index([inStock])
   @@index([title])
+  @@index([updatedAt])
+}
+
+model ApiKey {
+  id                 String    @id @default(cuid())
+  name               String
+  keyHash            String    @unique
+  keyPrefix          String
+  tenantId           String    @default("default")
+  scopes             String[]  @default(["search:read", "browse:read", "events:write"])
+  enabled            Boolean   @default(true)
+  rateLimitPerMinute Int?
+  lastUsedAt         DateTime?
+  expiresAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([tenantId])
+  @@index([enabled])
+}
+
+model SearchEvent {
+  id          String   @id @default(cuid())
+  query       String
+  normalizedQuery String
+  resultCount Int
+  tenantId    String   @default("default")
+  apiKeyId    String?
+  sessionId   String?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([normalizedQuery])
+  @@index([resultCount])
+  @@index([createdAt])
+}
+
+model SearchClickEvent {
+  id          String   @id @default(cuid())
+  query       String
+  normalizedQuery String
+  productId   String
+  productTitle String
+  position    Int?
+  tenantId    String   @default("default")
+  apiKeyId    String?
+  sessionId   String?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([productId])
+  @@index([normalizedQuery])
+  @@index([createdAt])
+}
+
+model ScheduledRelease {
+  id                   String                 @id @default(cuid())
+  type                 ScheduledReleaseType
+  status               ScheduledReleaseStatus @default(pending)
+  snapshotId           String
+  reason               String
+  scheduledAt          DateTime
+  executedAt           DateTime?
+  linkedExperimentId   String?
+  approvalRequestId    String?
+  errorMessage         String?
+  createdByUserId      String?
+  createdByEmail       String?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  @@index([status, scheduledAt])
+  @@index([snapshotId])
+}
+
+model RuleDraft {
+  id                String          @id @default(cuid())
+  query             String
+  status            RuleDraftStatus @default(pending_review)
+  suggestedRule     Json
+  rationale         String?
+  source            String          @default("llm")
+  createdByUserId   String?
+  approvalRequestId String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([status])
+  @@index([query])
+}
+
+model ApiUsageMeter {
+  id           String   @id @default(cuid())
+  apiKeyId     String
+  tenantId     String   @default("default")
+  route        String
+  windowStart  DateTime
+  requestCount Int      @default(0)
+
+  @@unique([apiKeyId, route, windowStart])
+  @@index([tenantId])
+  @@index([windowStart])
 }

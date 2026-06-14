@@ -76,6 +76,7 @@ export function createExperiment(
     baselineSnapshotId: input.baselineSnapshotId,
     candidateSnapshotId: input.candidateSnapshotId,
     querySetId: input.querySetId,
+    candidateLlmOverrides: input.candidateLlmOverrides,
     createdAt: new Date().toISOString(),
   };
 

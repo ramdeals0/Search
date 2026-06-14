@@ -319,6 +319,20 @@ export async function completeBootstrap(
   return structuredClone(cachedState);
 }
 
+export async function getPlatformConfig(): Promise<{
+  requireApprovalForLivePromotion: boolean;
+} | null> {
+  const config = await getSystemConfig<{
+    requireApprovalForLivePromotion?: boolean;
+  }>(PLATFORM_CONFIG_KEY);
+  if (!config) {
+    return null;
+  }
+  return {
+    requireApprovalForLivePromotion: config.requireApprovalForLivePromotion === true,
+  };
+}
+
 export async function getSystemConfig<T extends Record<string, unknown>>(
   key: string,
 ): Promise<T | null> {

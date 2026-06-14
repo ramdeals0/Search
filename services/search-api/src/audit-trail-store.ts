@@ -198,6 +198,66 @@ export function listAuditLogs(filters: AuditLogFilterDto = {}): AuditLogResponse
   };
 }
 
+export async function exportAllAuditLogs(
+  filters: AuditLogFilterDto = {},
+  limit = 10_000,
+): Promise<AuditLogEntryDto[]> {
+  const rows = await prisma.auditTrailEntry.findMany({
+    orderBy: { timestamp: "desc" },
+    take: limit,
+  });
+
+  let entries = rows.map(mapRowToDto);
+
+  if (filters.actionType) {
+    entries = entries.filter((entry) => entry.actionType === filters.actionType);
+  }
+  if (filters.entityType) {
+    entries = entries.filter((entry) => entry.entityType === filters.entityType);
+  }
+  if (filters.outcome) {
+    entries = entries.filter((entry) => entry.outcome === filters.outcome);
+  }
+  if (filters.actorId) {
+    entries = entries.filter((entry) => entry.actorId === filters.actorId);
+  }
+  if (filters.keyword) {
+    entries = entries.filter((entry) => matchesKeyword(entry, filters.keyword!));
+  }
+
+  return entries;
+}
+
+export async function verifyAuditHashChain(): Promise<{
+  valid: boolean;
+  entryCount: number;
+  brokenAtEntryId?: string;
+}> {
+  const rows = await prisma.auditTrailEntry.findMany({
+    orderBy: { timestamp: "asc" },
+  });
+
+  let previousHash: string | null = null;
+  for (const row of rows) {
+    const entry = mapRowToDto(row);
+    const expectedPrev = row.hashChainPrev ?? null;
+    if (expectedPrev !== previousHash) {
+      return {
+        valid: false,
+        entryCount: rows.length,
+        brokenAtEntryId: entry.id,
+      };
+    }
+
+    previousHash = computeHashChain(entry, previousHash);
+  }
+
+  return {
+    valid: true,
+    entryCount: rows.length,
+  };
+}
+
 export function registerSeededAuditEntry(entry: AuditLogEntryDto): void {
   auditLogs.unshift(entry);
 }

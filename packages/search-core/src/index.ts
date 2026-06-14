@@ -10,12 +10,37 @@ import type {
   SearchRequestDto,
   SearchResponseDto,
 } from "@retailer-search/shared-types";
+import {
+  type ProductSearchIndex,
+  type QueryProcessorConfig,
+  processSearchQueryWithConfig,
+} from "./search-index/index.js";
+
+export type {
+  ProcessedQuery,
+  ProductSearchIndexStats,
+  QueryProcessorConfig,
+} from "./search-index/index.js";
+export { ProductSearchIndex, processSearchQueryWithConfig } from "./search-index/index.js";
+export {
+  searchFederatedIndexes,
+  type FederatedIndexSource,
+  type FederatedSearchOptions,
+} from "./federated-search.js";
+export {
+  mergeHybridScores,
+  NoopVectorSearchProvider,
+  type VectorSearchHit,
+  type VectorSearchProvider,
+} from "./vector/hybrid-retrieval-stub.js";
 
 type FacetKey = keyof AvailableFacetsDto;
 
 export interface SearchProductsOptions {
   rules?: MerchandisingRule[];
   debug?: boolean;
+  index?: ProductSearchIndex;
+  queryProcessorConfig?: QueryProcessorConfig;
 }
 
 interface ScoredProduct {
@@ -539,9 +564,19 @@ function addSuggestion(
 export function getAutocompleteSuggestions(
   products: ProductDocument[],
   rawQuery: string,
+  options: Pick<
+    SearchProductsOptions,
+    "index" | "queryProcessorConfig"
+  > = {},
 ): AutocompleteResponseDto {
-  const processed = processSearchQuery(rawQuery);
+  const processed = options.queryProcessorConfig
+    ? processSearchQueryWithConfig(rawQuery, options.queryProcessorConfig)
+    : processSearchQuery(rawQuery);
   const query = processed.searchQuery;
+  const catalog =
+    options.index && query
+      ? options.index.getCandidates(query)
+      : products;
   const suggestions: AutocompleteSuggestionDto[] = [];
   const seen = new Set<string>();
 
@@ -554,7 +589,7 @@ export function getAutocompleteSuggestions(
     };
   }
 
-  const matched = products.filter((product) => productMatchesQuery(product, query));
+  const matched = catalog.filter((product) => productMatchesQuery(product, query));
 
   for (const product of matched) {
     if (product.title.toLowerCase().includes(query)) {
@@ -610,14 +645,21 @@ export function searchProducts(
   options: SearchProductsOptions = {},
 ): SearchResponseDto {
   const start = Date.now();
-  const processed = processSearchQuery(request.query);
+  const processed = options.queryProcessorConfig
+    ? processSearchQueryWithConfig(request.query, options.queryProcessorConfig)
+    : processSearchQuery(request.query);
   const query = processed.searchQuery;
   const page = Math.max(1, request.page);
   const pageSize = Math.max(1, Math.min(100, request.pageSize));
   const rules = options.rules ?? [];
   const debug = options.debug ?? false;
 
-  const textMatched = products.filter((product) =>
+  const catalog =
+    options.index && query
+      ? options.index.getCandidates(query)
+      : products;
+
+  const textMatched = catalog.filter((product) =>
     productMatchesQuery(product, query),
   );
   const filtered = textMatched.filter((product) =>

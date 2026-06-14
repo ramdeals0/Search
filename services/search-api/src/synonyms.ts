@@ -5,6 +5,7 @@ import {
   replaceSynonymsForEnvironment,
   touchEnvironment,
 } from "./environment-config-store.js";
+import { invalidateQueryProcessorCache } from "./ranking/query-processor.js";
 
 const PHRASE_SYNONYMS: Array<[string, string]> = [
   ["shop vac", "wet dry vacuum"],
@@ -60,6 +61,9 @@ export function addSynonym(
   const synonyms = getMutableSynonymsForEnvironment(environment);
   synonyms[normalizedKey] = normalizedValue;
   touchEnvironment(environment);
+  if (environment === DEFAULT_LIVE_ENVIRONMENT) {
+    invalidateQueryProcessorCache();
+  }
   return { key: normalizedKey, value: normalizedValue };
 }
 
@@ -78,6 +82,9 @@ export function replaceAllSynonyms(
   environment: EnvironmentKey = DEFAULT_ADMIN_ENVIRONMENT,
 ): void {
   replaceSynonymsForEnvironment(environment, nextSynonyms);
+  if (environment === DEFAULT_LIVE_ENVIRONMENT) {
+    invalidateQueryProcessorCache();
+  }
 }
 
 export function normalizeSynonyms(

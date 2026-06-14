@@ -125,6 +125,8 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
         { href: "/admin/merchandising/workflows/new-rule", label: "Guided new rule" },
         { href: "/admin/merchandising/snapshots", label: "Snapshots" },
         { href: "/admin/merchandising/promotions", label: "Promotions" },
+        { href: "/admin/merchandising/workflows/new-promotion", label: "Guided promotion" },
+        { href: "/admin/merchandising/workflows/publish", label: "Guided publish" },
         { href: "/admin/merchandising/suggestions", label: "Suggestions" },
       ],
     },
