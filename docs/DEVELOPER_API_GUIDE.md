@@ -30,15 +30,17 @@ For operator workflows and UI documentation, see [USER_GUIDE.md](./USER_GUIDE.md
 
 ## 1. Overview
 
-| Item | Value |
-|------|--------|
-| **Service** | `search-api` |
-| **Local base URL** | `http://localhost:4001` |
-| **API prefix** | `/api/v1` |
-| **Health** | `GET /health` (no auth) |
-| **Metrics** | `GET /metrics` (Prometheus text), `GET /api/v1/internal/metrics` (JSON snapshot) |
-| **Content type** | JSON request/response (`application/json`) |
-| **CORS** | `Access-Control-Allow-Origin: *` on all routes |
+
+| Item               | Value                                                                            |
+| ------------------ | -------------------------------------------------------------------------------- |
+| **Service**        | `search-api`                                                                     |
+| **Local base URL** | `http://localhost:4001`                                                          |
+| **API prefix**     | `/api/v1`                                                                        |
+| **Health**         | `GET /health` (no auth)                                                          |
+| **Metrics**        | `GET /metrics` (Prometheus text), `GET /api/v1/internal/metrics` (JSON snapshot) |
+| **Content type**   | JSON request/response (`application/json`)                                       |
+| **CORS**           | `Access-Control-Allow-Origin: `* on all routes                                   |
+
 
 All versioned routes live under `/api/v1`. Admin routes are under `/api/v1/admin/*`.
 
@@ -52,18 +54,22 @@ The API supports **two authentication modes**:
 
 Used for public search, browse, and event ingestion when `SEARCH_API_KEY_REQUIRED=true` (recommended in production).
 
-| Header | Example |
-|--------|---------|
-| `X-API-Key` | `rsp_a1b2c3d4e5f6...` |
+
+| Header          | Example                      |
+| --------------- | ---------------------------- |
+| `X-API-Key`     | `rsp_a1b2c3d4e5f6...`        |
 | `Authorization` | `Bearer rsp_a1b2c3d4e5f6...` |
+
 
 **Default scopes** on new keys:
 
-| Scope | Routes |
-|-------|--------|
-| `search:read` | `GET /api/v1/search`, `GET /api/v1/autocomplete` |
-| `browse:read` | `GET /api/v1/browse`, `GET /api/v1/browse/categories` |
-| `events:write` | `POST /api/v1/events/*` |
+
+| Scope          | Routes                                                |
+| -------------- | ----------------------------------------------------- |
+| `search:read`  | `GET /api/v1/search`, `GET /api/v1/autocomplete`      |
+| `browse:read`  | `GET /api/v1/browse`, `GET /api/v1/browse/categories` |
+| `events:write` | `POST /api/v1/events/`*                               |
+
 
 When `SEARCH_API_KEY_REQUIRED` is not `true`, these routes are open without a key (development default).
 
@@ -77,7 +83,7 @@ Authorization: Bearer <session-token>
 
 Obtain the token via `POST /api/v1/auth/login`. Session TTL defaults to 24 hours (`SESSION_TTL_HOURS`).
 
-Some admin mutations additionally require the **`admin`** user role (for example `PATCH /api/v1/admin/ai-search/config`).
+Some admin mutations additionally require the `**admin**` user role (for example `PATCH /api/v1/admin/ai-search/config`).
 
 ---
 
@@ -85,13 +91,15 @@ Some admin mutations additionally require the **`admin`** user role (for example
 
 ### Recommended headers
 
-| Header | Purpose |
-|--------|---------|
-| `Content-Type: application/json` | Required on POST/PUT/PATCH bodies |
-| `X-Request-Id` | Optional correlation ID; echoed as `x-request-id` on the response |
-| `X-Session-Id` | Shopper session for personalization and analytics attribution |
-| `X-Catalog-Id` | Multi-catalog filter (P4); falls back to tenant default |
-| `X-API-Key` or `Authorization: Bearer <key>` | Integrator authentication |
+
+| Header                                       | Purpose                                                           |
+| -------------------------------------------- | ----------------------------------------------------------------- |
+| `Content-Type: application/json`             | Required on POST/PUT/PATCH bodies                                 |
+| `X-Request-Id`                               | Optional correlation ID; echoed as `x-request-id` on the response |
+| `X-Session-Id`                               | Shopper session for personalization and analytics attribution     |
+| `X-Catalog-Id`                               | Multi-catalog filter (P4); falls back to tenant default           |
+| `X-API-Key` or `Authorization: Bearer <key>` | Integrator authentication                                         |
+
 
 ### Query parameters
 
@@ -129,20 +137,24 @@ Legacy endpoints may return `{ "error": "..." }` or `{ "code": "API_KEY_REQUIRED
 
 When rate limiting applies:
 
-| Header | Description |
-|--------|-------------|
-| `x-ratelimit-limit` | Max requests in window |
-| `x-ratelimit-remaining` | Remaining requests |
-| `x-ratelimit-reset` | ISO timestamp when window resets |
+
+| Header                  | Description                      |
+| ----------------------- | -------------------------------- |
+| `x-ratelimit-limit`     | Max requests in window           |
+| `x-ratelimit-remaining` | Remaining requests               |
+| `x-ratelimit-reset`     | ISO timestamp when window resets |
+
 
 **Policies:**
 
-| Traffic | Default limit | Window |
-|---------|---------------|--------|
-| API key per route | 120/min (or per-key override) | 60s |
-| Admin read | 300 | 60s |
-| Admin mutation | 60 | 60s |
-| Auth login | 5 per email + IP | 300s |
+
+| Traffic           | Default limit                 | Window |
+| ----------------- | ----------------------------- | ------ |
+| API key per route | 120/min (or per-key override) | 60s    |
+| Admin read        | 300                           | 60s    |
+| Admin mutation    | 60                            | 60s    |
+| Auth login        | 5 per email + IP              | 300s   |
+
 
 HTTP **429** when exceeded.
 
@@ -158,16 +170,18 @@ pnpm add @retailer-search/shared-types
 
 Key DTOs:
 
-| Type | Use |
-|------|-----|
-| `SearchRequestDto`, `SearchResponseDto`, `SearchHitDto` | Search |
-| `AutocompleteResponseDto` | Autocomplete |
-| `BrowseResponseDto`, `BrowseCategoryDto` | Browse |
-| `SearchEventDto`, `SearchClickEventDto` | Events |
-| `RecordCommerceEventRequestDto` | Commerce events |
-| `AiRankingConfigDto`, `AiQueryPreviewResponseDto` | AI admin |
-| `ExperimentArmAiConfigDto`, `CreateExperimentRequestDto` | Experiments |
-| `ApiErrorResponseDto`, `HealthResponseDto` | Cross-cutting |
+
+| Type                                                     | Use             |
+| -------------------------------------------------------- | --------------- |
+| `SearchRequestDto`, `SearchResponseDto`, `SearchHitDto`  | Search          |
+| `AutocompleteResponseDto`                                | Autocomplete    |
+| `BrowseResponseDto`, `BrowseCategoryDto`                 | Browse          |
+| `SearchEventDto`, `SearchClickEventDto`                  | Events          |
+| `RecordCommerceEventRequestDto`                          | Commerce events |
+| `AiRankingConfigDto`, `AiQueryPreviewResponseDto`        | AI admin        |
+| `ExperimentArmAiConfigDto`, `CreateExperimentRequestDto` | Experiments     |
+| `ApiErrorResponseDto`, `HealthResponseDto`               | Cross-cutting   |
+
 
 Source: `packages/shared-types/src/`.
 
@@ -183,17 +197,19 @@ Keyword + hybrid ranking (when enabled), merchandising rules, facets, optional c
 
 **Query parameters:**
 
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `query` | string | `""` | Search text |
-| `page` | int | `1` | Page number |
-| `pageSize` | int | `20` | Page size (max 100) |
-| `brand` | string[] | — | Facet filter |
-| `category` | string[] | — | Facet filter |
-| `inStock` | string[] | — | `"true"` / `"false"` |
-| `indexes` | string | `catalog` | Federated index names (comma-separated) |
-| `catalogId` | string | — | Catalog scope |
-| `debug` | boolean | `false` | Include ranking debug |
+
+| Param       | Type     | Default   | Description                             |
+| ----------- | -------- | --------- | --------------------------------------- |
+| `query`     | string   | `""`      | Search text                             |
+| `page`      | int      | `1`       | Page number                             |
+| `pageSize`  | int      | `20`      | Page size (max 100)                     |
+| `brand`     | string[] | —         | Facet filter                            |
+| `category`  | string[] | —         | Facet filter                            |
+| `inStock`   | string[] | —         | `"true"` / `"false"`                    |
+| `indexes`   | string   | `catalog` | Federated index names (comma-separated) |
+| `catalogId` | string   | —         | Catalog scope                           |
+| `debug`     | boolean  | `false`   | Include ranking debug                   |
+
 
 **Example:**
 
@@ -295,13 +311,15 @@ Category browse with filters and sort (no query string required).
 
 **Query parameters:**
 
-| Param | Values |
-|-------|--------|
-| `category` | Category name |
-| `brand` | Brand name |
-| `inStock` | `true` / `false` |
-| `sort` | `relevance`, `price_asc`, `price_desc`, `title_asc` |
-| `page`, `pageSize` | Pagination |
+
+| Param              | Values                                              |
+| ------------------ | --------------------------------------------------- |
+| `category`         | Category name                                       |
+| `brand`            | Brand name                                          |
+| `inStock`          | `true` / `false`                                    |
+| `sort`             | `relevance`, `price_asc`, `price_desc`, `title_asc` |
+| `page`, `pageSize` | Pagination                                          |
+
 
 **Response:** `BrowseResponseDto` — `totalHits`, `hits[]`, optional `categories[]`.
 
@@ -319,15 +337,17 @@ Returns category tree with product counts for browse navigation.
 
 When `HYBRID_SEARCH_ENABLED=true` (or enabled via ForgeOps AI config), search uses lexical + semantic + optional personalization. Lexical retrieval is **never removed**.
 
-| Field | Location | Description |
-|-------|----------|-------------|
-| `rankingMode` | Response root | e.g. `hybrid`, `lexical`, `live` |
-| `aiRankingDebug` | Response root | Pipeline weights, semantic hit count, recovery flag |
-| `rankingDebug.lexicalScore` | Per hit | Normalized keyword score |
-| `rankingDebug.semanticScore` | Per hit | Vector similarity score |
-| `rankingDebug.personalizationScore` | Per hit | Session affinity contribution |
-| `rankingDebug.explanationCodes` | Per hit | Reason codes (see below) |
-| `experimentArm` | Response root | `baseline` or `candidate` when an online experiment assigns an arm |
+
+| Field                               | Location      | Description                                                        |
+| ----------------------------------- | ------------- | ------------------------------------------------------------------ |
+| `rankingMode`                       | Response root | e.g. `hybrid`, `lexical`, `live`                                   |
+| `aiRankingDebug`                    | Response root | Pipeline weights, semantic hit count, recovery flag                |
+| `rankingDebug.lexicalScore`         | Per hit       | Normalized keyword score                                           |
+| `rankingDebug.semanticScore`        | Per hit       | Vector similarity score                                            |
+| `rankingDebug.personalizationScore` | Per hit       | Session affinity contribution                                      |
+| `rankingDebug.explanationCodes`     | Per hit       | Reason codes (see below)                                           |
+| `experimentArm`                     | Response root | `baseline` or `candidate` when an online experiment assigns an arm |
+
 
 **Explanation codes:** `lexical_match`, `semantic_match`, `user_brand_affinity`, `user_category_affinity`, `user_product_affinity`, `merchandising_rule_applied`, `zero_results_semantic_recovery`, `personalization_rerank`
 
@@ -461,21 +481,23 @@ All routes below require `Authorization: Bearer <session>` unless noted. Most li
 
 ### Merchandising and configuration
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/admin/rules` | List staging merchandising rules |
-| GET | `/admin/rules/:id` | Get rule |
-| POST | `/admin/rules` | Create rule |
-| PUT | `/admin/rules/:id` | Update rule |
-| DELETE | `/admin/rules/:id` | Delete rule |
-| GET | `/admin/snapshots` | List snapshots |
-| POST | `/admin/snapshots` | Create snapshot |
-| GET | `/admin/snapshots/diff` | Compare snapshots |
-| POST | `/admin/snapshots/rollback` | Rollback staging |
-| GET | `/admin/active-configuration` | Live config summary |
-| GET/POST | `/admin/environments/copy` | Copy live → staging |
-| POST | `/admin/environments/promote` | Promote staging → live |
-| POST | `/admin/promote-snapshot` | Promote snapshot to live |
+
+| Method   | Path                          | Description                      |
+| -------- | ----------------------------- | -------------------------------- |
+| GET      | `/admin/rules`                | List staging merchandising rules |
+| GET      | `/admin/rules/:id`            | Get rule                         |
+| POST     | `/admin/rules`                | Create rule                      |
+| PUT      | `/admin/rules/:id`            | Update rule                      |
+| DELETE   | `/admin/rules/:id`            | Delete rule                      |
+| GET      | `/admin/snapshots`            | List snapshots                   |
+| POST     | `/admin/snapshots`            | Create snapshot                  |
+| GET      | `/admin/snapshots/diff`       | Compare snapshots                |
+| POST     | `/admin/snapshots/rollback`   | Rollback staging                 |
+| GET      | `/admin/active-configuration` | Live config summary              |
+| GET/POST | `/admin/environments/copy`    | Copy live → staging              |
+| POST     | `/admin/environments/promote` | Promote staging → live           |
+| POST     | `/admin/promote-snapshot`     | Promote snapshot to live         |
+
 
 **Create rule body:**
 
@@ -495,26 +517,30 @@ All routes below require `Authorization: Bearer <session>` unless noted. Most li
 
 ### Search ops and preview
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/admin/query-preview` | Legacy keyword preview (`query`, `pageSize`, `environment`) |
-| GET | `/admin/analytics/summary` | Search analytics aggregate |
-| GET | `/admin/analytics/catalog-insights` | Top products/brands/queries |
-| GET | `/admin/suggestions` | Merchandising suggestions |
-| POST | `/admin/suggestions/apply` | Apply a suggestion |
-| GET | `/admin/analytics/zero-results` | Zero-result query inbox |
-| POST | `/admin/search-index/rebuild` | Rebuild lexical index |
+
+| Method | Path                                | Description                                                 |
+| ------ | ----------------------------------- | ----------------------------------------------------------- |
+| GET    | `/admin/query-preview`              | Legacy keyword preview (`query`, `pageSize`, `environment`) |
+| GET    | `/admin/analytics/summary`          | Search analytics aggregate                                  |
+| GET    | `/admin/analytics/catalog-insights` | Top products/brands/queries                                 |
+| GET    | `/admin/suggestions`                | Merchandising suggestions                                   |
+| POST   | `/admin/suggestions/apply`          | Apply a suggestion                                          |
+| GET    | `/admin/analytics/zero-results`     | Zero-result query inbox                                     |
+| POST   | `/admin/search-index/rebuild`       | Rebuild lexical index                                       |
+
 
 ### Experiments
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET/POST | `/admin/query-sets` | Evaluation query sets |
-| GET/POST | `/admin/experiments` | Create/list experiments |
-| GET | `/admin/experiments/:id` | Detail + last run + scorecard |
-| POST | `/admin/experiments/:id/run` | Execute experiment |
-| POST | `/admin/experiments/:id/scorecard/generate` | Regenerate scorecard |
-| POST | `/admin/experiments/:id/online` | Toggle online A/B traffic |
+
+| Method   | Path                                        | Description                   |
+| -------- | ------------------------------------------- | ----------------------------- |
+| GET/POST | `/admin/query-sets`                         | Evaluation query sets         |
+| GET/POST | `/admin/experiments`                        | Create/list experiments       |
+| GET      | `/admin/experiments/:id`                    | Detail + last run + scorecard |
+| POST     | `/admin/experiments/:id/run`                | Execute experiment            |
+| POST     | `/admin/experiments/:id/scorecard/generate` | Regenerate scorecard          |
+| POST     | `/admin/experiments/:id/online`             | Toggle online A/B traffic     |
+
 
 **Create experiment body:**
 
@@ -543,30 +569,36 @@ All routes below require `Authorization: Bearer <session>` unless noted. Most li
 
 ### Governance
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET/POST | `/admin/approvals` | Approval requests |
-| POST | `/admin/approvals/:id/resolve` | Approve/reject |
-| POST | `/admin/approvals/:id/execute` | Execute approved promotion |
-| GET | `/admin/audit-logs` | Filterable audit trail |
-| GET | `/admin/notifications` | In-app notifications |
+
+| Method   | Path                           | Description                |
+| -------- | ------------------------------ | -------------------------- |
+| GET/POST | `/admin/approvals`             | Approval requests          |
+| POST     | `/admin/approvals/:id/resolve` | Approve/reject             |
+| POST     | `/admin/approvals/:id/execute` | Execute approved promotion |
+| GET      | `/admin/audit-logs`            | Filterable audit trail     |
+| GET      | `/admin/notifications`         | In-app notifications       |
+
 
 ### Platform (P4)
 
-| Method | Path | Description |
-|--------|------|-------------|
+
+| Method    | Path                                     | Description            |
+| --------- | ---------------------------------------- | ---------------------- |
 | GET/PATCH | `/admin/catalogs`, `/admin/catalogs/:id` | Multi-catalog registry |
-| GET/PATCH | `/admin/branding` | Tenant branding |
-| GET/PATCH | `/admin/plugins/:id` | Search plugins |
-| GET | `/admin/api-usage` | API key usage metrics |
+| GET/PATCH | `/admin/branding`                        | Tenant branding        |
+| GET/PATCH | `/admin/plugins/:id`                     | Search plugins         |
+| GET       | `/admin/api-usage`                       | API key usage metrics  |
+
 
 ### Integrations
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET/POST | `/admin/webhooks` | Webhook endpoints |
-| POST | `/admin/webhooks/test-fire` | Test delivery |
-| GET/POST | `/admin/exports` | Data exports |
+
+| Method   | Path                        | Description       |
+| -------- | --------------------------- | ----------------- |
+| GET/POST | `/admin/webhooks`           | Webhook endpoints |
+| POST     | `/admin/webhooks/test-fire` | Test delivery     |
+| GET/POST | `/admin/exports`            | Data exports      |
+
 
 Synonyms, LLM settings, access governance, and collaboration endpoints are also available under `/admin/*` — see route registrations in `services/search-api/src/`.
 
@@ -643,13 +675,15 @@ Admin ranking preview with explicit mode override.
 
 **Query parameters:**
 
-| Param | Description |
-|-------|-------------|
-| `query` | Required search text |
+
+| Param         | Description                                                      |
+| ------------- | ---------------------------------------------------------------- |
+| `query`       | Required search text                                             |
 | `previewMode` | `lexical`, `hybrid`, `hybrid_personalization`, `semantic_rescue` |
-| `pageSize` | Max 50 (default 10) |
-| `environment` | `staging` (default) or `live` |
-| `sessionId` | Optional shopper session for personalization preview |
+| `pageSize`    | Max 50 (default 10)                                              |
+| `environment` | `staging` (default) or `live`                                    |
+| `sessionId`   | Optional shopper session for personalization preview             |
+
 
 **Response:** `AiQueryPreviewResponseDto` with per-hit `rankingDebug` and `aiRankingDebug`.
 
@@ -659,12 +693,14 @@ Admin ranking preview with explicit mode override.
 
 ### Admin-managed keys
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/admin/api-keys` | Admin session | List all keys |
-| POST | `/admin/api-keys` | Admin session | Create key |
-| DELETE | `/admin/api-keys/:id` | Admin session | Revoke key |
-| POST | `/admin/api-keys/:id/rotate` | Admin session | Rotate key |
+
+| Method | Path                         | Auth          | Description   |
+| ------ | ---------------------------- | ------------- | ------------- |
+| GET    | `/admin/api-keys`            | Admin session | List all keys |
+| POST   | `/admin/api-keys`            | Admin session | Create key    |
+| DELETE | `/admin/api-keys/:id`        | Admin session | Revoke key    |
+| POST   | `/admin/api-keys/:id/rotate` | Admin session | Rotate key    |
+
 
 **Create body (`CreateApiKeyRequestDto`):**
 
@@ -684,12 +720,14 @@ Admin ranking preview with explicit mode override.
 
 Users with the `developer` role:
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/developer/api-keys` | List own keys |
-| POST | `/developer/api-keys` | Create own key |
-| DELETE | `/developer/api-keys/:id` | Revoke own key |
-| POST | `/developer/api-keys/:id/rotate` | Rotate own key |
+
+| Method | Path                             | Description    |
+| ------ | -------------------------------- | -------------- |
+| GET    | `/developer/api-keys`            | List own keys  |
+| POST   | `/developer/api-keys`            | Create own key |
+| DELETE | `/developer/api-keys/:id`        | Revoke own key |
+| POST   | `/developer/api-keys/:id/rotate` | Rotate own key |
+
 
 ---
 
@@ -716,10 +754,12 @@ Package: `@retailer-search/plugin-sdk`
 
 Register hooks that run inside the search API process:
 
-| Hook | When | Input / output |
-|------|------|----------------|
-| `preSearch` | Before retrieval | Transform `SearchRequestDto` |
-| `postRank` | After ranking | Transform `SearchResponseDto` |
+
+| Hook        | When             | Input / output                |
+| ----------- | ---------------- | ----------------------------- |
+| `preSearch` | Before retrieval | Transform `SearchRequestDto`  |
+| `postRank`  | After ranking    | Transform `SearchResponseDto` |
+
 
 ```typescript
 import type { SearchPlugin } from "@retailer-search/plugin-sdk";
@@ -811,17 +851,19 @@ const data: SearchResponseDto = await response.json();
 
 Variables that affect API behavior (set on `search-api`):
 
-| Variable | Effect on API |
-|----------|----------------|
-| `SEARCH_API_KEY_REQUIRED` | Require API keys on search/browse/events |
-| `DEFAULT_API_KEY_RATE_LIMIT` | Default per-key rate limit |
-| `SESSION_TTL_HOURS` | Session token lifetime |
-| `HYBRID_SEARCH_ENABLED` | Enable hybrid ranking pipeline |
-| `SEMANTIC_SEARCH_ENABLED` | Semantic vector retrieval |
-| `PERSONALIZATION_ENABLED` | Session affinity boosts |
-| `EMBEDDINGS_PROVIDER` / `EMBEDDINGS_MODEL` / `EMBEDDINGS_API_KEY` | Embedding generation |
-| `LEXICAL_WEIGHT` / `SEMANTIC_WEIGHT` / `PERSONALIZATION_WEIGHT` | Default ranking weights |
-| `LLM_*` | Optional LLM query rewrite, zero-results recovery, rerank |
+
+| Variable                                                          | Effect on API                                             |
+| ----------------------------------------------------------------- | --------------------------------------------------------- |
+| `SEARCH_API_KEY_REQUIRED`                                         | Require API keys on search/browse/events                  |
+| `DEFAULT_API_KEY_RATE_LIMIT`                                      | Default per-key rate limit                                |
+| `SESSION_TTL_HOURS`                                               | Session token lifetime                                    |
+| `HYBRID_SEARCH_ENABLED`                                           | Enable hybrid ranking pipeline                            |
+| `SEMANTIC_SEARCH_ENABLED`                                         | Semantic vector retrieval                                 |
+| `PERSONALIZATION_ENABLED`                                         | Session affinity boosts                                   |
+| `EMBEDDINGS_PROVIDER` / `EMBEDDINGS_MODEL` / `EMBEDDINGS_API_KEY` | Embedding generation                                      |
+| `LEXICAL_WEIGHT` / `SEMANTIC_WEIGHT` / `PERSONALIZATION_WEIGHT`   | Default ranking weights                                   |
+| `LLM_*`                                                           | Optional LLM query rewrite, zero-results recovery, rerank |
+
 
 Full list: `.env.example` and `AI_PERSONALIZATION_VECTOR_SEARCH_PLAN.md`.
 
@@ -829,12 +871,14 @@ Full list: `.env.example` and `AI_PERSONALIZATION_VECTOR_SEARCH_PLAN.md`.
 
 ## Related documentation
 
-| Document | Audience |
-|----------|----------|
-| [USER_GUIDE.md](./USER_GUIDE.md) | ForgeOps operators |
-| [CATALOG_SCALE.md](./CATALOG_SCALE.md) | Large catalog architecture (up to 80M products) |
-| [AI_PERSONALIZATION_VECTOR_SEARCH_PLAN.md](../AI_PERSONALIZATION_VECTOR_SEARCH_PLAN.md) | AI architecture and rollout |
-| `packages/shared-types` | Canonical TypeScript DTOs |
+
+| Document                                                                                | Audience                                        |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| [USER_GUIDE.md](./USER_GUIDE.md)                                                        | ForgeOps operators                              |
+| [CATALOG_SCALE.md](./CATALOG_SCALE.md)                                                  | Large catalog architecture (up to 80M products) |
+| [AI_PERSONALIZATION_VECTOR_SEARCH_PLAN.md](../AI_PERSONALIZATION_VECTOR_SEARCH_PLAN.md) | AI architecture and rollout                     |
+| `packages/shared-types`                                                                 | Canonical TypeScript DTOs                       |
+
 
 ---
 

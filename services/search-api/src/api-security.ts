@@ -5,6 +5,7 @@ import type { RateLimitStatusDto } from "@retailer-search/shared-types";
 import { getRateLimitUserKeyFromAuthHeader } from "./auth-store.js";
 import { checkRateLimit } from "./rate-limit-store.js";
 import { buildSecurityHeaders } from "@retailer-search/config/security-headers";
+import { validationError } from "./error-response.js";
 
 export interface RateLimitPolicy {
   name: string;

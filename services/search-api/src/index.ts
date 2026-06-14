@@ -2,7 +2,6 @@ import express from "express";
 import { z } from "zod";
 import { env } from "@retailer-search/config";
 import {
-  safeJustificationSchema,
   safeOptionalMerchandisingLabelSchema,
   safeProductIdSchema,
   safeRuleNameSchema,

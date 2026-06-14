@@ -1,15 +1,15 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "pnpm install --frozen-lockfile && pnpm --filter @retailer-search/storefront... build"
+buildCommand = "pnpm install --frozen-lockfile && pnpm --filter @retailer-search/storefront-luxury... build"
 watchPatterns = [
-  "apps/storefront/**",
+  "apps/storefront-luxury/**",
   "packages/**",
   "pnpm-lock.yaml",
   "package.json"
 ]
 
 [deploy]
-startCommand = "pnpm --filter @retailer-search/storefront start"
+startCommand = "pnpm --filter @retailer-search/storefront-luxury start"
 healthcheckPath = "/"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"

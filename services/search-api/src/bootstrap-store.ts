@@ -381,9 +381,7 @@ export async function getPlatformConfig(): Promise<{
   };
 }
 
-export async function getSystemConfig<T extends Record<string, unknown>>(
-  key: string,
-): Promise<T | null> {
+export async function getSystemConfig<T>(key: string): Promise<T | null> {
   const row = await prisma.systemConfig.findUnique({ where: { key } });
   if (!row) {
     return null;
