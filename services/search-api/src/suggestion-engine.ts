@@ -12,7 +12,7 @@ import type {
 } from "@retailer-search/shared-types";
 import type { QueryAnalyticsRow } from "./analytics-store.js";
 import { createMerchandisingRule } from "./merchandising-rules.js";
-import { addSynonym, hasSynonym } from "./synonyms.js";
+import { addSynonym, hasSynonym, isQueryCoveredBySynonym } from "./synonyms.js";
 import { correctQueryTypos } from "./typos.js";
 
 const MIN_SEARCHES = 3;
@@ -278,6 +278,7 @@ export function generateRuleSuggestions(
 
   for (const row of params.queryAnalytics) {
     const query = row.displayQuery;
+    const queryCoveredBySynonym = isQueryCoveredBySynonym(query);
     const metrics = {
       searches: row.searches,
       clicks: row.clicks,
@@ -290,6 +291,7 @@ export function generateRuleSuggestions(
     const hasResults = row.zeroResults < row.searches;
 
     if (
+      !queryCoveredBySynonym &&
       row.searches >= MIN_SEARCHES &&
       row.zeroResults >= MIN_ZERO_RESULTS
     ) {
@@ -330,6 +332,7 @@ export function generateRuleSuggestions(
     }
 
     if (
+      !queryCoveredBySynonym &&
       row.zeroResults >= MIN_ZERO_RESULTS &&
       (typoCorrection || closestTerm) &&
       row.searches < MIN_SEARCHES

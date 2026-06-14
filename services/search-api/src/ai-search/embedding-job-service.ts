@@ -6,9 +6,13 @@ import type {
 } from "@retailer-search/shared-types";
 import type { ProductDocument } from "@retailer-search/shared-types";
 import { prisma } from "../db.js";
-const prismaClient = prisma as any;
+import { forEachProductBatchFromDatabase } from "../catalog/catalog-db-queries.js";
+import { CATALOG_DB_BATCH_SIZE } from "../catalog/catalog-scale-config.js";
+import { isLargeCatalogMode } from "../catalog-store.js";
 import { getAiRankingConfig } from "./ai-ranking-config-store.js";
 import { embedProductsBatch, getEmbeddingCoverage, hydrateVectorIndex } from "./vector-index.js";
+
+const prismaClient = prisma as any;
 
 let activeJobId: string | null = null;
 
@@ -81,23 +85,26 @@ export async function triggerEmbeddingJob(
   }
 
   const config = await getAiRankingConfig();
-  const targetProducts =
+  const useDatabaseCatalog = isLargeCatalogMode();
+  const targetCount =
     request.productIds && request.productIds.length > 0
-      ? products.filter((product) => request.productIds!.includes(product.id))
-      : products;
+      ? request.productIds.length
+      : useDatabaseCatalog
+        ? await prisma.product.count()
+        : products.length;
 
   const row = await prismaClient.embeddingJob.create({
     data: {
       status: "queued",
       jobType: request.jobType ?? "backfill",
-      totalProducts: targetProducts.length,
+      totalProducts: targetCount,
       model: config.embeddingsModel,
       provider: config.embeddingsProvider,
     },
   });
 
   activeJobId = row.id;
-  void runEmbeddingJob(row.id, targetProducts, config.embeddingBatchSize);
+  void runEmbeddingJob(row.id, products, config.embeddingBatchSize, request.productIds);
   return toDto(row);
 }
 
@@ -105,20 +112,53 @@ async function runEmbeddingJob(
   jobId: string,
   products: ProductDocument[],
   batchSize: number,
+  productIds?: string[],
 ): Promise<void> {
+  let processedTotal = 0;
+  let failedTotal = 0;
+
   try {
     await prismaClient.embeddingJob.update({
       where: { id: jobId },
       data: { status: "running", startedAt: new Date() },
     });
     await hydrateVectorIndex();
-    const result = await embedProductsBatch(products, batchSize);
+
+    if (isLargeCatalogMode()) {
+      await forEachProductBatchFromDatabase(
+        async (batch) => {
+          const result = await embedProductsBatch(batch, batchSize);
+          processedTotal += result.processed;
+          failedTotal += result.failed;
+          await prismaClient.embeddingJob.update({
+            where: { id: jobId },
+            data: {
+              processedProducts: processedTotal,
+              failedProducts: failedTotal,
+            },
+          });
+        },
+        {
+          batchSize: CATALOG_DB_BATCH_SIZE,
+          productIds,
+        },
+      );
+    } else {
+      const targetProducts =
+        productIds && productIds.length > 0
+          ? products.filter((product) => productIds.includes(product.id))
+          : products;
+      const result = await embedProductsBatch(targetProducts, batchSize);
+      processedTotal = result.processed;
+      failedTotal = result.failed;
+    }
+
     await prismaClient.embeddingJob.update({
       where: { id: jobId },
       data: {
         status: "completed",
-        processedProducts: result.processed,
-        failedProducts: result.failed,
+        processedProducts: processedTotal,
+        failedProducts: failedTotal,
         completedAt: new Date(),
       },
     });
@@ -128,6 +168,8 @@ async function runEmbeddingJob(
       data: {
         status: "failed",
         errorMessage: error instanceof Error ? error.message : "Embedding job failed",
+        processedProducts: processedTotal,
+        failedProducts: failedTotal,
         completedAt: new Date(),
       },
     });

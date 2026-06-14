@@ -7,6 +7,8 @@
 #   pnpm --filter @retailer-search/search-api dev
 #   pnpm --filter @retailer-search/admin dev
 #   pnpm --filter @retailer-search/storefront dev
+#   pnpm prisma:seed:luxury
+#   pnpm --filter @retailer-search/storefront-luxury dev
 
 services:
   postgres:

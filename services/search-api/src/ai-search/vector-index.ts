@@ -2,7 +2,13 @@ import type { ProductDocument } from "@retailer-search/shared-types";
 import type { VectorSearchHit, VectorSearchProvider } from "@retailer-search/search-core";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
-const prismaClient = prisma as any;
+import { isLargeCatalogMode } from "../catalog-store.js";
+import {
+  countProductEmbeddingsInDatabase,
+  searchEmbeddingsFromDatabase,
+  syncEmbeddingVectorColumn,
+} from "../catalog/catalog-db-queries.js";
+import { CATALOG_VECTOR_SEARCH_LIMIT } from "../catalog/catalog-scale-config.js";
 import {
   buildCanonicalProductText,
   hashCanonicalText,
@@ -14,13 +20,23 @@ import {
 } from "./embedding-provider.js";
 import { getAiRankingConfig } from "./ai-ranking-config-store.js";
 
+const prismaClient = prisma as any;
+
 const embeddingByProductId = new Map<
   string,
   { vector: number[]; textHash: string; model: string; provider: string }
 >();
 let persistenceEnabled = false;
+let databaseVectorSearchEnabled = false;
 
 export async function hydrateVectorIndex(): Promise<void> {
+  if (isLargeCatalogMode()) {
+    persistenceEnabled = true;
+    databaseVectorSearchEnabled = true;
+    embeddingByProductId.clear();
+    return;
+  }
+
   try {
     const rows = await prismaClient.productEmbedding.findMany();
     embeddingByProductId.clear();
@@ -33,12 +49,17 @@ export async function hydrateVectorIndex(): Promise<void> {
       });
     }
     persistenceEnabled = true;
+    databaseVectorSearchEnabled = false;
   } catch {
     persistenceEnabled = false;
+    databaseVectorSearchEnabled = false;
   }
 }
 
 export function getEmbeddedProductCount(): number {
+  if (isLargeCatalogMode()) {
+    return 0;
+  }
   return embeddingByProductId.size;
 }
 
@@ -54,12 +75,14 @@ export async function upsertProductEmbedding(
   }
 
   const [vector] = await provider.embedTexts([text]);
-  embeddingByProductId.set(product.id, {
-    vector,
-    textHash,
-    model: provider.model,
-    provider: provider.name,
-  });
+  if (!isLargeCatalogMode()) {
+    embeddingByProductId.set(product.id, {
+      vector,
+      textHash,
+      model: provider.model,
+      provider: provider.name,
+    });
+  }
 
   if (!persistenceEnabled) {
     return;
@@ -83,6 +106,14 @@ export async function upsertProductEmbedding(
       dimensions: provider.dimensions,
     },
   });
+
+  if (databaseVectorSearchEnabled) {
+    try {
+      await syncEmbeddingVectorColumn(product.id, vector);
+    } catch {
+      // pgvector column may be unavailable until migration runs.
+    }
+  }
 }
 
 export async function embedProductsBatch(
@@ -107,14 +138,28 @@ export async function embedProductsBatch(
     for (const product of batch) {
       const text = buildCanonicalProductText(product);
       const textHash = hashCanonicalText(text);
-      const existing = embeddingByProductId.get(product.id);
-      if (
-        existing &&
-        existing.textHash === textHash &&
-        existing.model === provider.model
-      ) {
-        skipped += 1;
-        continue;
+      if (!isLargeCatalogMode()) {
+        const existing = embeddingByProductId.get(product.id);
+        if (
+          existing &&
+          existing.textHash === textHash &&
+          existing.model === provider.model
+        ) {
+          skipped += 1;
+          continue;
+        }
+      } else if (persistenceEnabled) {
+        const existingRow = await prismaClient.productEmbedding.findUnique({
+          where: { productId: product.id },
+          select: { textHash: true, model: true },
+        });
+        if (
+          existingRow?.textHash === textHash &&
+          existingRow?.model === provider.model
+        ) {
+          skipped += 1;
+          continue;
+        }
       }
       pending.push({ product, text, textHash });
     }
@@ -131,12 +176,14 @@ export async function embedProductsBatch(
           failed += 1;
           continue;
         }
-        embeddingByProductId.set(item.product.id, {
-          vector,
-          textHash: item.textHash,
-          model: provider.model,
-          provider: provider.name,
-        });
+        if (!isLargeCatalogMode()) {
+          embeddingByProductId.set(item.product.id, {
+            vector,
+            textHash: item.textHash,
+            model: provider.model,
+            provider: provider.name,
+          });
+        }
         if (persistenceEnabled) {
           await prismaClient.productEmbedding.upsert({
             where: { productId: item.product.id },
@@ -156,6 +203,13 @@ export async function embedProductsBatch(
               dimensions: provider.dimensions,
             },
           });
+          if (databaseVectorSearchEnabled) {
+            try {
+              await syncEmbeddingVectorColumn(item.product.id, vector);
+            } catch {
+              // Ignore pgvector sync failures for individual rows.
+            }
+          }
         }
         processed += 1;
       }
@@ -170,20 +224,51 @@ export async function embedProductsBatch(
 export class StoredVectorSearchProvider implements VectorSearchProvider {
   private readonly provider: EmbeddingProvider;
   private readonly fallbackProducts?: ProductDocument[];
+  private readonly candidateProductIds?: string[];
 
-  constructor(provider?: EmbeddingProvider, fallbackProducts?: ProductDocument[]) {
+  constructor(
+    provider?: EmbeddingProvider,
+    fallbackProducts?: ProductDocument[],
+    candidateProductIds?: string[],
+  ) {
     this.provider = provider ?? resolveEmbeddingProviderFromEnv();
     this.fallbackProducts = fallbackProducts;
+    this.candidateProductIds = candidateProductIds;
   }
 
   async search(query: string, limit = 20): Promise<VectorSearchHit[]> {
+    const cappedLimit = Math.max(
+      1,
+      Math.min(isLargeCatalogMode() ? CATALOG_VECTOR_SEARCH_LIMIT : 100, limit),
+    );
+    const queryVector = await this.provider.embedQuery(query);
+
+    if (databaseVectorSearchEnabled) {
+      const candidateIds =
+        this.candidateProductIds ??
+        this.fallbackProducts?.map((product) => product.id);
+      const hits = await searchEmbeddingsFromDatabase(
+        queryVector,
+        cappedLimit,
+        candidateIds,
+      );
+      if (hits.length > 0) {
+        return hits;
+      }
+    }
+
     if (embeddingByProductId.size === 0 && this.fallbackProducts?.length) {
       await embedProductsBatch(this.fallbackProducts);
     }
 
-    const queryVector = await this.provider.embedQuery(query);
     const hits: VectorSearchHit[] = [];
     for (const [productId, entry] of embeddingByProductId.entries()) {
+      if (
+        this.candidateProductIds &&
+        !this.candidateProductIds.includes(productId)
+      ) {
+        continue;
+      }
       const score = cosineSimilarity(queryVector, entry.vector);
       if (score > 0) {
         hits.push({ productId, score });
@@ -192,7 +277,7 @@ export class StoredVectorSearchProvider implements VectorSearchProvider {
 
     return hits
       .sort((a, b) => b.score - a.score)
-      .slice(0, Math.max(1, Math.min(100, limit)));
+      .slice(0, cappedLimit);
   }
 }
 
@@ -203,7 +288,9 @@ export async function getEmbeddingCoverage(
   embeddedProducts: number;
   coveragePercent: number;
 }> {
-  const embeddedProducts = embeddingByProductId.size;
+  const embeddedProducts = isLargeCatalogMode()
+    ? await countProductEmbeddingsInDatabase()
+    : embeddingByProductId.size;
   return {
     totalProducts,
     embeddedProducts,

@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import {
   getProductCatalog,
   hydrateProductCatalog,
+  isLargeCatalogMode,
 } from "../catalog-store.js";
 
 const productIndex = new ProductSearchIndex();
@@ -19,7 +20,9 @@ export function getIndexLastSyncAt(): string | undefined {
 
 export async function rebuildProductSearchIndex(): Promise<number> {
   const count = await hydrateProductCatalog();
-  productIndex.rebuild(getProductCatalog());
+  if (!isLargeCatalogMode()) {
+    productIndex.rebuild(getProductCatalog());
+  }
   lastSyncAt = new Date().toISOString();
   return count;
 }
@@ -28,6 +31,11 @@ export async function syncProductSearchIndexDelta(): Promise<{
   upserted: number;
   removed: number;
 }> {
+  if (isLargeCatalogMode()) {
+    lastSyncAt = new Date().toISOString();
+    return { upserted: 0, removed: 0 };
+  }
+
   const since = lastSyncAt;
   await hydrateProductCatalog();
 
@@ -54,6 +62,7 @@ export async function syncProductSearchIndexDelta(): Promise<{
           inStock: row.inStock,
           imageUrl: row.imageUrl ?? undefined,
           attributes: row.attributes as ProductDocument["attributes"],
+          catalogId: row.catalogId,
           createdAt: row.createdAt.toISOString(),
           updatedAt: row.updatedAt.toISOString(),
         }));
@@ -69,6 +78,10 @@ export async function syncProductSearchIndexDelta(): Promise<{
 }
 
 export function syncProductSearchIndexFromCatalog(): void {
+  if (isLargeCatalogMode()) {
+    lastSyncAt = new Date().toISOString();
+    return;
+  }
   productIndex.rebuild(getProductCatalog());
   lastSyncAt = new Date().toISOString();
 }

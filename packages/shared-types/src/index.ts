@@ -233,6 +233,8 @@ export interface HealthResponseDto {
     userCount: number;
     productCount?: number;
     catalogSource?: "database" | "generated-json" | "empty";
+    catalogScaleMode?: "in_memory" | "database";
+    maxCatalogProducts?: number;
   };
 }
 

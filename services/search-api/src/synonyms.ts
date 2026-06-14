@@ -42,6 +42,14 @@ export function hasSynonym(
   return normalizedKey.length > 0 && normalizedKey in synonyms;
 }
 
+/** True when staging already maps this shopper query to catalog vocabulary. */
+export function isQueryCoveredBySynonym(
+  query: string,
+  environment: EnvironmentKey = DEFAULT_ADMIN_ENVIRONMENT,
+): boolean {
+  return hasSynonym(query, environment);
+}
+
 export function addSynonym(
   key: string,
   value: string,

@@ -15,7 +15,22 @@ const FORWARD_REQUEST_HEADERS = [
   "authorization",
   "x-api-key",
   "x-session-id",
+  "x-catalog-id",
 ] as const;
+
+function getProxyCatalogId(request: NextRequest): string {
+  const fromRequest = request.headers.get("x-catalog-id")?.trim();
+  if (fromRequest) {
+    return fromRequest;
+  }
+
+  const configured =
+    process.env.NEXT_PUBLIC_CATALOG_ID ??
+    process.env.STORE_CATALOG_ID ??
+    "default";
+  const trimmed = configured.trim();
+  return trimmed.length > 0 ? trimmed : "default";
+}
 
 const FORWARD_RESPONSE_HEADERS = [
   "content-type",
@@ -39,6 +54,9 @@ async function proxyRequest(
     if (value) {
       headers.set(name, value);
     }
+  }
+  if (!headers.has("x-catalog-id")) {
+    headers.set("x-catalog-id", getProxyCatalogId(request));
   }
 
   const init: RequestInit = {

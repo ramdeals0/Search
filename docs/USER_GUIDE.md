@@ -1,8 +1,12 @@
 # ForgeOps User Guide
 
-**ForgeOps** is the operations, merchandising, and governance console for the Retailer Search Platform. It helps teams tune product search, manage merchandising rules, run experiments, and release changes safely—with a full audit trail.
+**ForgeOps** is the operations, merchandising, and governance console for the Retailer Search Platform. It helps teams tune product search, manage merchandising rules, run experiments, configure **AI-powered hybrid ranking and personalization**, and release changes safely—with a full audit trail.
 
 This guide covers both the **customer storefront** (where shoppers search) and the **ForgeOps admin console** (where operators work).
+
+**Developers** integrating against the REST API should see [DEVELOPER_API_GUIDE.md](./DEVELOPER_API_GUIDE.md). For catalogs above 100K products (up to 80M), see [CATALOG_SCALE.md](./CATALOG_SCALE.md).
+
+The demo environment includes **two product catalogs** and **two storefronts** so you can validate multi-catalog / multi-tenant behavior locally (see [Multi-catalog platform](#19-multi-catalog-platform)).
 
 ---
 
@@ -21,10 +25,12 @@ This guide covers both the **customer storefront** (where shoppers search) and t
 11. [Audit and notifications](#11-audit-and-notifications)
 12. [Exports and integrations](#12-exports-and-integrations)
 13. [Settings](#13-settings)
-14. [Common workflows](#14-common-workflows)
-15. [Demo data and sample queries](#15-demo-data-and-sample-queries)
-16. [Tips and troubleshooting](#16-tips-and-troubleshooting)
-17. [Production deployment (Railway)](#17-production-deployment-railway)
+14. [AI Search and personalization](#14-ai-search-and-personalization)
+15. [Common workflows](#15-common-workflows)
+16. [Demo data and sample queries](#16-demo-data-and-sample-queries)
+17. [Tips and troubleshooting](#17-tips-and-troubleshooting)
+18. [Production deployment (Railway)](#18-production-deployment-railway)
+19. [Multi-catalog platform](#19-multi-catalog-platform)
 
 ---
 
@@ -40,7 +46,8 @@ This guide covers both the **customer storefront** (where shoppers search) and t
 
 | Application | URL |
 |-------------|-----|
-| Storefront (shopper search) | http://localhost:3000 |
+| Storefront — BuildMart (default catalog) | http://localhost:3000 |
+| Storefront — Luxe Atelier (luxury catalog) | http://localhost:3002 |
 | ForgeOps admin | http://localhost:3001 |
 | Search API (backend) | http://localhost:4001 |
 
@@ -54,7 +61,7 @@ When the platform is deployed on [Railway](https://railway.app), each component 
 | ForgeOps admin | `https://<admin-service>.up.railway.app` |
 | Search API | `https://<search-api-service>.up.railway.app` |
 
-Replace the placeholders with your actual generated domains. The admin and storefront apps call the search API using `NEXT_PUBLIC_SEARCH_API_URL`, which your team configures at deploy time (see [Production deployment (Railway)](#17-production-deployment-railway)).
+Replace the placeholders with your actual generated domains. The admin and storefront apps call the search API using `NEXT_PUBLIC_SEARCH_API_URL`, which your team configures at deploy time (see [Production deployment (Railway)](#18-production-deployment-railway)).
 
 **Health checks (for operators):**
 
@@ -84,6 +91,8 @@ If the database has never been configured:
 Until setup completes, admin features return a “setup required” message. Public search and setup endpoints remain available.
 
 **Note:** If your team ran `pnpm prisma:seed` against the production database, setup may already be complete and you can sign in with a demo account (see below) instead of running `/setup`.
+
+To add the **luxury clothing catalog** (6,000 products) without replacing BuildMart data, run `pnpm prisma:seed:luxury` after the main seed. Restart search-api afterward so it reloads catalog counts.
 
 ### Demo environment (pre-seeded)
 
@@ -115,7 +124,7 @@ ForgeOps uses role-based navigation. The **workspace role switcher** in the side
 
 | Role | Typical responsibilities |
 |------|-------------------------|
-| **Merchandiser** | Edit rules, preview queries, run experiments |
+| **Merchandiser** | Edit rules, preview queries, configure AI search, run experiments |
 | **Reviewer** | Review changes, audit trail, approvals (read/review) |
 | **Approver** | Approve release requests, exports |
 | **Release manager** | Promote staging to live, manage snapshots |
@@ -128,9 +137,10 @@ ForgeOps uses role-based navigation. The **workspace role switcher** in the side
 | Section | Pages |
 |---------|-------|
 | **Overview** | Dashboard |
-| **Catalog** | Products, Search, Zero-results inbox, Merchandising, Experiments |
+| **Catalog** | Products, Search, **AI Search**, Zero-results inbox, Merchandising, Experiments |
 | **Governance** | Approvals, Access, Audit, Notifications |
 | **Operations** | Exports, Integrations, API keys, Settings |
+| **Platform** | Catalogs (multi-catalog registry) |
 
 Pages hidden for your role will not appear in the sidebar.
 
@@ -149,9 +159,26 @@ Use the **environment switcher** on the Dashboard or Settings page to see which 
 
 ## 3. Customer storefront
 
-The storefront is the shopper-facing search experience. Locally it runs at **http://localhost:3000**; in production use your Railway storefront domain.
+The platform ships with **two demo storefronts** for multi-catalog validation. Each storefront sends an `X-Catalog-Id` header on every search and browse request so results stay isolated to that retailer’s catalog.
+
+| Storefront | Local URL | Catalog ID | Branding |
+|------------|-----------|------------|----------|
+| **BuildMart** | http://localhost:3000 | `default` | Home improvement & tools (~50,000 products) |
+| **Luxe Atelier** | http://localhost:3002 | `luxury-clothing` | Luxury fashion (~6,000 products; seed separately) |
+
+In production, deploy one or more storefront services—each with its own `NEXT_PUBLIC_CATALOG_ID`—pointing at the same search API.
 
 **Important:** Shoppers only see **live** merchandising configuration. Staging rule changes in ForgeOps do not affect the storefront until they are promoted to live.
+
+### Start the luxury storefront locally
+
+```bash
+pnpm prisma:seed          # BuildMart catalog (if not already seeded)
+pnpm prisma:seed:luxury   # Adds luxury-clothing catalog (additive)
+pnpm --filter @retailer-search/storefront-luxury dev
+```
+
+Restart **search-api** after seeding so it reloads products and merged merchandising rules.
 
 ### Searching for products
 
@@ -172,7 +199,9 @@ Use browse when shoppers want to explore the catalog by category instead of typi
 4. Click **Apply filters** to refresh results
 5. Use **Previous** / **Next** when results span multiple pages
 
-Browse uses the search API’s browse endpoints (`/api/v1/browse` and `/api/v1/browse/categories`). It reflects the **live** product catalog, not staging merchandising rules.
+Browse uses the search API’s browse endpoints (`/api/v1/browse` and `/api/v1/browse/categories`). It reflects the **live** product catalog for the storefront’s catalog ID, not staging merchandising rules.
+
+On **Luxe Atelier**, browse categories are **Women**, **Men**, and **Accessories** instead of home-improvement departments.
 
 ### Autocomplete
 
@@ -196,6 +225,12 @@ Select one or more values to narrow results. Clear filters to broaden the result
 ### Query correction
 
 If the platform corrects a typo (e.g. `dril` → `drill`), a message shows the corrected term above the results.
+
+### Personalization (transparent to shoppers)
+
+When your platform operator enables hybrid search and personalization, the storefront may rank results using recent shopper activity—searches, clicks, and commerce events—in addition to keyword relevance. Shoppers do **not** see AI labels or score breakdowns; the experience remains a normal product search.
+
+Personalization is tied to a **session cookie** on the storefront. Repeat visits in the same browser session can reflect prior interests (for example, boosting brands or categories the shopper clicked earlier). No account sign-in is required for session-based personalization.
 
 ### Analytics impact
 
@@ -227,7 +262,7 @@ The dashboard is your control center.
 
 - Morning check-in on search health
 - Confirm staging rule count before a release
-- Jump quickly to Merchandising, Search, or Approvals
+- Jump quickly to Merchandising, Search, **AI Search**, or Approvals
 
 ---
 
@@ -245,6 +280,7 @@ Use this page to **preview how the catalog ranks** for a query and review **what
    - Total hit count
    - Applied merchandising rule names
    - Product title, brand, category, and relevance score
+   - **Score breakdown** (when hybrid search is enabled): expand a result to see lexical, semantic, and personalization contributions, plus explanation chips (e.g. *Lexical match*, *Semantic match*, *Brand affinity*)
 
 ### Catalog insights (below search results)
 
@@ -300,8 +336,23 @@ Use **Copy recommendation** to share suggestion text with your team.
 Test any query against the current staging configuration:
 
 1. Enter a query
-2. Click **Preview**
-3. Review ranked products, scores, and applied rules
+2. Choose a **preview mode** (see below)
+3. Optionally enter a **session ID** to simulate personalization for a known shopper session
+4. Click **Preview**
+5. Review ranked products, scores, applied rules, explanation chips, and the score breakdown drawer
+
+**Preview modes**
+
+| Mode | What it shows |
+|------|----------------|
+| **Lexical only** | Keyword retrieval and merchandising rules—baseline behavior without semantic or personalization layers |
+| **Hybrid** | Weighted merge of lexical + semantic similarity |
+| **Hybrid + personalization** | Hybrid ranking plus session profile affinities (brand, category, product history) |
+| **Semantic rescue** | Highlights zero-results recovery when lexical hits are below the configured threshold |
+
+When hybrid search is active, the preview summary shows ranking weights (lexical / semantic / personalization), semantic hit counts, and whether **semantic recovery** was applied. Each result can display **explanation chips** such as *Lexical match*, *Semantic match*, *Brand affinity*, *Merchandising rule*, or *Semantic recovery*.
+
+For platform-wide AI settings and embedding coverage, use the [**AI Search** workspace](#14-ai-search-and-personalization).
 
 ### Zero-results inbox
 
@@ -444,7 +495,18 @@ When creating an experiment, optionally enable **Candidate LLM overrides** (cand
 
 The baseline arm always uses standard search (no LLM). Overrides are useful for testing LLM features against a known snapshot before enabling them platform-wide via environment variables.
 
-**Run experiment** executes evaluation across every query in the linked query set and records per-query outcomes. Experiments with LLM overrides may take longer per run depending on provider latency.
+**Candidate AI ranking overrides** (candidate arm only) let you compare hybrid lexical + semantic search against baseline without changing platform defaults:
+
+| Override | Effect on candidate arm |
+|----------|-------------------------|
+| **Semantic retrieval** | Enable vector similarity on product text embeddings |
+| **Personalization** | Apply session profile affinities during ranking |
+| **Weight preset** | Choose a preset (balanced, semantic-heavy, personalization-heavy, lexical-heavy) or custom lexical / semantic / personalization weights |
+| **Embedding model** | Optional override of the embeddings model used for the candidate arm |
+
+When both LLM and AI overrides are configured, the experiment run uses the candidate snapshot plus whichever candidate-arm features are enabled. Review per-query outcomes in the run view to compare baseline vs candidate ranking.
+
+**Run experiment** executes evaluation across every query in the linked query set and records per-query outcomes. Experiments with LLM or AI overrides may take longer per run depending on provider latency and embedding coverage.
 
 ### Experiment run view
 
@@ -554,7 +616,7 @@ Shared with Approvals—configure who can review and approve governance actions.
 - **Audit log** — filterable record of merchandising, auth, approval, and access events
 - **Security timeline** — chronological view of security-relevant activity
 
-Every rule create/update/delete, promotion, login, and approval decision is logged with actor, timestamp, and outcome.
+Every rule create/update/delete, promotion, login, approval decision, and **AI ranking configuration change** is logged with actor, timestamp, and outcome. Filter the audit log for `update_ai_ranking_config` to review who changed hybrid search settings and when.
 
 ### Notifications
 
@@ -613,20 +675,106 @@ Issue scoped API keys for storefront apps, partner integrations, and automation.
 - Environment panel (copy live → staging, promote staging → live)
 - Approval policy defaults
 - Instance setup reference (`/setup` for fresh deployments)
+- Link to the dedicated [**AI Search**](#14-ai-search-and-personalization) page for hybrid ranking configuration
+- Link to [**Platform → Catalogs**](#19-multi-catalog-platform) for multi-catalog registry management
 
 ---
 
-## 14. Common workflows
+## 14. AI Search and personalization
+
+**Path:** `/admin/ai-search`
+
+Configure **text-only** AI-enhanced search: product embeddings, hybrid lexical + semantic ranking, session personalization, and embedding index maintenance. Lexical keyword search always remains available; AI layers are additive and can be rolled out gradually.
+
+**Who should use this page:** Merchandisers testing ranking changes, platform operators enabling production hybrid search, and admins reviewing embedding coverage before launch.
+
+### How hybrid ranking works
+
+When hybrid search is enabled, each query goes through:
+
+1. **Lexical retrieval** — existing keyword scoring (unchanged core)
+2. **Semantic retrieval** — query and product text embeddings compared for similarity
+3. **Personalization** — optional boosts from recent searches, clicks, add-to-cart, and purchase signals in the shopper session
+4. **Merchandising rules** — pins, boosts, buries, and hides still apply on top (pins override rank as today)
+
+Final ranking combines normalized lexical, semantic, and personalization scores using configurable weights. When lexical results are sparse, **semantic zero-results fallback** can recover related products.
+
+Product embeddings use **text only** (title, brand, category, attributes, description)—no image or multimodal embeddings in the current release.
+
+### AI Search settings panel
+
+| Control | Purpose |
+|---------|---------|
+| **Embeddings provider** | `mock` (deterministic dev/test), `openai`, or `openrouter` |
+| **Embeddings model** | Model name for the provider (e.g. `text-embedding-3-small`) |
+| **Embedding dimensions / batch size** | Vector size and indexing batch size |
+| **Semantic fallback min hits** | When lexical hits fall below this count, semantic rescue may apply |
+| **Personalization lookback / decay** | How far back session signals count and how quickly they fade |
+| **Ranking weights** | Lexical, semantic, and personalization contributions (normalized on save) |
+| **Hybrid search enabled** | Master toggle for the hybrid pipeline |
+| **Semantic retrieval enabled** | Turn vector similarity on or off |
+| **Personalization enabled** | Turn session affinity boosts on or off |
+| **Semantic zero-results fallback** | Allow semantic recovery for low-hit queries |
+| **Product embeddings enabled** | Persist and use product embedding vectors |
+
+**Coverage cards** show how many catalog products have embeddings vs total products, plus the active model and provider.
+
+### Embedding index (reindex)
+
+Before semantic search is useful in non-mock environments, products need embeddings:
+
+1. Open **AI Search** (`/admin/ai-search`)
+2. Confirm **Product embeddings enabled** is checked
+3. Click **Start reindex** (or **Reindex all products**)
+4. Monitor **Recent embedding jobs** for status (`pending`, `running`, `completed`, `failed`)
+
+Reindex jobs are idempotent: unchanged product text is skipped using a content hash. After a large catalog seed (~50,000 products), the first backfill may take several minutes depending on provider rate limits.
+
+**Local development tip:** use `EMBEDDINGS_PROVIDER=mock` so reindex completes quickly without an external API key.
+
+### Explainability in ForgeOps
+
+Operators see AI reasoning in admin preview surfaces—not on the storefront:
+
+| Surface | What you see |
+|---------|----------------|
+| **Search → Query preview** | Preview mode selector, explanation chips, semantic recovery indicator |
+| **Products / Search results** | Score breakdown drawer: lexical, semantic, personalization, applied rules |
+| **Experiments** | Candidate-arm AI config summary on each experiment |
+
+**Explanation codes** include: *Lexical match*, *Semantic match*, *Brand affinity*, *Category affinity*, *Product affinity*, *Merchandising rule*, *Semantic recovery*, and *Personalization rerank*.
+
+### Staging vs live and governance
+
+AI ranking configuration is stored in the search API and can be overridden per **experiment candidate arm**. Changes saved on the AI Search page write an **audit log** entry (`update_ai_ranking_config`).
+
+For production rollout:
+
+1. Test in **Search query preview** (all preview modes)
+2. Run an **experiment** with candidate AI overrides against a query set
+3. Enable hybrid search in staging, then promote via your normal snapshot / approval workflow when satisfied
+4. Monitor zero-result rate, CTR, and embedding job health after go-live
+
+Environment variables on Railway can set safe defaults before enabling features in the admin UI (see [Production deployment](#18-production-deployment-railway)).
+
+### Operator reference
+
+Technical architecture, schema, API endpoints, and rollout details are documented in the repository root file `AI_PERSONALIZATION_VECTOR_SEARCH_PLAN.md`. REST API reference: [DEVELOPER_API_GUIDE.md](./DEVELOPER_API_GUIDE.md).
+
+---
+
+## 15. Common workflows
 
 ### Fix a zero-result query
 
 1. **Search** workspace or **Zero-results inbox** (`/admin/search/zero-results`) → find the query
 2. In the inbox, click **Generate draft** → **Approve** → **Apply to staging**  
    *Or* open a **suggestion** / **query preview** and fix manually
-3. If it is a vocabulary gap → add a **synonym** or improve catalog coverage
-4. If products exist but rank poorly → create a **boost** or **pin** rule in **Merchandising**
-5. **Preview** the query in Products or Search
-6. **Snapshot** → **request approval** → **promote** (or **schedule** via guided promotion)
+3. If products exist but use different vocabulary → enable or tune **hybrid / semantic search** on **AI Search**, or add a **synonym**
+4. If it is a vocabulary gap with no catalog coverage → improve catalog data or add a **synonym**
+5. If products exist but rank poorly → create a **boost** or **pin** rule in **Merchandising**
+6. **Preview** the query in Products or Search (try **Semantic rescue** mode if lexical hits are zero)
+7. **Snapshot** → **request approval** → **promote** (or **schedule** via guided promotion)
 
 ### Schedule a promotion for a future launch
 
@@ -637,6 +785,15 @@ Issue scoped API keys for storefront apps, partner integrations, and automation.
 5. Click **Schedule promotion**
 6. Monitor pending jobs on **Promotions** (`/admin/merchandising/promotions`) — cancel if plans change
 
+### Test hybrid / AI ranking in an experiment
+
+1. Ensure embedding coverage is sufficient on **AI Search** (run reindex if needed)
+2. Create **baseline** and **candidate** snapshots in Merchandising (optional if testing AI-only changes)
+3. Create a **query set** with representative shopper queries
+4. **Experiments** → create experiment → enable **Candidate AI ranking overrides** (semantic, personalization, weight preset)
+5. **Run experiment** and compare baseline vs candidate in the run view / scorecard
+6. If results look good, enable hybrid search on **AI Search** or promote via your release workflow
+
 ### Test LLM search changes in an experiment
 
 1. Create **baseline** and **candidate** snapshots in Merchandising
@@ -644,6 +801,16 @@ Issue scoped API keys for storefront apps, partner integrations, and automation.
 3. **Experiments** → create experiment, enable **Candidate LLM overrides** as needed
 4. **Run experiment** and review the scorecard / run view
 5. If results look good, promote the candidate snapshot (immediate or scheduled)
+
+### Roll out hybrid search safely
+
+1. **AI Search** → set provider to `mock` or your production embeddings provider
+2. Run **Reindex all products** and wait for job completion
+3. Leave **Hybrid search enabled** off; use **Search → Query preview** in **Lexical only** mode to confirm baseline parity
+4. Enable **Semantic retrieval** only; preview in **Hybrid** mode
+5. Enable **Personalization**; preview in **Hybrid + personalization** with a test session ID from storefront cookies
+6. Run an **experiment** with candidate AI overrides before enabling on live traffic
+7. Enable hybrid search for production; monitor zero-results inbox and dashboard CTR
 
 ### Boost a brand for seasonal campaigns
 
@@ -680,11 +847,27 @@ Issue scoped API keys for storefront apps, partner integrations, and automation.
 
 ---
 
-## 15. Demo data and sample queries
+## 16. Demo data and sample queries
 
-The demo catalog is synthetic home-improvement data (~50,000 products, 80+ brands).
+The demo environment includes **two synthetic catalogs**:
 
-### Storefront queries worth trying
+| Catalog ID | Storefront | Products | Vertical |
+|------------|------------|----------|----------|
+| `default` | BuildMart (port 3000) | ~50,000 | Home improvement |
+| `luxury-clothing` | Luxe Atelier (port 3002) | 6,000 | Luxury fashion |
+
+Seed commands:
+
+```bash
+pnpm prisma:seed          # BuildMart + demo users + home-improvement rules
+pnpm prisma:seed:luxury   # Luxury catalog only (does not wipe default catalog)
+```
+
+Merchandising rules and synonyms from both seeds are **merged** into staging/live configuration. Luxury rules reference `lux-prod-*` product IDs; BuildMart rules reference `prod-*` IDs—each storefront’s queries naturally match the relevant rule set.
+
+### BuildMart queries worth trying
+
+Open **http://localhost:3000** and try:
 
 | Query | Expected behavior |
 |-------|-------------------|
@@ -698,6 +881,48 @@ The demo catalog is synthetic home-improvement data (~50,000 products, 80+ brand
 | `smart thermostat` | Wi-Fi thermostats promoted |
 | `mulch` | Lawn & garden seasonal boost |
 | `led shop light` | Garage/workshop lighting |
+
+### Luxe Atelier queries worth trying
+
+Open **http://localhost:3002** (after `pnpm prisma:seed:luxury`) and try:
+
+| Query | Expected behavior |
+|-------|-------------------|
+| `silk dress` | Gucci signature silk dress pinned (`lux-prod-hero-001`) |
+| `handbag` | Hermès top-handle bag pinned; out-of-stock handbags buried |
+| `purse` | Synonym maps to handbag; Saint Laurent clutch pinned |
+| `cashmere coat` | Max Mara wrap coat pinned |
+| `evening gown` | Valentino couture gown pinned |
+| `luxury watch` | Cartier Swiss watch pinned |
+| `cashmere sweater` | The Row cashmere crew pinned |
+| `trench coat` | Burberry outerwear boosted for women’s coats |
+| `designer jeans` | Saint Laurent denim boosted |
+| `gold necklace` | Cartier jewelry boosted |
+
+Luxury synonym examples: `handbag` ↔ `purse`, `sneakers` ↔ `trainers`, `evening gown` ↔ `formal dress`.
+
+### Validate catalog isolation
+
+| Action | BuildMart (3000) | Luxe Atelier (3002) |
+|--------|------------------|---------------------|
+| Search `cordless drill` | Power-tool results | No home-improvement products |
+| Search `handbag` | Unrelated or empty | Luxury handbags and heroes |
+| Browse categories | Power Tools, Lawn & Garden, … | Women, Men, Accessories |
+
+The same search API serves both storefronts; isolation comes from the catalog ID on each request.
+
+### Queries that exercise semantic search
+
+When hybrid search and embeddings are enabled, these queries help validate semantic retrieval (similar meaning, not exact keywords):
+
+| Query | Why it is useful |
+|-------|------------------|
+| `tool for driving screws` | May match drills/drivers without the word “drill” |
+| `yard cleanup blower` | Semantic overlap with leaf blowers / outdoor power |
+| `waterproof outdoor receptacle` | Related to GFCI / exterior electrical products |
+| `garage overhead lighting` | Related to shop lights and fixtures |
+
+Compare **Lexical only** vs **Hybrid** preview modes in the Search workspace to see score and ranking differences.
 
 ### Browse categories worth exploring
 
@@ -721,7 +946,7 @@ On `/browse`, try sorting by **Price: low to high** or filtering **In stock** on
 
 ---
 
-## 16. Tips and troubleshooting
+## 17. Tips and troubleshooting
 
 ### Metrics show zero searches
 
@@ -730,6 +955,13 @@ Run queries on the **storefront** first. Search and click events are stored in t
 ### Browse page shows an API error
 
 Confirm the search API is running and reachable at `NEXT_PUBLIC_SEARCH_API_URL`. Browse requires the same connectivity as search (`/api/v1/browse` and `/api/v1/browse/categories`). If `SEARCH_API_KEY_REQUIRED=true`, the storefront must send a valid API key (configure at the platform layer—keys are managed under **Integrations → API keys**).
+
+### Storefront shows the wrong products (multi-catalog)
+
+- Confirm you opened the intended storefront (BuildMart **3000** vs Luxe Atelier **3002**)
+- Each storefront sets `NEXT_PUBLIC_CATALOG_ID` (`default` vs `luxury-clothing`); redeploy if you changed it
+- Restart search-api after running `pnpm prisma:seed:luxury` so the in-memory catalog reloads
+- In browser devtools **Network**, confirm storefront requests include `x-catalog-id: luxury-clothing` (or `default`) on `/search-api/api/v1/search` and browse calls
 
 ### Rule change not visible on storefront
 
@@ -798,9 +1030,35 @@ The API limits login attempts and admin mutations. Wait for the reset time shown
 
 Sign out and sign in again at `/login`. Default session length is 24 hours.
 
+### Hybrid search preview shows no semantic scores
+
+1. Open **AI Search** and confirm **Hybrid search enabled** and **Semantic retrieval enabled** are checked
+2. Check **Coverage** — if embedded products is 0, run **Reindex all products**
+3. For real semantics (not mock), set `EMBEDDINGS_PROVIDER=openai` or `openrouter` and `EMBEDDINGS_API_KEY` on search-api, then reindex
+4. Restart search-api after env changes so the vector index reloads
+
+### Embedding reindex job failed
+
+- Confirm `DATABASE_URL` is connected (`/health` on search-api)
+- Check provider credentials and model name on **AI Search**
+- Retry reindex; failed jobs are logged in **Recent embedding jobs**
+- For large catalogs, increase patience or reduce `EMBEDDING_BATCH_SIZE` if the provider rate-limits
+
+### Personalization preview has no effect
+
+- Enter a valid **session ID** in query preview (copy from storefront session cookie)
+- Run several storefront searches and product clicks in that browser session first
+- Confirm **Personalization enabled** on **AI Search** and use **Hybrid + personalization** preview mode
+
+### Semantic recovery not triggering
+
+- Use **Semantic rescue** preview mode or a query with very few lexical hits
+- Lower **Semantic fallback min hits** on **AI Search** if testing edge cases
+- Ensure **Semantic zero-results fallback** is enabled
+
 ---
 
-## 17. Production deployment (Railway)
+## 18. Production deployment (Railway)
 
 This section is for **platform operators** deploying the Retailer Search Platform from GitHub to [Railway](https://railway.app). End users of ForgeOps only need the public URLs from their team.
 
@@ -851,9 +1109,24 @@ Do **not** set `SEARCH_API_PORT` on Railway.
 | `LLM_QUERY_REWRITE_ENABLED` | Enable live query rewrite (`true` / `false`) |
 | `LLM_ZERO_RESULTS_ENABLED` | Enable live zero-results recovery |
 | `LLM_RERANK_ENABLED` | Enable live LLM reranking |
-| `HYBRID_VECTOR_ENABLED` | Enable hybrid vector retrieval stub (`true` / `false`) |
+| `HYBRID_SEARCH_ENABLED` | Enable hybrid lexical + semantic + personalization pipeline (`true` / `false`) |
+| `SEMANTIC_SEARCH_ENABLED` | Enable semantic vector retrieval (`true` / `false`) |
+| `PERSONALIZATION_ENABLED` | Enable session personalization boosts (`true` / `false`) |
+| `SEMANTIC_ZERO_RESULTS_FALLBACK_ENABLED` | Enable semantic rescue for low-hit queries |
+| `SEMANTIC_FALLBACK_MIN_HITS` | Lexical hit threshold before semantic rescue (default 3) |
+| `EMBEDDINGS_PROVIDER` | `mock`, `openai`, or `openrouter` |
+| `EMBEDDINGS_MODEL` | Embeddings model name (e.g. `text-embedding-3-small`) |
+| `EMBEDDINGS_API_KEY` | Provider API key when not using `mock` |
+| `EMBEDDINGS_BASE_URL` | Optional OpenAI-compatible base URL override |
+| `EMBEDDING_DIMENSIONS` | Vector dimensions (default 64 for mock) |
+| `EMBEDDING_BATCH_SIZE` | Products per embedding batch during reindex (default 32) |
+| `PRODUCT_EMBEDDINGS_ENABLED` | Persist product embeddings (`true` / `false`) |
+| `LEXICAL_WEIGHT` / `SEMANTIC_WEIGHT` / `PERSONALIZATION_WEIGHT` | Default ranking weights (e.g. 0.55 / 0.30 / 0.15) |
+| `PERSONALIZATION_LOOKBACK_DAYS` | Session profile window (default 30) |
+| `PERSONALIZATION_DECAY_HALF_LIFE_DAYS` | Recency decay for affinities (default 14) |
+| `HYBRID_VECTOR_ENABLED` | Legacy alias; still enables hybrid defaults if set |
 
-**Verify:** `GET /health` returns `"ok": true`, `"database.connected": true`, and `"productCount" > 0` after migrate/seed.
+**Verify:** `GET /health` returns `"ok": true`, `"database.connected": true`, and `"productCount" > 0` after migrate/seed. After enabling hybrid search, run an embedding reindex from ForgeOps **AI Search** before expecting semantic quality in production.
 
 ### ForgeOps admin service
 
@@ -893,7 +1166,20 @@ The admin app proxies API calls through `/search-api` on the same origin. `SEARC
 
 Redeploy storefront whenever `NEXT_PUBLIC_SEARCH_API_URL` changes.
 
-**Verify:** Open the storefront URL and run a sample query (e.g. `cordless drill`).
+**Verify:** Open the BuildMart storefront URL and run `cordless drill`. Optionally deploy **Luxe Atelier** as a second service with `NEXT_PUBLIC_CATALOG_ID=luxury-clothing` and verify `silk dress` on port 3002 locally.
+
+### Optional: Luxe Atelier storefront service
+
+For a second production storefront (luxury catalog), add another Railway service:
+
+| Setting | Value |
+|---------|--------|
+| Config file | `apps/storefront-luxury/railway.toml` |
+| Start command | `pnpm --filter @retailer-search/storefront-luxury start` |
+| `NEXT_PUBLIC_CATALOG_ID` | `luxury-clothing` |
+| `NEXT_PUBLIC_SEARCH_API_URL` | Same search-api domain as BuildMart |
+
+Run `pnpm prisma:seed:luxury` against the shared database before expecting luxury products.
 
 ### Database seed (demo data)
 
@@ -907,6 +1193,16 @@ pnpm exec prisma db seed
 
 This loads ~50,000 demo products and the demo user accounts listed in [Demo environment](#demo-environment-pre-seeded). Seeding marks setup as complete so `/setup` is skipped.
 
+Add the luxury catalog (additive):
+
+```bash
+pnpm prisma:seed:luxury
+```
+
+This inserts 6,000 luxury products under catalog `luxury-clothing` and merges luxury merchandising rules and synonyms into the shared configuration.
+
+`prisma migrate deploy` also applies AI hybrid search schema changes (`ProductEmbedding`, `EmbeddingJob`, experiment AI config fields). Run an embedding reindex from **AI Search** after seeding if you plan to test semantic retrieval.
+
 ### Operator checklist after deploy
 
 - [ ] Search API `/health` shows database connected and products loaded
@@ -915,7 +1211,67 @@ This loads ~50,000 demo products and the demo user accounts listed in [Demo envi
 - [ ] Storefront `NEXT_PUBLIC_SEARCH_API_URL` matches the search-api public URL
 - [ ] Generate public domains for all three services in Railway **Networking**
 - [ ] (Optional) Configure LLM provider env vars if using query rewrite, zero-results recovery, or rerank in production
+- [ ] (Optional) Run `pnpm prisma:seed:luxury` and verify Luxe Atelier storefront on port 3002
+- [ ] (Optional) Configure AI / hybrid search env vars and run embedding reindex from **AI Search** before enabling semantic retrieval
 - [ ] (Optional) Create API keys under ForgeOps **Integrations → API keys** and set `SEARCH_API_KEY_REQUIRED=true` if partners must authenticate
+
+---
+
+## 19. Multi-catalog platform
+
+**Path:** `/admin/platform/catalogs` *(Admin)*
+
+The platform supports **multiple product catalogs per tenant**. Each catalog has its own product rows in the database; search, browse, and autocomplete filter by catalog ID. Merchandising rules and synonyms are shared at the environment level (staging/live), but demo rules are authored with catalog-specific product IDs so each vertical behaves correctly.
+
+### Catalog registry
+
+On **Platform → Catalogs** you can:
+
+- View registered catalogs with product counts
+- Create new catalogs (name, slug, tenant ID, default flag)
+- Activate or deactivate catalogs
+
+After seeding, you should see at least:
+
+| Catalog ID | Name | Products (approx.) |
+|------------|------|---------------------|
+| `default` | Default catalog | ~50,000 |
+| `luxury-clothing` | Luxe Atelier Collection | 6,000 |
+
+### Catalog switcher (admin header)
+
+When multiple catalogs exist, a **catalog switcher** appears in the ForgeOps header. It scopes admin previews and vocabulary autocomplete to the selected catalog context where applicable.
+
+### How storefronts bind to catalogs
+
+Each storefront app sets a catalog ID via environment variable:
+
+| Variable | BuildMart | Luxe Atelier |
+|----------|-----------|--------------|
+| `NEXT_PUBLIC_CATALOG_ID` | `default` (or unset) | `luxury-clothing` |
+
+The storefront proxy and server components send `X-Catalog-Id` on all search API calls. Integrators can also pass `catalogId` as a query parameter on `/api/v1/search` (see [DEVELOPER_API_GUIDE.md](./DEVELOPER_API_GUIDE.md)).
+
+### Merchandising rules across catalogs
+
+Rules are **global per environment** (staging/live), not stored per catalog. In the demo seed:
+
+- BuildMart rules target `prod-*` heroes and home-improvement synonyms
+- Luxury rules (from `pnpm prisma:seed:luxury`) target `lux-prod-*` heroes and fashion synonyms
+
+Both sets coexist in the same rule list. A query like `handbag` matches luxury pin rules; `cordless drill` matches BuildMart rules. When authoring production rules, use product IDs from the catalog your storefront serves.
+
+### Embedding reindex with multiple catalogs
+
+**AI Search → Reindex** processes products across the database. After adding a second catalog, run reindex so semantic search covers luxury SKUs as well as the default catalog (required before hybrid preview works well on Luxe Atelier queries).
+
+### Operator workflow: add a second retailer
+
+1. **Platform → Catalogs** → create catalog (or run a dedicated seed script)
+2. Deploy a storefront (or mobile app) with `NEXT_PUBLIC_CATALOG_ID` set to the new catalog ID
+3. Issue an API key scoped for search/browse if `SEARCH_API_KEY_REQUIRED=true`
+4. Author merchandising rules referencing that catalog’s product IDs
+5. Promote staging → live through the normal approval workflow
 
 ---
 
@@ -925,7 +1281,8 @@ This loads ~50,000 demo products and the demo user accounts listed in [Demo envi
 |-------|---------|
 | `/admin` | Dashboard |
 | `/admin/products` | Catalog search preview and insights |
-| `/admin/search` | Analytics, suggestions, query preview, zero-results panel |
+| `/admin/search` | Analytics, suggestions, query preview (incl. AI modes), zero-results panel |
+| `/admin/ai-search` | Hybrid ranking settings, embedding coverage, reindex jobs |
 | `/admin/search/zero-results` | Zero-results inbox and rule draft workflow |
 | `/admin/merchandising` | Rules, snapshots, environments, promotion |
 | `/admin/merchandising/promotions` | Promotions workspace and scheduled releases |
@@ -939,19 +1296,27 @@ This loads ~50,000 demo products and the demo user accounts listed in [Demo envi
 | `/admin/integrations` | Webhooks |
 | `/admin/integrations/api-keys` | API key management |
 | `/admin/settings` | Environment and policy defaults |
+| `/admin/platform/catalogs` | Multi-catalog registry |
 | `/login` | Sign in |
 | `/setup` | First-run instance setup |
 | `/health` | Admin service health (production ops) |
 
-**Storefront routes:**
+**Storefront routes (BuildMart — port 3000):**
 
 | Route | Purpose |
 |-------|---------|
-| `/` | Shopper search |
+| `/` | Shopper search (catalog: `default`) |
 | `/browse` | Category browse, filters, sort, pagination |
 
-**Search API (backend):** `/health` — JSON status and catalog counts. Public routes include `/api/v1/search`, `/api/v1/browse`, `/api/v1/browse/categories`, and event ingestion under `/api/v1/events/*`.
+**Storefront routes (Luxe Atelier — port 3002):**
+
+| Route | Purpose |
+|-------|---------|
+| `/` | Luxury shopper search (catalog: `luxury-clothing`) |
+| `/browse` | Women / Men / Accessories browse |
+
+**Search API (backend):** `/health` — JSON status and catalog counts. Public routes include `/api/v1/search`, `/api/v1/browse`, `/api/v1/browse/categories`, and event ingestion under `/api/v1/events/*`. Pass `X-Catalog-Id` or `catalogId` to scope search to a catalog.
 
 ---
 
-*ForgeOps — operations, merchandising, and governance for home-improvement commerce catalogs.*
+*ForgeOps — operations, merchandising, and governance for multi-catalog retail search.*

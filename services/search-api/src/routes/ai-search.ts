@@ -21,6 +21,8 @@ import {
 } from "../ai-search/embedding-job-service.js";
 import { executeHybridRankingPipeline } from "../ai-search/hybrid-ranking-pipeline.js";
 import { hydrateVectorIndex } from "../ai-search/vector-index.js";
+import { fetchSearchCandidatesFromDatabase, countAllProductsInDatabase } from "../catalog/catalog-db-queries.js";
+import { isLargeCatalogMode } from "../catalog-store.js";
 import {
   getPermissionDeniedMessage,
   hasPermissionForUser,
@@ -142,7 +144,9 @@ export function registerAiSearchRoutes(app: Express, deps: AiSearchRouteDeps): v
     if (!deps.assertValidBody(parsed, res, req, "Invalid embedding job payload")) {
       return;
     }
-    const products = await deps.getProducts();
+    const products = isLargeCatalogMode()
+      ? []
+      : await deps.getProducts();
     const job = await triggerEmbeddingJob(products, parsed.data);
     res.status(202).json(job);
   });
@@ -153,9 +157,13 @@ export function registerAiSearchRoutes(app: Express, deps: AiSearchRouteDeps): v
       return;
     }
     await hydrateVectorIndex();
-    const products = await deps.getProducts();
+    const products = isLargeCatalogMode()
+      ? []
+      : await deps.getProducts();
     const body: EmbeddingCoverageDto = await getEmbeddingCoverageSummary(
-      products.length,
+      isLargeCatalogMode()
+        ? await countAllProductsInDatabase()
+        : products.length,
     );
     res.json(body);
   });
@@ -179,7 +187,12 @@ export function registerAiSearchRoutes(app: Express, deps: AiSearchRouteDeps): v
       return;
     }
 
-    const products = await deps.getProducts();
+    const products = isLargeCatalogMode()
+      ? await fetchSearchCandidatesFromDatabase({
+          query: parsed.data.query,
+          limit: Math.max(parsed.data.pageSize * 10, 100),
+        })
+      : await deps.getProducts();
     const baseConfig = await getAiRankingConfig();
     const previewConfig = resolvePreviewModeConfig(baseConfig, parsed.data.previewMode);
     const result = await executeHybridRankingPipeline(

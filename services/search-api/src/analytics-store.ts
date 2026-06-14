@@ -9,6 +9,7 @@ import type {
 } from "@retailer-search/shared-types";
 import { prisma } from "./db.js";
 import { recordAnalyticsPersisted } from "./observability/search-metrics.js";
+import { isQueryCoveredBySynonym } from "./synonyms.js";
 
 const searchEvents: SearchEventDto[] = [];
 const clickEvents: SearchClickEventDto[] = [];
@@ -415,17 +416,21 @@ export async function getZeroResultInsights(
         take: limit,
       });
 
+      const queries = grouped
+          .map((row: {
+            normalizedQuery: string;
+            _count: { _all: number };
+            _max: { createdAt: Date | null };
+          }) => ({
+            query: row.normalizedQuery,
+            count: row._count._all,
+            lastSeenAt: (row._max.createdAt ?? new Date()).toISOString(),
+          }))
+          .filter((row) => !isQueryCoveredBySynonym(row.query));
+
       return {
-        total: grouped.length,
-        queries: grouped.map((row: {
-          normalizedQuery: string;
-          _count: { _all: number };
-          _max: { createdAt: Date | null };
-        }) => ({
-          query: row.normalizedQuery,
-          count: row._count._all,
-          lastSeenAt: (row._max.createdAt ?? new Date()).toISOString(),
-        })),
+        total: queries.length,
+        queries,
       };
     } catch {
       // Fall back to in-memory aggregation.
@@ -440,6 +445,7 @@ export async function getZeroResultInsights(
 
   const queries = Array.from(counts.entries())
     .sort((a, b) => b[1] - a[1])
+    .filter(([query]) => !isQueryCoveredBySynonym(query))
     .slice(0, limit)
     .map(([query, count]) => ({
       query,

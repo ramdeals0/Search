@@ -11,6 +11,7 @@
     "prisma:generate": "pnpm --filter @retailer-search/search-api exec prisma generate",
     "prisma:migrate": "pnpm --filter @retailer-search/search-api exec prisma migrate dev",
     "prisma:seed": "pnpm --filter @retailer-search/search-api exec prisma db seed",
+    "prisma:seed:luxury": "pnpm --filter @retailer-search/search-api run seed:luxury",
     "dev:db": "pnpm prisma:generate && pnpm prisma:migrate && pnpm prisma:seed"
   },
   "devDependencies": {

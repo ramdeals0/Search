@@ -1,6 +1,6 @@
 /** Backward-compatible facade for legacy imports. */
 import type { ProductDocument } from "@retailer-search/shared-types";
-import { getProductCatalog, ensureProductCatalogLoaded } from "./catalog-store.js";
+import { getProductById } from "./catalog-store.js";
 import { getAiRankingConfig } from "./ai-search/ai-ranking-config-store.js";
 import {
   hydratePersonalizationProfiles,
@@ -15,8 +15,7 @@ export async function recordSearchAffinity(
   query: string,
   productId: string,
 ): Promise<void> {
-  await ensureProductCatalogLoaded();
-  const product = getProductCatalog().find((entry) => entry.id === productId);
+  const product = await getProductById(productId);
   if (!product) {
     return;
   }
@@ -32,9 +31,11 @@ export async function getPersonalizationBoosts(
   sessionId: string,
   products?: ProductDocument[],
 ): Promise<Map<string, number>> {
-  const catalog = products ?? getProductCatalog();
   const config = await getAiRankingConfig();
-  return getPersonalizationBoostsForProducts(sessionId, catalog, config);
+  if (!products) {
+    return new Map();
+  }
+  return getPersonalizationBoostsForProducts(sessionId, products, config);
 }
 
 export async function hydratePersonalizationStore(): Promise<void> {
@@ -47,8 +48,7 @@ export async function recordCommerceAffinity(
   productId: string,
   query?: string,
 ): Promise<void> {
-  await ensureProductCatalogLoaded();
-  const product = getProductCatalog().find((entry) => entry.id === productId);
+  const product = await getProductById(productId);
   if (!product) {
     return;
   }

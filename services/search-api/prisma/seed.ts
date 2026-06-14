@@ -14,12 +14,8 @@ import {
   DEMO_ZERO_RESULT_FALLBACKS,
   getDemoRuleCounts,
 } from "./seed-data/search-rules.js";
-import {
-  generateProductCatalog,
-  summarizeCatalog,
-  TARGET_PRODUCT_COUNT,
-} from "./seed-utils/product-generator.js";
-import { seedCatalogTables } from "./seed-utils/catalog-db.js";
+import { generateProductCatalog, generateSimpleProductBatch, summarizeCatalog, TARGET_PRODUCT_COUNT } from "./seed-utils/product-generator.js";
+import { seedCatalogTables, seedLargeCatalogTables } from "./seed-utils/catalog-db.js";
 import { buildWorkflowSeedBundle } from "./seed-utils/workflow-generator.js";
 import { DEMO_RNG_SEED } from "./seed-utils/random.js";
 
@@ -167,11 +163,52 @@ async function markDemoBootstrapComplete(): Promise<void> {
   });
 }
 
+const STREAMING_SEED_THRESHOLD = 100_000;
+
 async function main(): Promise<void> {
   console.log(`Seeding synthetic home improvement demo data (seed=${DEMO_RNG_SEED})...`);
 
   await clearDemoData();
   await seedUsers();
+
+  if (TARGET_PRODUCT_COUNT > STREAMING_SEED_THRESHOLD) {
+    console.log(
+      `Large catalog seed (${TARGET_PRODUCT_COUNT.toLocaleString()} products) using streaming DB batches...`,
+    );
+    const catalogCounts = await seedLargeCatalogTables(
+      prisma,
+      TARGET_PRODUCT_COUNT,
+      DEMO_RNG_SEED,
+    );
+    const sampleProducts = generateSimpleProductBatch(1, Math.min(1000, TARGET_PRODUCT_COUNT), DEMO_RNG_SEED);
+    const catalog = {
+      products: sampleProducts,
+      heroCount: 0,
+      variantProductCount: 0,
+      simpleProductCount: TARGET_PRODUCT_COUNT,
+      variantGroupCount: 0,
+    };
+    const workflow = buildWorkflowSeedBundle(sampleProducts, DEMO_RNG_SEED);
+    await seedSystemConfig(catalog, workflow);
+    await seedWorkflow(workflow);
+    await markDemoBootstrapComplete();
+
+    console.log("Large demo seed completed.");
+    console.log(
+      JSON.stringify(
+        {
+          users: DEMO_USERS.length,
+          products: catalogCounts.products,
+          brands: catalogCounts.brands,
+          categories: catalogCounts.categories,
+          catalogScaleMode: "database",
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
 
   const catalog = generateProductCatalog(DEMO_RNG_SEED);
   if (catalog.products.length !== TARGET_PRODUCT_COUNT) {

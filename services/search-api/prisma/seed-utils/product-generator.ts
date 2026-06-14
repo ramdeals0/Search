@@ -26,7 +26,21 @@ import {
   type SeededRng,
 } from "./random.js";
 
-export const TARGET_PRODUCT_COUNT = 50_000;
+const MAX_CATALOG_PRODUCTS = 80_000_000;
+
+function readTargetProductCount(): number {
+  const raw = process.env.TARGET_PRODUCT_COUNT ?? process.env.SEED_PRODUCT_COUNT;
+  if (raw === undefined || raw.trim() === "") {
+    return 50_000;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 50_000;
+  }
+  return Math.min(parsed, MAX_CATALOG_PRODUCTS);
+}
+
+export const TARGET_PRODUCT_COUNT = readTargetProductCount();
 
 export interface GeneratedCatalog {
   products: ProductDocument[];
@@ -410,6 +424,32 @@ export function generateProductCatalog(
     simpleProductCount: simpleResult.products.length,
     variantGroupCount: VARIANT_FAMILY_TEMPLATES.length,
   };
+}
+
+export function generateSimpleProductBatch(
+  startIndex: number,
+  batchSize: number,
+  seed: number = DEMO_RNG_SEED,
+): ProductDocument[] {
+  const rng = createSeededRng(seed + startIndex);
+  const leaves = HOME_IMPROVEMENT_TAXONOMY;
+  const products: ProductDocument[] = [];
+
+  for (let offset = 0; offset < batchSize; offset += 1) {
+    const productIndex = startIndex + offset;
+    const leaf = leaves[productIndex % leaves.length]!;
+    const brand = pickBrandForLeaf(leaf.id, (items) => rng.pick(items));
+    products.push(
+      mapSimpleProduct({
+        leaf,
+        brand,
+        productIndex,
+        rng,
+      }),
+    );
+  }
+
+  return products;
 }
 
 export function summarizeCatalog(catalog: GeneratedCatalog): Record<string, number> {

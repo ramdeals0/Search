@@ -96,7 +96,11 @@ export async function executeHybridRankingPipeline(
       model: config.embeddingsModel,
       dimensions: config.embeddingDimensions,
     });
-    const vectorProvider = new StoredVectorSearchProvider(provider, products);
+    const vectorProvider = new StoredVectorSearchProvider(
+      provider,
+      products,
+      products.map((product) => product.id),
+    );
     const vectorLimit = Math.max(request.pageSize * 5, 50);
     const vectorResults = await vectorProvider.search(request.query, vectorLimit);
     semanticHits = vectorResults.length;

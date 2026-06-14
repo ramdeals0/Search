@@ -247,12 +247,22 @@ import {
 } from "./merchandising-rules.js";
 import { replaceAllSynonyms } from "./synonyms.js";
 import {
+  autocompleteFromDatabase,
+  fetchSearchCandidatesFromDatabase,
+  browseProductsFromDatabase,
+  listBrowseCategoriesFromDatabase,
+} from "./catalog/catalog-db-queries.js";
+import { searchLargeCatalog } from "./catalog/large-catalog-search.js";
+import {
   getProductCatalog,
   getProductCatalogCount,
   getProductCatalogSource,
+  getCatalogScaleMode,
+  getMaxCatalogProducts,
   ensureProductCatalogLoaded,
   hydrateProductCatalog,
   filterProductCatalogByCatalogId,
+  isLargeCatalogMode,
 } from "./catalog-store.js";
 import {
   ensureDefaultCatalog,
@@ -715,6 +725,24 @@ const experimentLlmOverridesSchema = z
   })
   .optional();
 
+const experimentAiConfigSchema = z
+  .object({
+    semanticRetrievalEnabled: z.boolean().optional(),
+    personalizationEnabled: z.boolean().optional(),
+    semanticZeroResultsFallbackEnabled: z.boolean().optional(),
+    embeddingsModel: z.string().optional(),
+    semanticFallbackMinHits: z.number().int().min(0).max(100).optional(),
+    personalizationLookbackDays: z.number().int().min(1).max(365).optional(),
+    weights: z
+      .object({
+        lexicalWeight: z.number().min(0).max(1).optional(),
+        semanticWeight: z.number().min(0).max(1).optional(),
+        personalizationWeight: z.number().min(0).max(1).optional(),
+      })
+      .optional(),
+  })
+  .optional();
+
 const createExperimentSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -722,6 +750,7 @@ const createExperimentSchema = z.object({
   candidateSnapshotId: z.string().min(1),
   querySetId: z.string().min(1),
   candidateLlmOverrides: experimentLlmOverridesSchema,
+  candidateAiConfig: experimentAiConfigSchema,
 });
 
 const saveExperimentDecisionSchema = z.object({
@@ -1379,6 +1408,8 @@ app.get("/health", async (_req, res) => {
       userCount: databaseConnected ? userCount() : 0,
       productCount: getProductCatalogCount(),
       catalogSource: getProductCatalogSource(),
+      catalogScaleMode: getCatalogScaleMode(),
+      maxCatalogProducts: getMaxCatalogProducts(),
     },
   };
   res.json(body);
@@ -1551,8 +1582,16 @@ app.get("/api/v1/search", requireApiKeyScope("search:read"), enforceApiKeyRateLi
     filters: buildFilters(parsed.data),
   };
 
-  const allProducts = await getSearchProductCatalog();
-  const products = filterProductCatalogByCatalogId(allProducts, catalogId);
+  await ensureProductCatalogLoaded();
+  const largeCatalog = isLargeCatalogMode();
+  const allProducts = largeCatalog ? [] : getProductCatalog();
+  const products = largeCatalog
+    ? await fetchSearchCandidatesFromDatabase({
+        query: request.query,
+        catalogId,
+        filters: request.filters,
+      })
+    : filterProductCatalogByCatalogId(allProducts, catalogId);
   const sessionId = req.header("x-session-id")?.trim();
   const pluginContext = {
     tenantId: analyticsContext.tenantId,
@@ -1630,14 +1669,25 @@ app.get("/api/v1/search", requireApiKeyScope("search:read"), enforceApiKeyRateLi
   const experimentAi = await resolveExperimentAiConfigForSearch(sessionId ?? "");
   const rankingConfig = mergeExperimentArmAiConfig(aiBaseConfig, experimentAi.aiConfig);
 
-  const result = await executeHybridRankingPipeline(products, request, {
-    rules,
-    debug,
-    ...pipeline,
-    config: rankingConfig,
-    sessionId,
-    experimentArm: experimentResolution.arm ?? experimentAi.arm,
-  });
+  const result = largeCatalog
+    ? await searchLargeCatalog(request, {
+        catalogId,
+        rules,
+        debug,
+        ...pipeline,
+        config: rankingConfig,
+        sessionId,
+        experimentArm: experimentResolution.arm ?? experimentAi.arm,
+        useHybrid: true,
+      })
+    : await executeHybridRankingPipeline(products, request, {
+        rules,
+        debug,
+        ...pipeline,
+        config: rankingConfig,
+        sessionId,
+        experimentArm: experimentResolution.arm ?? experimentAi.arm,
+      });
   await finalizeSearchResponse(req, res, request, result, started, {
     sessionId,
     experimentArm: experimentResolution.arm ?? experimentAi.arm,
@@ -1653,7 +1703,23 @@ app.get("/api/v1/autocomplete", requireApiKeyScope("search:read"), enforceApiKey
     return;
   }
 
-  const products = await getSearchProductCatalog();
+  await ensureProductCatalogLoaded();
+  const autocompleteCatalogId = await resolveCatalogId(
+    req.header("x-catalog-id")?.trim(),
+  );
+  if (isLargeCatalogMode()) {
+    const suggestions = await autocompleteFromDatabase(parsed.data.query);
+    res.json({
+      query: parsed.data.query,
+      normalizedQuery: parsed.data.query.trim().toLowerCase(),
+      suggestions,
+    });
+    recordAutocompleteRequest(Date.now() - started);
+    return;
+  }
+
+  const allProducts = getProductCatalog();
+  const products = filterProductCatalogByCatalogId(allProducts, autocompleteCatalogId);
   res.json(
     getAutocompleteSuggestions(products, parsed.data.query, getSearchPipelineOptions()),
   );
@@ -1667,14 +1733,33 @@ app.get("/api/v1/browse", requireApiKeyScope("browse:read"), enforceApiKeyRateLi
     return;
   }
 
-  const products = await getSearchProductCatalog();
+  await ensureProductCatalogLoaded();
+  const catalogId = await resolveCatalogId(req.header("x-catalog-id")?.trim());
+  if (isLargeCatalogMode()) {
+    const body = await browseProductsFromDatabase(parsed.data, catalogId);
+    res.json(body);
+    recordBrowseRequest(Date.now() - started);
+    return;
+  }
+
+  const allProducts = getProductCatalog();
+  const products = filterProductCatalogByCatalogId(allProducts, catalogId);
   const body: BrowseResponseDto = browseProducts(products, parsed.data);
   res.json(body);
   recordBrowseRequest(Date.now() - started);
 });
 
-app.get("/api/v1/browse/categories", requireApiKeyScope("browse:read"), async (_req, res) => {
-  const products = await getSearchProductCatalog();
+app.get("/api/v1/browse/categories", requireApiKeyScope("browse:read"), async (req, res) => {
+  await ensureProductCatalogLoaded();
+  const catalogId = await resolveCatalogId(req.header("x-catalog-id")?.trim());
+  if (isLargeCatalogMode()) {
+    const categories = await listBrowseCategoriesFromDatabase(catalogId);
+    res.json({ categories });
+    return;
+  }
+
+  const allProducts = getProductCatalog();
+  const products = filterProductCatalogByCatalogId(allProducts, catalogId);
   res.json(browseCategoriesResponse(products));
 });
 
@@ -4605,7 +4690,7 @@ async function loadProductCatalogAtStartup(): Promise<number> {
     );
   } else {
     console.log(
-      `Loaded ${productCount} products (${getProductCatalogSource()}).`,
+      `Catalog ready: ${productCount.toLocaleString()} products (${getProductCatalogSource()}, mode=${getCatalogScaleMode()}).`,
     );
   }
   return productCount;
@@ -4613,6 +4698,9 @@ async function loadProductCatalogAtStartup(): Promise<number> {
 
 async function getSearchProductCatalog() {
   await ensureProductCatalogLoaded();
+  if (isLargeCatalogMode()) {
+    return [];
+  }
   return getProductCatalog();
 }
 

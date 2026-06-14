@@ -12,7 +12,8 @@
     "start:prod": "prisma migrate deploy && node dist/index.js",
     "typecheck": "prisma generate && tsc -b --noEmit",
     "lint": "echo \"lint pending\"",
-    "test": "tsx --test src/ai-search/ai-search.test.ts",
+    "test": "tsx --test src/ai-search/ai-search.test.ts src/catalog/catalog-scale.test.ts src/suggestion-engine.test.ts",
+    "seed:luxury": "tsx prisma/seed-luxury.ts",
     "db:test-aiven": "node scripts/test-aiven-postgres.mjs"
   },
   "dependencies": {
