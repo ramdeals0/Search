@@ -15,6 +15,8 @@
     "incremental": true,
     "plugins": [{ "name": "next" }],
     "paths": {
+      "@retailer-search/config": ["../../packages/config/src/index.ts"],
+      "@retailer-search/config/*": ["../../packages/config/src/*"],
       "@retailer-search/*": ["../../packages/*/src"]
     }
   },
