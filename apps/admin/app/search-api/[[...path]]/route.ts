@@ -33,6 +33,11 @@ async function proxyRequest(
     headers.set("content-type", contentType);
   }
 
+  const csrfToken = request.headers.get("x-csrf-token");
+  if (csrfToken) {
+    headers.set("x-csrf-token", csrfToken);
+  }
+
   const authorization = request.headers.get("authorization");
   if (authorization) {
     headers.set("authorization", authorization);

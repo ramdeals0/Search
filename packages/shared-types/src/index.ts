@@ -303,7 +303,17 @@ export interface ConfigureBootstrapSecurityRequestDto {
   loginAttemptLimit: number;
   lockoutWindowMinutes: number;
   sessionTtlHours: number;
+  sessionInactivityMinutes?: number;
   auditLoggingEnabled: boolean;
+}
+
+export interface SessionStatusDto {
+  absoluteExpiresAt: ISODateString;
+  inactivityExpiresAt: ISODateString;
+  expiresAt: ISODateString;
+  inactivityTimeoutMinutes: number;
+  absoluteTimeoutHours: number;
+  warningBeforeExpiryMinutes: number;
 }
 
 export interface ConfigureBootstrapPlatformRequestDto {
@@ -1295,6 +1305,7 @@ export interface UserDto {
 
 export interface SessionDto {
   token: string;
+  csrfToken: string;
   user: UserDto;
   createdAt: ISODateString;
   expiresAt: ISODateString;
@@ -1314,6 +1325,8 @@ export interface LoginResponseDto {
 export interface CurrentUserResponseDto {
   authenticated: boolean;
   user?: UserDto;
+  csrfToken?: string;
+  session?: SessionStatusDto;
   standingRole?: UserRole;
   effectiveRole?: UserRole;
   activePrivilege?: ActivePrivilegeDto;

@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { BootstrapStateDto, LoginResponseDto } from "@retailer-search/shared-types";
+import type { BootstrapStateDto, CurrentUserResponseDto, LoginResponseDto } from "@retailer-search/shared-types";
 import {
   AUTH_TOKEN_STORAGE_KEY,
   clearAuthSession,
   persistAuthSession,
+  persistCsrfToken,
 } from "../auth-session";
 import { ForgeOpsLogo } from "../admin/admin-page-header";
 import { getSearchApiUrl } from "../lib/search-api-url";
@@ -25,7 +26,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     const next = new URLSearchParams(window.location.search).get("next");
+    const reason = new URLSearchParams(window.location.search).get("reason");
     setNextPath(next);
+    if (reason === "session_expired") {
+      setError("Your session expired due to inactivity or the maximum session lifetime. Sign in again.");
+    }
 
     void (async () => {
       const storedToken = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)?.trim();
@@ -37,9 +42,9 @@ export default function LoginPage() {
           });
 
           if (response.ok) {
-            const body = (await response.json()) as { authenticated?: boolean };
+            const body = (await response.json()) as CurrentUserResponseDto;
             if (body.authenticated) {
-              persistAuthSession(storedToken);
+              persistAuthSession(storedToken, { csrfToken: body.csrfToken });
               router.replace(next?.startsWith("/admin") ? next : "/admin");
               return;
             }
@@ -93,11 +98,19 @@ export default function LoginPage() {
         return;
       }
 
+      if (response.status === 429) {
+        setError(
+          body.message ??
+            "Too many failed login attempts. This account is temporarily locked.",
+        );
+        return;
+      }
+
       if (!response.ok || !body.success || !body.session?.token) {
         throw new Error(body.message ?? "Login failed");
       }
 
-      persistAuthSession(body.session.token);
+      persistAuthSession(body.session.token, { csrfToken: body.session.csrfToken });
       router.push(nextPath?.startsWith("/admin") ? nextPath : "/admin");
       router.refresh();
     } catch (signInError) {

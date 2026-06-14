@@ -7,6 +7,7 @@ import type {
   JitPolicyDto,
   UserDto,
 } from "@retailer-search/shared-types";
+import { safeJustificationSchema } from "@retailer-search/config/safe-text";
 import { z } from "zod";
 import {
   completeAccessReviewRun,
@@ -31,6 +32,16 @@ import {
 } from "../access-governance/jit-access-store.js";
 import { recordAuditLog } from "../audit-trail-store.js";
 import { listUsers } from "../auth-store.js";
+import {
+  canViewAccessRequest,
+  canViewAccessReviewRun,
+  canViewJitElevationRequest,
+  filterAccessRequestsForViewer,
+  filterAccessReviewRunsForViewer,
+  filterActivePrivilegesForViewer,
+  filterJitElevationRequestsForViewer,
+  sanitizeAccessReviewRunForViewer,
+} from "../data-tenancy.js";
 
 const userRoleSchema = z.enum([
   "merchandiser",
@@ -42,7 +53,7 @@ const userRoleSchema = z.enum([
 
 const createAccessRequestSchema = z.object({
   requestedRole: userRoleSchema,
-  justification: z.string().min(8),
+  justification: safeJustificationSchema,
 });
 
 const resolveAccessRequestSchema = z.object({
@@ -62,7 +73,7 @@ const resolveAccessReviewItemSchema = z.object({
 
 const createJitElevationRequestSchema = z.object({
   requestedRole: userRoleSchema,
-  justification: z.string().min(8),
+  justification: safeJustificationSchema,
   requestedDurationMinutes: z.coerce.number().int().positive(),
 });
 
@@ -119,12 +130,7 @@ app.get("/api/v1/admin/access-requests", (req, res) => {
   }
 
   const allRequests = listAccessRequests();
-  const requests =
-    user.role === "admin"
-      ? allRequests.requests
-      : allRequests.requests.filter(
-          (request) => request.requesterUserId === user.id,
-        );
+  const requests = filterAccessRequestsForViewer(allRequests.requests, user);
 
   const body: AccessRequestListResponseDto = {
     total: requests.length,
@@ -188,7 +194,7 @@ app.post("/api/v1/admin/access-requests/:id/resolve", (req, res) => {
   }
 
   const existing = getAccessRequestById(req.params.id);
-  if (!existing) {
+  if (!existing || !canViewAccessRequest(existing, user)) {
     res.status(404).json({ error: "Access request not found" });
     return;
   }
@@ -255,12 +261,17 @@ app.post("/api/v1/admin/access-requests/:id/resolve", (req, res) => {
 });
 
 app.get("/api/v1/admin/access-reviews", (req, res) => {
-  const user = requireAdminUser(req, res);
+  const user = requireAuthenticatedUser(req, res);
   if (!user) {
     return;
   }
 
-  const body: AccessReviewListResponseDto = listAccessReviewRuns();
+  const allRuns = listAccessReviewRuns();
+  const runs = filterAccessReviewRunsForViewer(allRuns.runs, user);
+  const body: AccessReviewListResponseDto = {
+    total: runs.length,
+    runs,
+  };
   res.json(body);
 });
 
@@ -301,18 +312,24 @@ app.post("/api/v1/admin/access-reviews", (req, res) => {
 });
 
 app.get("/api/v1/admin/access-reviews/:id", (req, res) => {
-  const user = requireAdminUser(req, res);
+  const user = requireAuthenticatedUser(req, res);
   if (!user) {
     return;
   }
 
   const run = getAccessReviewRunById(req.params.id);
-  if (!run) {
+  if (!run || !canViewAccessReviewRun(run, user)) {
     res.status(404).json({ error: "Access review run not found" });
     return;
   }
 
-  res.json(run);
+  const scopedRun = sanitizeAccessReviewRunForViewer(run, user);
+  if (!scopedRun) {
+    res.status(404).json({ error: "Access review run not found" });
+    return;
+  }
+
+  res.json(scopedRun);
 });
 
 app.post("/api/v1/admin/access-reviews/:id/items/resolve", (req, res) => {
@@ -503,12 +520,7 @@ app.get("/api/v1/admin/jit-requests", (req, res) => {
   }
 
   const allRequests = listJitElevationRequests();
-  const requests =
-    user.role === "admin"
-      ? allRequests.requests
-      : allRequests.requests.filter(
-          (request) => request.requesterUserId === user.id,
-        );
+  const requests = filterJitElevationRequestsForViewer(allRequests.requests, user);
 
   const body: JitElevationRequestListResponseDto = {
     total: requests.length,
@@ -559,34 +571,6 @@ app.post("/api/v1/admin/jit-requests", (req, res) => {
     },
   });
 
-  if (result.request.status === "active") {
-    recordAuditLog({
-      actionType: "resolve_jit_elevation_request",
-      entityType: "jit_elevation_request",
-      entityId: result.request.id,
-      actorId: user.id,
-      actorLabel: user.email,
-      outcome: "success",
-      summary: `JIT elevation ${result.request.id} auto-activated for ${user.email}`,
-      metadata: {
-        requestedRole: result.request.requestedRole,
-        expiresAt: result.request.expiresAt,
-      },
-    });
-    void dispatchWebhookEvent(
-      "jit.request.approved",
-      {
-        requestId: result.request.id,
-        requesterEmail: result.request.requesterEmail,
-        requestedRole: result.request.requestedRole,
-        expiresAt: result.request.expiresAt,
-        autoActivated: true,
-      },
-      user.id,
-      user.email,
-    );
-  }
-
   res.status(201).json(result.request);
 });
 
@@ -602,7 +586,7 @@ app.post("/api/v1/admin/jit-requests/:id/resolve", (req, res) => {
   }
 
   const existing = getJitElevationRequestById(req.params.id);
-  if (!existing) {
+  if (!existing || !canViewJitElevationRequest(existing, user)) {
     res.status(404).json({ error: "JIT elevation request not found" });
     return;
   }
@@ -731,13 +715,11 @@ app.get("/api/v1/admin/active-privileges", (req, res) => {
 
   syncJitAccess();
   const privileges = getActivePrivileges();
+  const scopedPrivileges = filterActivePrivilegesForViewer(privileges, user);
 
   const body: ActivePrivilegeListResponseDto = {
-    total: privileges.length,
-    privileges:
-      user.role === "admin"
-        ? privileges
-        : privileges.filter((privilege) => privilege.userId === user.id),
+    total: scopedPrivileges.length,
+    privileges: scopedPrivileges,
   };
   res.json(body);
 });

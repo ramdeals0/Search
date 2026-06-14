@@ -1,6 +1,17 @@
 import { randomBytes } from "node:crypto";
-import type { SessionDto, UserDto, UserRole } from "@retailer-search/shared-types";
+import type {
+  SessionDto,
+  SessionStatusDto,
+  UserDto,
+  UserRole,
+} from "@retailer-search/shared-types";
 import { prisma } from "./db.js";
+import { createCsrfTokenForSession } from "./auth/csrf-token.js";
+import {
+  computeSessionTiming,
+  getSessionPolicySync,
+  type SessionPolicyConfig,
+} from "./auth/session-policy.js";
 
 export interface AuthenticatedUserContext {
   user: UserDto;
@@ -19,9 +30,6 @@ export function createAuthenticatedUserContext(
   };
 }
 
-const SESSION_TTL_MS =
-  Number(process.env.SESSION_TTL_HOURS ?? 24) * 60 * 60 * 1000;
-
 interface StoredUser {
   user: UserDto;
   password: string;
@@ -32,6 +40,8 @@ interface StoredSession {
   userId: string;
   createdAt: string;
   expiresAt: string;
+  lastActivityAt: string;
+  lastPersistedActivityMs?: number;
 }
 
 const usersById = new Map<string, StoredUser>();
@@ -98,7 +108,17 @@ function persistUser(stored: StoredUser): void {
     });
 }
 
-function persistSession(session: StoredSession): void {
+function persistSession(session: StoredSession, force = false): void {
+  const nowMs = Date.now();
+  if (
+    !force &&
+    session.lastPersistedActivityMs &&
+    nowMs - session.lastPersistedActivityMs < 60_000
+  ) {
+    return;
+  }
+
+  session.lastPersistedActivityMs = nowMs;
   void prisma.session
     .upsert({
       where: { token: session.token },
@@ -107,9 +127,11 @@ function persistSession(session: StoredSession): void {
         userId: session.userId,
         createdAt: new Date(session.createdAt),
         expiresAt: new Date(session.expiresAt),
+        lastActivityAt: new Date(session.lastActivityAt),
       },
       update: {
         expiresAt: new Date(session.expiresAt),
+        lastActivityAt: new Date(session.lastActivityAt),
       },
     })
     .catch((error: unknown) => {
@@ -121,6 +143,86 @@ function deletePersistedSession(token: string): void {
   void prisma.session
     .delete({ where: { token } })
     .catch(() => undefined);
+}
+
+function invalidateSession(token: string): void {
+  sessionsByToken.delete(token);
+  deletePersistedSession(token);
+}
+
+function toSessionStatus(
+  session: StoredSession,
+  policy: SessionPolicyConfig,
+  now: Date = new Date(),
+): SessionStatusDto {
+  const timing = computeSessionTiming(
+    new Date(session.createdAt),
+    new Date(session.lastActivityAt),
+    policy,
+    now,
+  );
+
+  return {
+    absoluteExpiresAt: timing.absoluteExpiresAt.toISOString(),
+    inactivityExpiresAt: timing.inactivityExpiresAt.toISOString(),
+    expiresAt: timing.expiresAt.toISOString(),
+    inactivityTimeoutMinutes: policy.inactivityMinutes,
+    absoluteTimeoutHours: policy.absoluteTtlHours,
+    warningBeforeExpiryMinutes: policy.warningMinutes,
+  };
+}
+
+function touchStoredSession(
+  session: StoredSession,
+  policy: SessionPolicyConfig,
+  now: Date = new Date(),
+): void {
+  session.lastActivityAt = now.toISOString();
+  const timing = computeSessionTiming(
+    new Date(session.createdAt),
+    now,
+    policy,
+    now,
+  );
+  session.expiresAt = timing.absoluteExpiresAt.toISOString();
+  persistSession(session);
+}
+
+function resolveStoredSession(
+  session: StoredSession,
+  options: { touch?: boolean; policy?: SessionPolicyConfig; now?: Date } = {},
+): SessionDto | null {
+  const policy = options.policy ?? getSessionPolicySync();
+  const now = options.now ?? new Date();
+  const timing = computeSessionTiming(
+    new Date(session.createdAt),
+    new Date(session.lastActivityAt),
+    policy,
+    now,
+  );
+
+  if (timing.reason) {
+    invalidateSession(session.token);
+    return null;
+  }
+
+  if (options.touch) {
+    touchStoredSession(session, policy, now);
+  }
+
+  const stored = usersById.get(session.userId);
+  if (!stored || !stored.user.active) {
+    invalidateSession(session.token);
+    return null;
+  }
+
+  return {
+    token: session.token,
+    csrfToken: createCsrfTokenForSession(session.token),
+    user: cloneUser(stored.user),
+    createdAt: session.createdAt,
+    expiresAt: timing.expiresAt.toISOString(),
+  };
 }
 
 export async function hydrateAuthStore(): Promise<void> {
@@ -146,6 +248,7 @@ export async function hydrateAuthStore(): Promise<void> {
       userId: row.userId,
       createdAt: row.createdAt.toISOString(),
       expiresAt: row.expiresAt.toISOString(),
+      lastActivityAt: row.lastActivityAt.toISOString(),
     });
   }
 }
@@ -175,14 +278,17 @@ export function validatePassword(user: UserDto, password: string): boolean {
   return stored.password === password;
 }
 
-export function createSession(user: UserDto): SessionDto {
+export function createSession(
+  user: UserDto,
+  policy: SessionPolicyConfig = getSessionPolicySync(),
+): SessionDto {
   const stored = usersById.get(user.id);
   if (!stored) {
     throw new Error("User not found");
   }
 
   const createdAt = new Date();
-  const expiresAt = new Date(createdAt.getTime() + SESSION_TTL_MS);
+  const timing = computeSessionTiming(createdAt, createdAt, policy, createdAt);
   const token = createSessionToken();
 
   stored.user.lastLoginAt = createdAt.toISOString();
@@ -192,44 +298,48 @@ export function createSession(user: UserDto): SessionDto {
     token,
     userId: user.id,
     createdAt: createdAt.toISOString(),
-    expiresAt: expiresAt.toISOString(),
+    expiresAt: timing.absoluteExpiresAt.toISOString(),
+    lastActivityAt: createdAt.toISOString(),
   };
   sessionsByToken.set(token, session);
-  persistSession(session);
+  persistSession(session, true);
 
   return {
     token,
+    csrfToken: createCsrfTokenForSession(token),
     user: cloneUser(stored.user),
     createdAt: createdAt.toISOString(),
-    expiresAt: expiresAt.toISOString(),
+    expiresAt: timing.expiresAt.toISOString(),
   };
 }
 
-export function getSessionByToken(token: string): SessionDto | null {
+export function getSessionByToken(
+  token: string,
+  options: { touch?: boolean; policy?: SessionPolicyConfig } = {},
+): SessionDto | null {
   const session = sessionsByToken.get(token);
   if (!session) {
     return null;
   }
 
-  if (new Date(session.expiresAt).getTime() <= Date.now()) {
-    sessionsByToken.delete(token);
-    deletePersistedSession(token);
+  return resolveStoredSession(session, options);
+}
+
+export function getSessionStatusForToken(
+  token: string,
+  options: { touch?: boolean; policy?: SessionPolicyConfig } = {},
+): SessionStatusDto | null {
+  const session = sessionsByToken.get(token);
+  if (!session) {
     return null;
   }
 
-  const stored = usersById.get(session.userId);
-  if (!stored || !stored.user.active) {
-    sessionsByToken.delete(token);
-    deletePersistedSession(token);
+  const resolved = resolveStoredSession(session, options);
+  if (!resolved) {
     return null;
   }
 
-  return {
-    token: session.token,
-    user: cloneUser(stored.user),
-    createdAt: session.createdAt,
-    expiresAt: session.expiresAt,
-  };
+  return toSessionStatus(session, options.policy ?? getSessionPolicySync());
 }
 
 export function deleteSession(token: string): boolean {
@@ -271,15 +381,17 @@ export function disableUser(userId: string): UserDto | null {
 
   for (const [token, session] of sessionsByToken.entries()) {
     if (session.userId === userId) {
-      sessionsByToken.delete(token);
-      deletePersistedSession(token);
+      invalidateSession(token);
     }
   }
 
   return cloneUser(stored.user);
 }
 
-export function getCurrentUserFromAuthHeader(headerValue?: string): UserDto | null {
+export function getCurrentUserFromAuthHeader(
+  headerValue?: string,
+  options: { touch?: boolean } = { touch: true },
+): UserDto | null {
   if (!headerValue?.startsWith("Bearer ")) {
     return null;
   }
@@ -289,13 +401,12 @@ export function getCurrentUserFromAuthHeader(headerValue?: string): UserDto | nu
     return null;
   }
 
-  const session = getSessionByToken(token);
+  const session = getSessionByToken(token, { touch: options.touch });
   return session?.user ?? null;
 }
 
-/** Prefer authenticated user id for rate limiting; falls back to null when anonymous. */
 export function getRateLimitUserKeyFromAuthHeader(headerValue?: string): string | null {
-  const user = getCurrentUserFromAuthHeader(headerValue);
+  const user = getCurrentUserFromAuthHeader(headerValue, { touch: false });
   return user ? `user:${user.id}` : null;
 }
 

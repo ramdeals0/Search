@@ -15,6 +15,17 @@ import {
   getUserById,
   hasAdminUser,
 } from "./auth-store.js";
+import {
+  defaultLoginProtectionConfig,
+  loginProtectionConfigFromSecurity,
+  type LoginProtectionConfig,
+} from "./auth/login-protection.js";
+import {
+  defaultSessionPolicyConfig,
+  sessionPolicyFromSecurity,
+  setSessionPolicyCache,
+  type SessionPolicyConfig,
+} from "./auth/session-policy.js";
 import { recordAuditLog } from "./audit-trail-store.js";
 import { prisma } from "./db.js";
 
@@ -24,6 +35,9 @@ const SECURITY_CONFIG_KEY = "bootstrap.security";
 const PLATFORM_CONFIG_KEY = "bootstrap.platform";
 
 let cachedState: BootstrapStateDto | null = null;
+
+let cachedLoginProtectionConfig: LoginProtectionConfig | null = null;
+let cachedSessionPolicyConfig: SessionPolicyConfig | null = null;
 
 function isSetupEnabled(): boolean {
   return process.env.ALLOW_SETUP !== "false";
@@ -98,6 +112,8 @@ async function refreshCache(): Promise<BootstrapStateDto> {
 
 export async function hydrateBootstrapStore(): Promise<void> {
   await refreshCache();
+  await getLoginProtectionConfig();
+  await getSessionPolicyConfig();
 }
 
 export function isSetupRequired(): boolean {
@@ -223,6 +239,9 @@ export async function configureBootstrapSecurity(
   }
 
   await upsertSystemConfig(SECURITY_CONFIG_KEY, { ...input });
+  cachedLoginProtectionConfig = loginProtectionConfigFromSecurity(input);
+  cachedSessionPolicyConfig = sessionPolicyFromSecurity(input);
+  setSessionPolicyCache(cachedSessionPolicyConfig);
 
   const row = await prisma.bootstrapState.update({
     where: { id: BOOTSTRAP_ID },
@@ -317,6 +336,35 @@ export async function completeBootstrap(
   });
 
   return structuredClone(cachedState);
+}
+
+export async function getLoginProtectionConfig(): Promise<LoginProtectionConfig> {
+  if (cachedLoginProtectionConfig) {
+    return cachedLoginProtectionConfig;
+  }
+
+  const stored = await getSystemConfig<ConfigureBootstrapSecurityRequestDto>(
+    SECURITY_CONFIG_KEY,
+  );
+  cachedLoginProtectionConfig = stored
+    ? loginProtectionConfigFromSecurity(stored)
+    : defaultLoginProtectionConfig();
+  return cachedLoginProtectionConfig;
+}
+
+export async function getSessionPolicyConfig(): Promise<SessionPolicyConfig> {
+  if (cachedSessionPolicyConfig) {
+    return cachedSessionPolicyConfig;
+  }
+
+  const stored = await getSystemConfig<ConfigureBootstrapSecurityRequestDto>(
+    SECURITY_CONFIG_KEY,
+  );
+  cachedSessionPolicyConfig = stored
+    ? sessionPolicyFromSecurity(stored)
+    : defaultSessionPolicyConfig();
+  setSessionPolicyCache(cachedSessionPolicyConfig);
+  return cachedSessionPolicyConfig;
 }
 
 export async function getPlatformConfig(): Promise<{

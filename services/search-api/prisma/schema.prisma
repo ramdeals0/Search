@@ -94,15 +94,17 @@ model User {
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  token     String   @unique
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  expiresAt DateTime
+  id             String   @id @default(cuid())
+  token          String   @unique
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+  lastActivityAt DateTime @default(now())
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([lastActivityAt])
 }
 
 model AuditTrailEntry {

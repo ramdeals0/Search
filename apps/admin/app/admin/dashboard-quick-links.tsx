@@ -1,39 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import type { WorkspaceRole } from "@retailer-search/shared-types";
+import { useMemo } from "react";
 import {
   ADMIN_DASHBOARD_LINKS,
   canAccessWorkspace,
 } from "./admin-workspaces";
-import {
-  WORKSPACE_ROLE_CHANGED_EVENT,
-  WORKSPACE_ROLE_STORAGE_KEY,
-} from "../workspace-switcher";
+import { useWorkspaceRoleState } from "../lib/use-workspace-role";
 
 export function DashboardQuickLinks() {
-  const [role, setRole] = useState<WorkspaceRole>("merchandiser");
-
-  useEffect(() => {
-    const loadRole = () => {
-      const stored = window.localStorage.getItem(
-        WORKSPACE_ROLE_STORAGE_KEY,
-      ) as WorkspaceRole | null;
-      if (
-        stored &&
-        ["merchandiser", "reviewer", "approver", "release_manager", "admin"].includes(
-          stored,
-        )
-      ) {
-        setRole(stored);
-      }
-    };
-
-    loadRole();
-    window.addEventListener(WORKSPACE_ROLE_CHANGED_EVENT, loadRole);
-    return () => window.removeEventListener(WORKSPACE_ROLE_CHANGED_EVENT, loadRole);
-  }, []);
+  const { activeRole: role } = useWorkspaceRoleState();
 
   const links = useMemo(
     () =>

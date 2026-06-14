@@ -14,6 +14,7 @@ function redirectToLogin(request: NextRequest, clearSession = false): NextRespon
     response.cookies.set(AUTH_TOKEN_COOKIE_NAME, "", {
       path: "/",
       maxAge: 0,
+      sameSite: "strict",
     });
   }
   return response;

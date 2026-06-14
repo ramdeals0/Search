@@ -8,21 +8,16 @@ import type {
   UserRole,
 } from "@retailer-search/shared-types";
 import { prisma } from "../db.js";
-
-const ROLE_RANK: Record<UserRole, number> = {
-  developer: 0,
-  merchandiser: 1,
-  reviewer: 2,
-  approver: 3,
-  release_manager: 4,
-  admin: 5,
-};
+import {
+  normalizeJitApprovalRequiredRoles,
+  ROLE_RANK,
+} from "./role-rank.js";
 
 const DEFAULT_POLICY: JitPolicyDto = {
   enabled: true,
   defaultDurationMinutes: 30,
   maxDurationMinutes: 120,
-  approvalRequiredRoles: ["admin", "release_manager"],
+  approvalRequiredRoles: ["reviewer", "approver", "release_manager", "admin"],
   elevatableRoles: ["reviewer", "approver", "release_manager", "admin"],
 };
 
@@ -187,10 +182,6 @@ function findActiveRequestForUser(
   );
 }
 
-function requiresApproval(requestedRole: UserRole): boolean {
-  return jitPolicy.approvalRequiredRoles.includes(requestedRole);
-}
-
 export function getJitPolicy(): JitPolicyDto {
   return clonePolicy(jitPolicy);
 }
@@ -210,7 +201,22 @@ export function updateJitPolicy(input: UpdateJitPolicyRequestDto): JitPolicyDto 
     throw new Error("At least one elevatable role is required");
   }
 
-  jitPolicy = clonePolicy(input);
+  const missingApproval = input.elevatableRoles.filter(
+    (role) => !input.approvalRequiredRoles.includes(role),
+  );
+  if (missingApproval.length > 0) {
+    throw new Error(
+      `Approval is required for all elevatable roles. Missing: ${missingApproval.join(", ")}`,
+    );
+  }
+
+  jitPolicy = clonePolicy({
+    ...input,
+    approvalRequiredRoles: normalizeJitApprovalRequiredRoles(
+      input.elevatableRoles,
+      input.approvalRequiredRoles,
+    ),
+  });
   return clonePolicy(jitPolicy);
 }
 
@@ -289,10 +295,6 @@ export function createJitElevationRequest(
     requestedDurationMinutes: durationMinutes,
     status: "pending",
   };
-
-  if (!requiresApproval(input.requestedRole)) {
-    activateRequest(request, now);
-  }
 
   jitRequests.push(request);
   persistJitRequest(request);

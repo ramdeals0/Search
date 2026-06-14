@@ -1,15 +1,14 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import type { SearchAnalyticsSummaryDto, WorkspaceRole } from "@retailer-search/shared-types";
+import type { SearchAnalyticsSummaryDto } from "@retailer-search/shared-types";
 import { BrandedSidebarBrand, BrandingProvider } from "../branding-provider";
 import { CatalogSwitcher } from "../catalog-switcher";
 import { CurrentUserBadge } from "../components/current-user-badge";
+import { SessionTimeoutMonitor } from "../components/session-timeout-monitor";
+import { useWorkspaceRoleState } from "../lib/use-workspace-role";
 import { WorkspaceSummaryCards } from "../workspace-summary-cards";
-import {
-  WORKSPACE_ROLE_STORAGE_KEY,
-  WorkspaceSwitcher,
-} from "../workspace-switcher";
+import { WorkspaceSwitcher } from "../workspace-switcher";
 import { AdminNav } from "./admin-nav";
 
 interface AdminShellProps {
@@ -36,6 +35,7 @@ export function AdminShell({ children }: AdminShellProps) {
 
   return (
     <BrandingProvider>
+    <SessionTimeoutMonitor />
     <div className={`forge-shell${isMobile ? " forge-shell--mobile" : ""}`}>
       {!isMobile ? (
         <aside className="forge-sidebar">
@@ -93,25 +93,15 @@ export function DashboardOverviewWidgets({
 }: {
   analytics: SearchAnalyticsSummaryDto;
 }) {
-  const [activeRole, setActiveRole] = useState<WorkspaceRole>("merchandiser");
-
-  useEffect(() => {
-    const stored = window.localStorage.getItem(
-      WORKSPACE_ROLE_STORAGE_KEY,
-    ) as WorkspaceRole | null;
-    if (
-      stored &&
-      ["merchandiser", "reviewer", "approver", "release_manager", "developer", "admin"].includes(
-        stored,
-      )
-    ) {
-      setActiveRole(stored);
-    }
-  }, []);
+  const { activeRole, effectiveRole, setActiveRole } = useWorkspaceRoleState();
 
   return (
     <div className="forge-page-stack" style={{ marginBottom: "1.25rem" }}>
-      <WorkspaceSwitcher activeRole={activeRole} onRoleChange={setActiveRole} />
+      <WorkspaceSwitcher
+        activeRole={activeRole}
+        effectiveRole={effectiveRole}
+        onRoleChange={setActiveRole}
+      />
       <WorkspaceSummaryCards activeRole={activeRole} analytics={analytics} />
     </div>
   );

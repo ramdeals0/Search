@@ -1,6 +1,15 @@
 import express from "express";
 import { z } from "zod";
 import { env } from "@retailer-search/config";
+import {
+  safeJustificationSchema,
+  safeOptionalMerchandisingLabelSchema,
+  safeProductIdSchema,
+  safeRuleNameSchema,
+  safeSearchQueryInputSchema,
+  safeSearchQuerySchema,
+  safeDisplayTextSchema,
+} from "@retailer-search/config/safe-text";
 import { getAutocompleteSuggestions, searchFederatedIndexes, searchProducts } from "@retailer-search/search-core";
 import type {
   ApprovalEligibilityResponseDto,
@@ -56,6 +65,7 @@ import type {
   WebhookEndpointListResponseDto,
   WebhookEventType,
   WorkspaceStateDto,
+  WorkspaceRole,
 } from "@retailer-search/shared-types";
 import {
   getLatestExecutedApprovalForSnapshot,
@@ -134,10 +144,12 @@ import {
   completeBootstrap,
   configureBootstrapPlatform,
   configureBootstrapSecurity,
+  getLoginProtectionConfig,
   createBootstrapAdmin,
   ensureBootstrapState,
   hydrateBootstrapStore,
   getPlatformConfig,
+  getSessionPolicyConfig,
   isSetupRequired,
 } from "./bootstrap-store.js";
 import { connectDatabase } from "./db.js";
@@ -147,6 +159,7 @@ import {
   applyRateLimit,
   createAdminMutationRateLimitPolicy,
   createAdminReadRateLimitPolicy,
+  createAuthLoginIpRateLimitPolicy,
   createAuthLoginRateLimitPolicy,
   getRequestId,
   isAdminMutationRequest,
@@ -162,11 +175,19 @@ import {
   validationError as validationErrorBody,
 } from "./error-response.js";
 import { cleanupExpiredRateLimitEntries } from "./rate-limit-store.js";
+import { attachPiiSanitizationMiddleware } from "./privacy/pii-response-middleware.js";
+import { sanitizeExportContent } from "./privacy/sanitize-response.js";
+import {
+  buildAccountLockoutMessage,
+  cleanupExpiredLoginProtectionEntries,
+  clearLoginFailures,
+  getAccountLockStatus,
+  recordFailedLoginAttempt,
+} from "./auth/login-protection.js";
 import {
   createNotification,
   hydrateNotificationStore,
   listNotifications,
-  markAllNotificationsRead,
   markNotificationRead,
 } from "./notification-store.js";
 import {
@@ -185,6 +206,8 @@ import {
   enforceApiKeyRateLimit,
   requireApiKeyScope,
 } from "./auth/require-api-key.js";
+import { enforceCsrfProtection } from "./auth/csrf-protection.js";
+import { createCsrfTokenForSession } from "./auth/csrf-token.js";
 import { enqueueCatalogReindex } from "./jobs/handlers/reindex-catalog.js";
 import { getJobById, listJobs } from "./jobs/job-queue.js";
 import { startReleaseScheduler } from "./jobs/release-scheduler.js";
@@ -326,6 +349,10 @@ import {
   hydrateAccessGovernanceStore,
   hydrateJitAccessStore,
 } from "./access-governance/index.js";
+import {
+  assertWorkspaceRoleAllowed,
+  clampWorkspaceRole,
+} from "./access-governance/role-rank.js";
 import { hydrateLlmConfigStore } from "./llm/llm-config-store.js";
 import {
   createAuthenticatedUserContext,
@@ -333,11 +360,20 @@ import {
   deleteSession,
   findUserByEmail,
   getCurrentUserFromAuthHeader,
+  getSessionStatusForToken,
   hydrateAuthStore,
   isLoginAllowedDuringSetup,
   userCount,
   validatePassword,
 } from "./auth-store.js";
+import {
+  canViewApprovalRequest,
+  canViewNotification,
+  filterApprovalsForViewer,
+  filterAuditLogsForViewer,
+  filterExportJobsForViewer,
+  filterNotificationsForViewer,
+} from "./data-tenancy.js";
 import { hydrateEnvironmentConfigStore } from "./environment-config-store.js";
 import { hydrateApprovalStore } from "./approval-store.js";
 import {
@@ -528,7 +564,7 @@ async function assertDirectLivePromotionAllowed(
 }
 
 const searchQuerySchema = z.object({
-  query: z.string().default(""),
+  query: safeSearchQueryInputSchema.default(""),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
   brand: z.union([z.string(), z.array(z.string())]).optional(),
@@ -543,7 +579,7 @@ const searchQuerySchema = z.object({
 });
 
 const autocompleteQuerySchema = z.object({
-  query: z.string().default(""),
+  query: safeSearchQueryInputSchema.default(""),
 });
 
 const browseQuerySchema = z.object({
@@ -577,13 +613,13 @@ const createScheduledReleaseSchema = z.object({
 const environmentKeySchema = z.enum(["staging", "live"]);
 
 const queryPreviewSchema = z.object({
-  query: z.string().min(1),
+  query: safeSearchQuerySchema,
   pageSize: z.coerce.number().int().positive().max(20).default(10),
   environment: environmentKeySchema.optional(),
 });
 
 const merchRuntimeEvaluateSchema = z.object({
-  query: z.string().min(1),
+  query: safeSearchQuerySchema,
   environment: environmentKeySchema.default("staging"),
   tenantId: z.string().default("default"),
   candidateLimit: z.coerce.number().int().positive().max(250).default(50),
@@ -628,20 +664,20 @@ function buildDemoCompiledMerchSnapshot(version = "1.0.0"): CompiledRuleSnapshot
 }
 
 const merchandisingRuleConditionSchema = z.object({
-  query: z.string().optional(),
-  brand: z.string().optional(),
-  category: z.string().optional(),
+  query: safeSearchQuerySchema.optional(),
+  brand: safeOptionalMerchandisingLabelSchema,
+  category: safeOptionalMerchandisingLabelSchema,
   inStock: z.boolean().optional(),
 });
 
 const createMerchandisingRuleSchema = z.object({
-  name: z.string().min(1),
+  name: safeRuleNameSchema,
   active: z.boolean().default(true),
   priority: z.number().int(),
   action: z.enum(["pin", "boost", "bury", "hide"]),
   condition: merchandisingRuleConditionSchema.default({}),
-  productIds: z.array(z.string()).optional(),
-  brand: z.string().optional(),
+  productIds: z.array(safeProductIdSchema).max(100).optional(),
+  brand: safeOptionalMerchandisingLabelSchema,
   boostAmount: z.number().optional(),
   buryAmount: z.number().optional(),
 });
@@ -649,14 +685,14 @@ const createMerchandisingRuleSchema = z.object({
 const updateMerchandisingRuleSchema = createMerchandisingRuleSchema.partial();
 
 const searchEventBodySchema = z.object({
-  query: z.string().min(1),
+  query: safeSearchQuerySchema,
   resultCount: z.number().int().min(0),
 });
 
 const clickEventBodySchema = z.object({
-  query: z.string().min(1),
-  productId: z.string().min(1),
-  productTitle: z.string().min(1),
+  query: safeSearchQuerySchema,
+  productId: safeProductIdSchema,
+  productTitle: safeDisplayTextSchema,
 });
 
 const suggestionActionTypeSchema = z.enum([
@@ -887,6 +923,7 @@ const workspaceRoleSchema = z.enum([
   "reviewer",
   "approver",
   "release_manager",
+  "developer",
   "admin",
 ]);
 
@@ -989,6 +1026,7 @@ const configureBootstrapSecuritySchema = z.object({
   loginAttemptLimit: z.coerce.number().int().min(1).max(100),
   lockoutWindowMinutes: z.coerce.number().int().min(1).max(1440),
   sessionTtlHours: z.coerce.number().int().min(1).max(720),
+  sessionInactivityMinutes: z.coerce.number().int().min(5).max(480).optional(),
   auditLoggingEnabled: z.boolean(),
 });
 
@@ -1361,6 +1399,7 @@ const app = express();
 app.set("trust proxy", true);
 app.use(express.json());
 app.use(attachApiKeyContext);
+app.use(enforceCsrfProtection);
 
 app.use((req, res, next) => {
   attachSecurityHeaders(req, res);
@@ -1378,7 +1417,7 @@ app.use((req, res, next) => {
   );
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-Request-Id, X-API-Key, X-Session-Id",
+    "Content-Type, Authorization, X-Request-Id, X-API-Key, X-Session-Id, X-CSRF-Token",
   );
   res.setHeader(
     "Access-Control-Expose-Headers",
@@ -1392,6 +1431,8 @@ app.use((req, res, next) => {
 
   next();
 });
+
+app.use(attachPiiSanitizationMiddleware());
 
 app.use("/api/v1/admin", requireSetupComplete);
 app.use("/api/v1/admin", enforceAdminRateLimit);
@@ -1763,7 +1804,7 @@ app.get("/api/v1/browse/categories", requireApiKeyScope("browse:read"), async (r
   res.json(browseCategoriesResponse(products));
 });
 
-app.post("/api/v1/auth/login", (req, res) => {
+app.post("/api/v1/auth/login", async (req, res) => {
   if (!requireJsonContentType(req, res)) {
     return;
   }
@@ -1773,19 +1814,97 @@ app.post("/api/v1/auth/login", (req, res) => {
     return;
   }
 
-  const loginPolicy = createAuthLoginRateLimitPolicy(parsed.data.email);
+  cleanupExpiredRateLimitEntries();
+  cleanupExpiredLoginProtectionEntries();
+
+  const email = parsed.data.email.trim().toLowerCase();
+  const protectionConfig = await getLoginProtectionConfig();
+  const lockStatus = getAccountLockStatus(email, protectionConfig);
+
+  if (lockStatus.locked) {
+    if (lockStatus.retryAfterSeconds) {
+      res.setHeader("retry-after", String(lockStatus.retryAfterSeconds));
+    }
+    recordAuditLog({
+      actionType: "user_login",
+      entityType: "user",
+      outcome: "failure",
+      summary: `Login blocked for locked account ${email}`,
+      metadata: {
+        email,
+        reason: "account_locked",
+        lockedUntil: lockStatus.lockedUntil,
+      },
+    });
+    res.status(429).json(
+      rateLimitedError(
+        buildAccountLockoutMessage(lockStatus.retryAfterSeconds),
+        {
+          reason: "account_locked",
+          resetAt: lockStatus.lockedUntil,
+          retryAfterSeconds: lockStatus.retryAfterSeconds,
+        },
+        getRequestId(req),
+      ),
+    );
+    return;
+  }
+
+  const ipLoginPolicy = createAuthLoginIpRateLimitPolicy();
+  const ipRateLimitResult = applyRateLimit(req, ipLoginPolicy);
+  attachRateLimitHeaders(res, ipRateLimitResult.status);
+
+  if (!ipRateLimitResult.allowed) {
+    recordRateLimitExceeded({
+      summary: `Login IP rate limit exceeded for ${email}`,
+      path: req.path,
+      method: req.method,
+      policyName: ipLoginPolicy.name,
+      actorLabel: email,
+      metadata: {
+        email,
+        resetAt: ipRateLimitResult.status.resetAt,
+      },
+    });
+    recordAuditLog({
+      actionType: "user_login",
+      entityType: "user",
+      outcome: "failure",
+      summary: `Login IP rate limit exceeded for ${email}`,
+      metadata: { email, reason: "rate_limited" },
+    });
+    if (ipRateLimitResult.status.resetAt) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil(
+          (new Date(ipRateLimitResult.status.resetAt).getTime() - Date.now()) / 1000,
+        ),
+      );
+      res.setHeader("retry-after", String(retryAfterSeconds));
+    }
+    res.status(429).json(
+      rateLimitedError(
+        "Too many login attempts from this network. Please wait and try again.",
+        { resetAt: ipRateLimitResult.status.resetAt, reason: "rate_limited" },
+        getRequestId(req),
+      ),
+    );
+    return;
+  }
+
+  const loginPolicy = createAuthLoginRateLimitPolicy(email);
   const rateLimitResult = applyRateLimit(req, loginPolicy);
   attachRateLimitHeaders(res, rateLimitResult.status);
 
   if (!rateLimitResult.allowed) {
     recordRateLimitExceeded({
-      summary: `Login rate limit exceeded for ${parsed.data.email}`,
+      summary: `Login rate limit exceeded for ${email}`,
       path: req.path,
       method: req.method,
       policyName: loginPolicy.name,
-      actorLabel: parsed.data.email,
+      actorLabel: email,
       metadata: {
-        email: parsed.data.email,
+        email,
         resetAt: rateLimitResult.status.resetAt,
       },
     });
@@ -1793,13 +1912,22 @@ app.post("/api/v1/auth/login", (req, res) => {
       actionType: "user_login",
       entityType: "user",
       outcome: "failure",
-      summary: `Login rate limit exceeded for ${parsed.data.email}`,
-      metadata: { email: parsed.data.email, reason: "rate_limited" },
+      summary: `Login rate limit exceeded for ${email}`,
+      metadata: { email, reason: "rate_limited" },
     });
+    if (rateLimitResult.status.resetAt) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil(
+          (new Date(rateLimitResult.status.resetAt).getTime() - Date.now()) / 1000,
+        ),
+      );
+      res.setHeader("retry-after", String(retryAfterSeconds));
+    }
     res.status(429).json(
       rateLimitedError(
         "Too many login attempts. Please wait and try again.",
-        { resetAt: rateLimitResult.status.resetAt },
+        { resetAt: rateLimitResult.status.resetAt, reason: "rate_limited" },
         getRequestId(req),
       ),
     );
@@ -1817,14 +1945,53 @@ app.post("/api/v1/auth/login", (req, res) => {
       return;
     }
 
+    const failureStatus = recordFailedLoginAttempt(email, protectionConfig);
+    if (failureStatus.locked) {
+      if (failureStatus.retryAfterSeconds) {
+        res.setHeader("retry-after", String(failureStatus.retryAfterSeconds));
+      }
+      recordAuditLog({
+        actionType: "user_login",
+        entityType: "user",
+        outcome: "failure",
+        summary: `Account locked after failed login for ${email}`,
+        metadata: {
+          email,
+          reason: "account_locked",
+          lockedUntil: failureStatus.lockedUntil,
+        },
+      });
+      void dispatchWebhookEvent("auth.login.failed", {
+        email,
+        reason: "account_locked",
+      });
+      res.status(429).json(
+        rateLimitedError(
+          buildAccountLockoutMessage(failureStatus.retryAfterSeconds),
+          {
+            reason: "account_locked",
+            resetAt: failureStatus.lockedUntil,
+            retryAfterSeconds: failureStatus.retryAfterSeconds,
+          },
+          getRequestId(req),
+        ),
+      );
+      return;
+    }
+
     recordAuditLog({
       actionType: "user_login",
       entityType: "user",
       outcome: "failure",
-      summary: `Failed login attempt for ${parsed.data.email}`,
+      summary: `Failed login attempt for ${email}`,
+      metadata: {
+        email,
+        failedAttempts: failureStatus.failedAttempts,
+        remainingAttempts: failureStatus.remainingAttempts,
+      },
     });
     void dispatchWebhookEvent("auth.login.failed", {
-      email: parsed.data.email,
+      email,
       reason: "invalid_credentials",
     });
     const body: LoginResponseDto = {
@@ -1844,7 +2011,9 @@ app.post("/api/v1/auth/login", (req, res) => {
     return;
   }
 
-  const session = createSession(user);
+  clearLoginFailures(email);
+
+  const session = createSession(user, await getSessionPolicyConfig());
   recordAuditLog({
     actionType: "user_login",
     entityType: "user",
@@ -1896,10 +2065,26 @@ app.post("/api/v1/auth/logout", (req, res) => {
 
 app.get("/api/v1/auth/me", (req, res) => {
   syncJitAccess();
-  const user = getCurrentUserFromAuthHeader(req.headers.authorization);
+  const sessionToken = req.headers.authorization?.startsWith("Bearer ")
+    ? req.headers.authorization.slice("Bearer ".length).trim()
+    : "";
+
+  if (!sessionToken) {
+    res.json({ authenticated: false } satisfies CurrentUserResponseDto);
+    return;
+  }
+
+  const sessionStatus = getSessionStatusForToken(sessionToken, { touch: true });
+  if (!sessionStatus) {
+    res.json({ authenticated: false } satisfies CurrentUserResponseDto);
+    return;
+  }
+
+  const user = getCurrentUserFromAuthHeader(req.headers.authorization, {
+    touch: false,
+  });
   if (!user) {
-    const body: CurrentUserResponseDto = { authenticated: false };
-    res.json(body);
+    res.json({ authenticated: false } satisfies CurrentUserResponseDto);
     return;
   }
 
@@ -1909,6 +2094,8 @@ app.get("/api/v1/auth/me", (req, res) => {
   const body: CurrentUserResponseDto = {
     authenticated: true,
     user,
+    csrfToken: createCsrfTokenForSession(sessionToken),
+    session: sessionStatus,
     standingRole: context.standingRole,
     effectiveRole: context.effectiveRole,
     activePrivilege,
@@ -2013,7 +2200,12 @@ app.get("/api/v1/admin/exports", (req, res) => {
     return;
   }
 
-  const body: ExportJobListResponseDto = listExportJobs();
+  const allJobs = listExportJobs();
+  const jobs = filterExportJobsForViewer(allJobs.jobs, user);
+  const body: ExportJobListResponseDto = {
+    total: jobs.length,
+    jobs,
+  };
   res.json(body);
 });
 
@@ -2113,12 +2305,17 @@ app.get("/api/v1/admin/exports/:id/download", async (req, res) => {
       },
     });
 
+    const sanitizedContent = sanitizeExportContent(generated.content, job.format, {
+      standingRole: user.role,
+      viewerEmail: user.email,
+    });
+
     res.setHeader("Content-Type", generated.mimeType);
     res.setHeader(
       "Content-Disposition",
       `attachment; filename="${job.fileName ?? `${job.targetType}.${job.format}`}"`,
     );
-    res.send(generated.content);
+    res.send(sanitizedContent);
   } catch (error) {
     recordAuditLog({
       actionType: "download_export",
@@ -3176,8 +3373,23 @@ app.get("/api/v1/admin/promotions", (_req, res) => {
   res.json(body);
 });
 
-app.get("/api/v1/admin/approvals", (_req, res) => {
-  const body: ApprovalListResponseDto = listApprovalRequests();
+app.get("/api/v1/admin/approvals", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const effectiveRole = getEffectiveRoleForUser(user);
+  const allApprovals = listApprovalRequests();
+  const requests = filterApprovalsForViewer(
+    allApprovals.requests,
+    user,
+    effectiveRole,
+  );
+  const body: ApprovalListResponseDto = {
+    total: requests.length,
+    requests,
+  };
   res.json(body);
 });
 
@@ -3643,6 +3855,11 @@ function auditGeneratedApprovalNotifications(
 }
 
 app.get("/api/v1/admin/notifications", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
   const parsed = notificationListQuerySchema.safeParse(req.query);
   if (!assertValidBody(parsed, res, req, "Invalid notification query parameters")) {
     return;
@@ -3651,14 +3868,43 @@ app.get("/api/v1/admin/notifications", (req, res) => {
   const generated = maybeGenerateApprovalNotifications();
   auditGeneratedApprovalNotifications(generated);
 
-  const body: NotificationListResponseDto = listNotifications({
+  const effectiveRole = getEffectiveRoleForUser(user);
+  const allNotifications = listNotifications({
     recipientActorId: parsed.data.recipientActorId,
     unreadOnly: parsed.data.unreadOnly,
   });
+  const notifications = filterNotificationsForViewer(
+    allNotifications.notifications,
+    user,
+    effectiveRole,
+  );
+  const body: NotificationListResponseDto = {
+    total: notifications.length,
+    notifications,
+  };
   res.json(body);
 });
 
 app.post("/api/v1/admin/notifications/:id/read", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const existing = listNotifications().notifications.find(
+    (entry) => entry.id === req.params.id,
+  );
+  if (!existing) {
+    res.status(404).json({ error: "Notification not found" });
+    return;
+  }
+
+  const effectiveRole = getEffectiveRoleForUser(user);
+  if (!canViewNotification(existing, user, effectiveRole)) {
+    res.status(404).json({ error: "Notification not found" });
+    return;
+  }
+
   const notification = markNotificationRead(req.params.id);
   if (!notification) {
     res.status(404).json({ error: "Notification not found" });
@@ -3680,8 +3926,27 @@ app.post("/api/v1/admin/notifications/:id/read", (req, res) => {
   res.json(notification);
 });
 
-app.post("/api/v1/admin/notifications/read-all", (_req, res) => {
-  const updatedCount = markAllNotificationsRead();
+app.post("/api/v1/admin/notifications/read-all", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const effectiveRole = getEffectiveRoleForUser(user);
+  const visibleNotifications = filterNotificationsForViewer(
+    listNotifications().notifications,
+    user,
+    effectiveRole,
+  );
+  let updatedCount = 0;
+  for (const notification of visibleNotifications) {
+    if (!notification.read) {
+      const updated = markNotificationRead(notification.id);
+      if (updated) {
+        updatedCount += 1;
+      }
+    }
+  }
 
   recordAuditLog({
     actionType: "mark_notification_read",
@@ -3694,11 +3959,30 @@ app.post("/api/v1/admin/notifications/read-all", (_req, res) => {
     metadata: { updatedCount },
   });
 
-  const body: NotificationListResponseDto = listNotifications();
+  const notifications = filterNotificationsForViewer(
+    listNotifications().notifications,
+    user,
+    effectiveRole,
+  );
+  const body: NotificationListResponseDto = {
+    total: notifications.length,
+    notifications,
+  };
   res.json(body);
 });
 
-app.get("/api/v1/admin/approval-sla", (_req, res) => {
+app.get("/api/v1/admin/approval-sla", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const effectiveRole = getEffectiveRoleForUser(user);
+  if (!hasPermissionForUser(user, "view_approvals", effectiveRole)) {
+    sendForbidden(res, req, getPermissionDeniedMessage("view_approvals"));
+    return;
+  }
+
   const generated = maybeGenerateApprovalNotifications();
   auditGeneratedApprovalNotifications(generated);
 
@@ -3889,6 +4173,23 @@ app.post("/api/v1/admin/approvals/:id/reassign", (req, res) => {
 });
 
 app.get("/api/v1/admin/approvals/:id/assignment-history", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const approval = getApprovalRequestById(req.params.id);
+  if (!approval) {
+    res.status(404).json({ error: "Approval request not found" });
+    return;
+  }
+
+  const effectiveRole = getEffectiveRoleForUser(user);
+  if (!canViewApprovalRequest(approval, user, effectiveRole)) {
+    res.status(404).json({ error: "Approval request not found" });
+    return;
+  }
+
   const body = listApprovalAssignmentHistory(req.params.id);
   if (!body) {
     res.status(404).json({ error: "Approval request not found" });
@@ -3898,7 +4199,18 @@ app.get("/api/v1/admin/approvals/:id/assignment-history", (req, res) => {
   res.json(body satisfies ApprovalAssignmentHistoryResponseDto);
 });
 
-app.get("/api/v1/admin/approval-exceptions", (_req, res) => {
+app.get("/api/v1/admin/approval-exceptions", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  const effectiveRole = getEffectiveRoleForUser(user);
+  if (!hasPermissionForUser(user, "view_approvals", effectiveRole)) {
+    sendForbidden(res, req, getPermissionDeniedMessage("view_approvals"));
+    return;
+  }
+
   const body: ApprovalExceptionListResponseDto = listOpenApprovalExceptions();
   res.json(body);
 });
@@ -4073,21 +4385,46 @@ app.post("/api/v1/admin/collaboration/annotations", (req, res) => {
 });
 
 app.get("/api/v1/admin/workspaces", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  syncJitAccess();
   const parsed = workspaceQuerySchema.safeParse(req.query);
   if (!assertValidBody(parsed, res, req, "Invalid workspace query")) {
     return;
   }
 
-  const body: WorkspaceStateDto = getWorkspaceState(
-    parsed.data.activeRole ?? "merchandiser",
+  const effectiveRole = getEffectiveRoleForUser(user);
+  const requestedRole = clampWorkspaceRole(
+    parsed.data.activeRole ?? (effectiveRole as WorkspaceRole),
+    effectiveRole,
   );
+
+  const body: WorkspaceStateDto = getWorkspaceState(requestedRole, effectiveRole);
   res.json(body);
 });
 
 app.get("/api/v1/admin/saved-views", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  syncJitAccess();
   const parsed = savedViewsQuerySchema.safeParse(req.query);
   if (!assertValidBody(parsed, res, req, "Invalid saved views query")) {
     return;
+  }
+
+  const effectiveRole = getEffectiveRoleForUser(user);
+  if (parsed.data.role) {
+    const access = assertWorkspaceRoleAllowed(parsed.data.role, effectiveRole);
+    if (!access.allowed) {
+      sendForbidden(res, req, access.error ?? "Workspace role not allowed");
+      return;
+    }
   }
 
   const body: SavedViewListResponseDto = listSavedViews(parsed.data.role);
@@ -4095,6 +4432,12 @@ app.get("/api/v1/admin/saved-views", (req, res) => {
 });
 
 app.post("/api/v1/admin/saved-views", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  syncJitAccess();
   const parsed = createSavedViewSchema.safeParse(req.body);
   if (!parsed.success) {
     recordAuditLog({
@@ -4108,6 +4451,13 @@ app.post("/api/v1/admin/saved-views", (req, res) => {
       error: "Invalid saved view payload",
       details: parsed.error.flatten(),
     });
+    return;
+  }
+
+  const effectiveRole = getEffectiveRoleForUser(user);
+  const access = assertWorkspaceRoleAllowed(parsed.data.role, effectiveRole);
+  if (!access.allowed) {
+    sendForbidden(res, req, access.error ?? "Workspace role not allowed");
     return;
   }
 
@@ -4164,8 +4514,21 @@ app.post("/api/v1/admin/saved-views/:id", (req, res) => {
 });
 
 app.post("/api/v1/admin/saved-views/:id/default", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
+  syncJitAccess();
   const parsed = setDefaultSavedViewSchema.safeParse(req.body ?? {});
   if (!assertValidBody(parsed, res, req, "Invalid set default saved view payload")) {
+    return;
+  }
+
+  const effectiveRole = getEffectiveRoleForUser(user);
+  const access = assertWorkspaceRoleAllowed(parsed.data.role, effectiveRole);
+  if (!access.allowed) {
+    sendForbidden(res, req, access.error ?? "Workspace role not allowed");
     return;
   }
 
@@ -4597,12 +4960,27 @@ app.post("/api/v1/admin/experiments/:id/run", async (req, res) => {
 });
 
 app.get("/api/v1/admin/audit-logs", (req, res) => {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
+    return;
+  }
+
   const parsed = auditLogFilterSchema.safeParse(req.query);
   if (!assertValidBody(parsed, res, req, "Invalid audit log filters")) {
     return;
   }
 
-  const body: AuditLogResponseDto = listAuditLogs(parsed.data);
+  const effectiveRole = getEffectiveRoleForUser(user);
+  const allLogs = listAuditLogs(parsed.data);
+  const entries = filterAuditLogsForViewer(
+    allLogs.entries,
+    user,
+    effectiveRole,
+  );
+  const body: AuditLogResponseDto = {
+    total: entries.length,
+    entries,
+  };
   res.json(body);
 });
 

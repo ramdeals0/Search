@@ -4,10 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { WorkspaceRole } from "@retailer-search/shared-types";
-import {
-  WORKSPACE_ROLE_CHANGED_EVENT,
-  WORKSPACE_ROLE_STORAGE_KEY,
-} from "../workspace-switcher";
+import { useWorkspaceRoleState } from "../lib/use-workspace-role";
 import { canAccessWorkspace } from "./admin-workspaces";
 
 export interface AdminNavItem {
@@ -411,31 +408,11 @@ export function AdminNav({
   variant = "primary",
 }: AdminNavProps) {
   const pathname = usePathname();
-  const [role, setRole] = useState<WorkspaceRole>("merchandiser");
+  const { activeRole: role } = useWorkspaceRoleState();
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     "/admin/merchandising": true,
     "/admin/access": true,
   });
-
-  useEffect(() => {
-    const loadRole = () => {
-      const stored = window.localStorage.getItem(
-        WORKSPACE_ROLE_STORAGE_KEY,
-      ) as WorkspaceRole | null;
-      if (
-        stored &&
-        ["merchandiser", "reviewer", "approver", "release_manager", "developer", "admin"].includes(
-          stored,
-        )
-      ) {
-        setRole(stored);
-      }
-    };
-
-    loadRole();
-    window.addEventListener(WORKSPACE_ROLE_CHANGED_EVENT, loadRole);
-    return () => window.removeEventListener(WORKSPACE_ROLE_CHANGED_EVENT, loadRole);
-  }, []);
 
   useEffect(() => {
     for (const group of ADMIN_NAV_GROUPS) {

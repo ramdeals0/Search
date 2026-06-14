@@ -301,10 +301,20 @@ export function JitAccessPanel() {
     setFeedback(null);
 
     try {
+      const payload: JitPolicyDto = {
+        ...policyDraft,
+        approvalRequiredRoles: [
+          ...new Set([
+            ...policyDraft.approvalRequiredRoles,
+            ...policyDraft.elevatableRoles,
+          ]),
+        ],
+      };
+
       const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/jit-policy`, {
         method: "POST",
         headers: getAuthHeaders(),
-        body: JSON.stringify(policyDraft),
+        body: JSON.stringify(payload),
       });
 
       const body = (await response.json().catch(() => null)) as
@@ -549,13 +559,21 @@ export function JitAccessPanel() {
               />
             </label>
             <div style={{ fontSize: 12, color: "#64748b" }}>
-              Approval required for:{" "}
-              {ALL_USER_ROLES.map((role) => (
+              Approval required for all elevatable roles (admin approval enforced server-side):
+              {" "}
+              {ALL_USER_ROLES.map((role) => {
+                const locked = policyDraft.elevatableRoles.includes(role);
+                return (
                 <label key={role} style={{ marginRight: 8 }}>
                   <input
                     type="checkbox"
                     checked={policyDraft.approvalRequiredRoles.includes(role)}
-                    onChange={() =>
+                    disabled={locked}
+                    onChange={() => {
+                      if (locked) {
+                        return;
+                      }
+
                       setPolicyDraft({
                         ...policyDraft,
                         approvalRequiredRoles: policyDraft.approvalRequiredRoles.includes(
@@ -565,12 +583,13 @@ export function JitAccessPanel() {
                               (entry) => entry !== role,
                             )
                           : [...policyDraft.approvalRequiredRoles, role],
-                      })
-                    }
+                      });
+                    }}
                   />{" "}
                   {role}
                 </label>
-              ))}
+              );
+              })}
             </div>
             <button
               type="button"

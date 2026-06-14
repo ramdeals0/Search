@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { z } from "zod";
+import { safeSearchQuerySchema } from "@retailer-search/config/safe-text";
 import type {
   EnvironmentKey,
   SynonymListResponseDto,
@@ -16,12 +17,12 @@ import {
 const environmentKeySchema = z.enum(["staging", "live"]);
 
 const createSynonymSchema = z.object({
-  key: z.string().min(1),
-  value: z.string().min(1),
+  key: safeSearchQuerySchema,
+  value: safeSearchQuerySchema,
 });
 
 const updateSynonymSchema = z.object({
-  value: z.string().min(1),
+  value: safeSearchQuerySchema,
 });
 
 function parseEnvironmentQuery(

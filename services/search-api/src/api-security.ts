@@ -4,7 +4,7 @@ import type { z } from "zod";
 import type { RateLimitStatusDto } from "@retailer-search/shared-types";
 import { getRateLimitUserKeyFromAuthHeader } from "./auth-store.js";
 import { checkRateLimit } from "./rate-limit-store.js";
-import { validationError } from "./error-response.js";
+import { buildSecurityHeaders } from "@retailer-search/config/security-headers";
 
 export interface RateLimitPolicy {
   name: string;
@@ -15,6 +15,7 @@ export interface RateLimitPolicy {
 
 export interface RateLimitConfig {
   authLogin: { limit: number; windowSeconds: number };
+  authLoginIp: { limit: number; windowSeconds: number };
   adminMutation: { limit: number; windowSeconds: number };
   adminRead: { limit: number; windowSeconds: number };
 }
@@ -24,6 +25,10 @@ export function getRateLimitConfig(): RateLimitConfig {
     authLogin: {
       limit: Number(process.env.RATE_LIMIT_AUTH_LOGIN_LIMIT ?? 5),
       windowSeconds: Number(process.env.RATE_LIMIT_AUTH_LOGIN_WINDOW_SECONDS ?? 300),
+    },
+    authLoginIp: {
+      limit: Number(process.env.RATE_LIMIT_AUTH_LOGIN_IP_LIMIT ?? 30),
+      windowSeconds: Number(process.env.RATE_LIMIT_AUTH_LOGIN_IP_WINDOW_SECONDS ?? 300),
     },
     adminMutation: {
       limit: Number(process.env.RATE_LIMIT_ADMIN_MUTATION_LIMIT ?? 60),
@@ -76,6 +81,10 @@ export function buildAuthLoginRateLimitKey(req: Request, email?: string): string
   return `auth:login:${getClientIdentifier(req)}:${normalizedEmail}`;
 }
 
+export function buildAuthLoginIpRateLimitKey(req: Request): string {
+  return `auth:login:ip:${getClientIdentifier(req)}`;
+}
+
 export function isAdminMutationRequest(req: Request): boolean {
   const method = req.method.toUpperCase();
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
@@ -117,8 +126,11 @@ export function requireHttpsInProduction(req: Request, res: Response): boolean {
 
 export function attachSecurityHeaders(req: Request, res: Response): void {
   res.setHeader("x-request-id", getRequestId(req));
-  res.setHeader("x-content-type-options", "nosniff");
-  res.setHeader("referrer-policy", "no-referrer");
+
+  const headers = buildSecurityHeaders({ mode: "api" });
+  for (const [name, value] of Object.entries(headers)) {
+    res.setHeader(name, value);
+  }
 
   if (isSensitiveResponsePath(req.path)) {
     res.setHeader("cache-control", "no-store");
@@ -205,5 +217,16 @@ export function createAuthLoginRateLimitPolicy(
     limit: config.authLogin.limit,
     windowSeconds: config.authLogin.windowSeconds,
     buildKey: (req) => buildAuthLoginRateLimitKey(req, email),
+  };
+}
+
+export function createAuthLoginIpRateLimitPolicy(
+  config: RateLimitConfig = getRateLimitConfig(),
+): RateLimitPolicy {
+  return {
+    name: "auth_login_ip",
+    limit: config.authLoginIp.limit,
+    windowSeconds: config.authLoginIp.windowSeconds,
+    buildKey: (req) => buildAuthLoginIpRateLimitKey(req),
   };
 }

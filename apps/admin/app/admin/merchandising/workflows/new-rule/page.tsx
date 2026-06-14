@@ -9,6 +9,11 @@ import type {
   MerchandisingRuleAction,
   MerchandisingRuleCondition,
 } from "@retailer-search/shared-types";
+import {
+  validateRuleName,
+  validateSearchQuery,
+} from "@retailer-search/config/safe-text";
+import { getAuthHeaders } from "../../../../lib/auth-headers";
 import { CatalogAutocompleteInput } from "../../../../catalog-autocomplete-input";
 import {
   WorkflowShell,
@@ -88,6 +93,7 @@ export default function NewRuleWorkflowPage() {
     useState<CatalogVocabularyDto>(EMPTY_VOCABULARY);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
@@ -111,19 +117,47 @@ export default function NewRuleWorkflowPage() {
 
   const canAdvance = useMemo(() => {
     if (step === 1) {
-      return form.name.trim().length > 0;
+      const nameCheck = validateRuleName(form.name);
+      return nameCheck.ok;
     }
     if (step === 2) {
       const condition = buildConditionPayload(form.condition);
-      return Object.keys(condition).length > 0;
+      if (Object.keys(condition).length === 0) {
+        return false;
+      }
+      if (condition.query) {
+        return validateSearchQuery(condition.query).ok;
+      }
+      return true;
     }
     return true;
   }, [form, step]);
+
+  const validateCurrentStep = (): string | null => {
+    if (step === 1) {
+      const nameCheck = validateRuleName(form.name);
+      return nameCheck.ok ? null : nameCheck.error;
+    }
+    if (step === 2) {
+      const condition = buildConditionPayload(form.condition);
+      if (Object.keys(condition).length === 0) {
+        return "Add at least one trigger condition before continuing.";
+      }
+      if (condition.query) {
+        const queryCheck = validateSearchQuery(condition.query);
+        if (!queryCheck.ok) {
+          return queryCheck.error;
+        }
+      }
+    }
+    return null;
+  };
 
   const updateField = <K extends keyof CreateMerchandisingRuleDto>(
     key: K,
     value: CreateMerchandisingRuleDto[K],
   ) => {
+    setFieldError(null);
     setForm((current) => ({ ...current, [key]: value }));
   };
 
@@ -145,12 +179,18 @@ export default function NewRuleWorkflowPage() {
     try {
       const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/rules`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error(`Create failed with HTTP ${response.status}`);
+        const body = (await response.json().catch(() => null)) as
+          | { error?: string; details?: { fieldErrors?: Record<string, string[]> } }
+          | null;
+        const detailMessage = body?.details?.fieldErrors
+          ? Object.values(body.details.fieldErrors).flat().join(" ")
+          : body?.error;
+        throw new Error(detailMessage ?? `Create failed with HTTP ${response.status}`);
       }
 
       setSuccess("Rule saved to staging.");
@@ -443,7 +483,15 @@ export default function NewRuleWorkflowPage() {
             <button
               type="button"
               disabled={!canAdvance}
-              onClick={() => setStep((current) => Math.min(STEPS.length, current + 1))}
+              onClick={() => {
+                const validationError = validateCurrentStep();
+                if (validationError) {
+                  setFieldError(validationError);
+                  return;
+                }
+                setFieldError(null);
+                setStep((current) => Math.min(STEPS.length, current + 1));
+              }}
               style={workflowButtonStyle("primary")}
             >
               Continue
@@ -452,6 +500,9 @@ export default function NewRuleWorkflowPage() {
         </>
       }
     >
+      {fieldError ? (
+        <p style={{ margin: "0 0 1rem", color: "#b91c1c", fontSize: 14 }}>{fieldError}</p>
+      ) : null}
       {stepContent}
     </WorkflowShell>
   );

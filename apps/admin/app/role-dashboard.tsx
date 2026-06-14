@@ -1,7 +1,8 @@
 "use client";
-import { getSearchApiUrl } from "./lib/search-api-url";
-
 import { useEffect, useMemo, useState } from "react";
+import { useWorkspaceRoleState } from "./lib/use-workspace-role";
+import { getSearchApiUrl } from "./lib/search-api-url";
+import { getAuthHeaders } from "./lib/auth-headers";
 import type {
   MerchandisingRule,
   SavedViewDto,
@@ -35,7 +36,6 @@ import { SnapshotsPanel } from "./snapshots-panel";
 import { SuggestionsPanel } from "./suggestions-panel";
 import {
   WorkspaceSwitcher,
-  WORKSPACE_ROLE_STORAGE_KEY,
 } from "./workspace-switcher";
 import { WorkspaceSummaryCards } from "./workspace-summary-cards";
 
@@ -74,30 +74,19 @@ export function RoleDashboard({
   initialAnalytics,
   loadError,
 }: RoleDashboardProps) {
-  const [activeRole, setActiveRole] = useState<WorkspaceRole>("merchandiser");
+  const { activeRole, effectiveRole, setActiveRole } = useWorkspaceRoleState();
   const [presets, setPresets] = useState<WorkspacePresetDto[]>([]);
   const [selectedView, setSelectedView] = useState<SavedViewDto | null>(null);
-
-  useEffect(() => {
-    const storedRole = window.localStorage.getItem(
-      WORKSPACE_ROLE_STORAGE_KEY,
-    ) as WorkspaceRole | null;
-    if (
-      storedRole &&
-      ["merchandiser", "reviewer", "approver", "release_manager", "admin"].includes(
-        storedRole,
-      )
-    ) {
-      setActiveRole(storedRole);
-    }
-  }, []);
 
   useEffect(() => {
     const loadWorkspace = async () => {
       try {
         const response = await fetch(
           `${getSearchApiUrl()}/api/v1/admin/workspaces?activeRole=${encodeURIComponent(activeRole)}`,
-          { cache: "no-store" },
+          {
+            cache: "no-store",
+            headers: getAuthHeaders("none"),
+          },
         );
         if (!response.ok) {
           return;
@@ -206,7 +195,11 @@ export function RoleDashboard({
       )}
 
       <div style={{ display: "grid", gap: "1rem", marginBottom: "1.25rem" }}>
-        <WorkspaceSwitcher activeRole={activeRole} onRoleChange={handleRoleChange} />
+        <WorkspaceSwitcher
+          activeRole={activeRole}
+          effectiveRole={effectiveRole}
+          onRoleChange={handleRoleChange}
+        />
         <WorkspaceSummaryCards activeRole={activeRole} analytics={initialAnalytics} />
         <SavedViewsPanel
           activeRole={activeRole}

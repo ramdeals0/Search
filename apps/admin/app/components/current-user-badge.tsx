@@ -8,19 +8,8 @@ import {
   ACCESS_GOVERNANCE_CHANGED_EVENT,
   JIT_ACCESS_CHANGED_EVENT,
 } from "../admin/access/lib/events";
-import { AUTH_TOKEN_STORAGE_KEY, clearAuthSession, persistAuthSession } from "../auth-session";
-
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined"
-      ? window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
-      : null;
-
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+import { clearAuthSession, persistAuthSession, persistCsrfToken } from "../auth-session";
+import { getAuthHeaders } from "../lib/auth-headers";
 
 interface CurrentUserBadgeProps {
   onRequestRoleChange?: () => void;
@@ -58,7 +47,11 @@ export function CurrentUserBadge({
         return;
       }
 
-      setCurrentUser((await response.json()) as CurrentUserResponseDto);
+      const body = (await response.json()) as CurrentUserResponseDto;
+      setCurrentUser(body);
+      if (body.csrfToken) {
+        persistCsrfToken(body.csrfToken);
+      }
     } catch (loadError) {
       setCurrentUser({ authenticated: false });
       setError(
@@ -103,7 +96,7 @@ export function CurrentUserBadge({
 
       const body = (await response.json()) as {
         success?: boolean;
-        session?: { token: string };
+        session?: { token: string; csrfToken?: string };
         message?: string;
       };
 
@@ -111,7 +104,9 @@ export function CurrentUserBadge({
         throw new Error(body.message ?? "Login failed");
       }
 
-      persistAuthSession(body.session.token);
+      persistAuthSession(body.session.token, {
+        csrfToken: body.session.csrfToken,
+      });
       setPassword("");
       window.dispatchEvent(new CustomEvent(ACCESS_GOVERNANCE_CHANGED_EVENT));
       window.dispatchEvent(new CustomEvent(JIT_ACCESS_CHANGED_EVENT));

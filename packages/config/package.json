@@ -9,6 +9,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./security-headers": {
+      "types": "./dist/security-headers.d.ts",
+      "default": "./dist/security-headers.js"
+    },
+    "./safe-text": {
+      "types": "./dist/safe-text.d.ts",
+      "default": "./dist/safe-text.js"
     }
   },
   "scripts": {
@@ -16,12 +24,13 @@
     "dev": "tsc -b --watch",
     "typecheck": "tsc -b --noEmit",
     "lint": "echo \"lint pending\"",
-    "test": "echo \"tests pending\""
+    "test": "tsx --test src/security-headers.test.ts src/safe-text.test.ts"
   },
   "dependencies": {
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/node": "^22.10.5"
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2"
   }
 }

@@ -3,18 +3,12 @@ import type {
   SavedViewDto,
   SavedViewListResponseDto,
   UpdateSavedViewRequestDto,
+  UserRole,
   WorkspacePresetDto,
   WorkspaceRole,
   WorkspaceStateDto,
 } from "@retailer-search/shared-types";
-
-const AVAILABLE_ROLES: WorkspaceRole[] = [
-  "merchandiser",
-  "reviewer",
-  "approver",
-  "release_manager",
-  "admin",
-];
+import { listAllowedWorkspaceRoles } from "./access-governance/role-rank.js";
 
 const WORKSPACE_PRESETS: WorkspacePresetDto[] = [
   {
@@ -261,11 +255,19 @@ export function setDefaultSavedView(
 
 export function getWorkspaceState(
   activeRole: WorkspaceRole = "merchandiser",
+  effectiveRole: UserRole = "merchandiser",
 ): WorkspaceStateDto {
+  const availableRoles = listAllowedWorkspaceRoles(effectiveRole);
+
   return {
-    activeRole,
-    availableRoles: [...AVAILABLE_ROLES],
-    presets: listWorkspacePresets(),
-    savedViews: listSavedViews().savedViews,
+    activeRole: availableRoles.includes(activeRole)
+      ? activeRole
+      : (effectiveRole as WorkspaceRole),
+    availableRoles,
+    presets: listWorkspacePresets().filter((preset) =>
+      availableRoles.includes(preset.role),
+    ),
+    savedViews: listSavedViews()
+      .savedViews.filter((view) => availableRoles.includes(view.role)),
   };
 }

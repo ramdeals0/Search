@@ -107,6 +107,17 @@ async function seedSystemConfig(
     { key: "demo.search.heroQueries", value: DEMO_HERO_QUERIES },
     { key: "demo.search.queryCategoryHints", value: DEMO_QUERY_CATEGORY_HINTS },
     { key: "demo.experiments", value: workflow.experiments },
+    {
+      key: "bootstrap.security",
+      value: {
+        passwordMinLength: 8,
+        loginAttemptLimit: 5,
+        lockoutWindowMinutes: 15,
+        sessionTtlHours: 8,
+        sessionInactivityMinutes: 30,
+        auditLoggingEnabled: true,
+      },
+    },
   ];
 
   for (const entry of entries) {

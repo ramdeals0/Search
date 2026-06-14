@@ -1,4 +1,9 @@
-import { AUTH_TOKEN_COOKIE_NAME, AUTH_TOKEN_STORAGE_KEY } from "../auth-session";
+import {
+  AUTH_TOKEN_COOKIE_NAME,
+  AUTH_TOKEN_STORAGE_KEY,
+  CSRF_TOKEN_STORAGE_KEY,
+  getStoredCsrfToken,
+} from "../auth-session";
 
 function readTokenFromCookie(): string | null {
   if (typeof document === "undefined") {
@@ -38,6 +43,7 @@ export function getAuthHeaders(
   contentType: "json" | "none" = "json",
 ): HeadersInit {
   const token = getAdminAuthToken();
+  const csrfToken = getStoredCsrfToken();
   const headers: Record<string, string> = {};
 
   if (contentType === "json") {
@@ -48,5 +54,11 @@ export function getAuthHeaders(
     headers.Authorization = `Bearer ${token}`;
   }
 
+  if (csrfToken) {
+    headers["X-CSRF-Token"] = csrfToken;
+  }
+
   return headers;
 }
+
+export { CSRF_TOKEN_STORAGE_KEY };

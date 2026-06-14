@@ -17,6 +17,9 @@ importers:
 
   apps/admin:
     dependencies:
+      '@retailer-search/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@retailer-search/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -120,6 +123,9 @@ importers:
       '@types/node':
         specifier: ^22.10.5
         version: 22.19.20
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.4
 
   packages/plugin-sdk:
     dependencies:

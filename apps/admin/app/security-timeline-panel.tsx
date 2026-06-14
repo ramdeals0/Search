@@ -4,7 +4,7 @@ import { getSearchApiUrl } from "./lib/search-api-url";
 import { useCallback, useEffect, useState } from "react";
 import type { SecurityTimelineEntryDto, SecurityTimelineResponseDto } from "@retailer-search/shared-types";
 import { ACCESS_GOVERNANCE_CHANGED_EVENT } from "./admin/access/lib/events";
-import { AUTH_TOKEN_STORAGE_KEY } from "./auth-session";
+import { getAuthHeaders } from "./lib/auth-headers";
 
 const panelStyle = {
   border: "1px solid #cbd5e1",
@@ -19,18 +19,6 @@ const inputStyle = {
   borderRadius: 6,
   fontSize: 13,
 } as const;
-
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined"
-      ? window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
-      : null;
-
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 function severityColor(severity: SecurityTimelineEntryDto["severity"]): string {
   switch (severity) {

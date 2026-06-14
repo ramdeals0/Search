@@ -9,7 +9,8 @@ import type {
   ConfigureBootstrapSecurityRequestDto,
   CreateBootstrapAdminRequestDto,
 } from "@retailer-search/shared-types";
-import { AUTH_TOKEN_STORAGE_KEY, persistAuthSession } from "../auth-session";
+import { persistAuthSession } from "../auth-session";
+import { getAuthHeaders } from "../lib/auth-headers";
 
 const STEPS = [
   { id: "welcome", label: "Welcome" },
@@ -25,7 +26,8 @@ const DEFAULT_SECURITY: ConfigureBootstrapSecurityRequestDto = {
   passwordMinLength: 12,
   loginAttemptLimit: 5,
   lockoutWindowMinutes: 15,
-  sessionTtlHours: 12,
+  sessionTtlHours: 8,
+  sessionInactivityMinutes: 30,
   auditLoggingEnabled: true,
 };
 
@@ -58,17 +60,6 @@ function stepIndex(step: StepId): number {
   return STEPS.findIndex((entry) => entry.id === step);
 }
 
-function getAuthHeaders(): HeadersInit {
-  const token =
-    typeof window !== "undefined"
-      ? window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
-      : null;
-
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 interface SetupWizardProps {
   initialState: BootstrapStateDto;
@@ -145,11 +136,13 @@ export function SetupWizard({ initialState }: SetupWizardProps) {
       }
 
       const body = (await response.json()) as {
-        session?: { token: string };
+        session?: { token: string; csrfToken?: string };
       };
 
       if (body.session?.token) {
-        persistAuthSession(body.session.token);
+        persistAuthSession(body.session.token, {
+          csrfToken: body.session.csrfToken,
+        });
       }
 
       const statusResponse = await fetch(`${getSearchApiUrl()}/api/v1/setup/status`, {
@@ -438,7 +431,23 @@ export function SetupWizard({ initialState }: SetupWizardProps) {
               />
             </label>
             <label style={labelStyle}>
-              Session TTL (hours)
+              Session inactivity timeout (minutes)
+              <input
+                required
+                type="number"
+                min={5}
+                value={securityForm.sessionInactivityMinutes ?? 30}
+                onChange={(event) =>
+                  setSecurityForm((current) => ({
+                    ...current,
+                    sessionInactivityMinutes: Number(event.target.value),
+                  }))
+                }
+                style={inputStyle}
+              />
+            </label>
+            <label style={labelStyle}>
+              Maximum session lifetime (hours)
               <input
                 required
                 type="number"
@@ -597,7 +606,8 @@ export function SetupWizard({ initialState }: SetupWizardProps) {
               <div>Password min length: {securityForm.passwordMinLength}</div>
               <div>Login attempts: {securityForm.loginAttemptLimit}</div>
               <div>Lockout window: {securityForm.lockoutWindowMinutes} min</div>
-              <div>Session TTL: {securityForm.sessionTtlHours} h</div>
+              <div>Maximum session lifetime: {securityForm.sessionTtlHours} h</div>
+              <div>Inactivity timeout: {securityForm.sessionInactivityMinutes ?? 30} min</div>
               <div>
                 Audit logging: {securityForm.auditLoggingEnabled ? "enabled" : "disabled"}
               </div>
