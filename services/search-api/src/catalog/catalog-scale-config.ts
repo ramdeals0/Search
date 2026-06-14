@@ -2,9 +2,16 @@
 
 export const MAX_CATALOG_PRODUCTS = 80_000_000;
 
+const DEFAULT_IN_MEMORY_THRESHOLD = isRailwayRuntime() ? 8_000 : 100_000;
+
 export const CATALOG_IN_MEMORY_THRESHOLD = readIntEnv(
   "CATALOG_IN_MEMORY_THRESHOLD",
-  100_000,
+  DEFAULT_IN_MEMORY_THRESHOLD,
+);
+
+export const EMBEDDING_IN_MEMORY_THRESHOLD = readIntEnv(
+  "EMBEDDING_IN_MEMORY_THRESHOLD",
+  isRailwayRuntime() ? 1_000 : 5_000,
 );
 
 export const CATALOG_SEARCH_CANDIDATE_LIMIT = readIntEnv(
@@ -24,6 +31,14 @@ export const CATALOG_BROWSE_MAX_PAGE_SIZE = 100;
 export const CATALOG_SEED_BATCH_SIZE = readIntEnv("CATALOG_SEED_BATCH_SIZE", 2_000);
 
 export type CatalogScaleMode = "in_memory" | "database";
+
+function isRailwayRuntime(): boolean {
+  return Boolean(
+    process.env.RAILWAY_ENVIRONMENT ||
+      process.env.RAILWAY_SERVICE_ID ||
+      process.env.RAILWAY_PROJECT_ID,
+  );
+}
 
 function readIntEnv(name: string, fallback: number): number {
   const raw = process.env[name];

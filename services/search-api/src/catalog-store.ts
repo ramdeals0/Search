@@ -88,9 +88,41 @@ export async function getProductById(productId: string): Promise<ProductDocument
   return cachedProducts.find((product) => product.id === productId) ?? null;
 }
 
-export async function hydrateProductCatalog(): Promise<number> {
+export async function prepareCatalogScaleMode(): Promise<number> {
   try {
     databaseProductCount = await countAllProductsInDatabase();
+
+    if (databaseProductCount > MAX_CATALOG_PRODUCTS) {
+      throw new Error(
+        `Catalog has ${databaseProductCount} products; maximum supported is ${MAX_CATALOG_PRODUCTS}.`,
+      );
+    }
+
+    if (shouldUseDatabaseCatalogMode(databaseProductCount)) {
+      catalogScaleMode = "database";
+      cachedProducts = [];
+      catalogSource = "database";
+      console.log(
+        `Catalog scale mode: database (${databaseProductCount.toLocaleString()} products; in-memory threshold ${CATALOG_IN_MEMORY_THRESHOLD.toLocaleString()}).`,
+      );
+    } else {
+      catalogScaleMode = "in_memory";
+    }
+
+    return databaseProductCount;
+  } catch (error) {
+    console.warn("Failed to detect catalog scale mode; defaulting to in-memory.", error);
+    catalogScaleMode = "in_memory";
+    databaseProductCount = 0;
+    return 0;
+  }
+}
+
+export async function hydrateProductCatalog(): Promise<number> {
+  try {
+    if (databaseProductCount === 0) {
+      databaseProductCount = await countAllProductsInDatabase();
+    }
 
     if (databaseProductCount > MAX_CATALOG_PRODUCTS) {
       throw new Error(

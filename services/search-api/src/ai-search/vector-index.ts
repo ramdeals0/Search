@@ -8,7 +8,10 @@ import {
   searchEmbeddingsFromDatabase,
   syncEmbeddingVectorColumn,
 } from "../catalog/catalog-db-queries.js";
-import { CATALOG_VECTOR_SEARCH_LIMIT } from "../catalog/catalog-scale-config.js";
+import {
+  CATALOG_VECTOR_SEARCH_LIMIT,
+  EMBEDDING_IN_MEMORY_THRESHOLD,
+} from "../catalog/catalog-scale-config.js";
 import {
   buildCanonicalProductText,
   hashCanonicalText,
@@ -38,6 +41,17 @@ export async function hydrateVectorIndex(): Promise<void> {
   }
 
   try {
+    const embeddingCount = await prismaClient.productEmbedding.count();
+    if (embeddingCount > EMBEDDING_IN_MEMORY_THRESHOLD) {
+      persistenceEnabled = true;
+      databaseVectorSearchEnabled = true;
+      embeddingByProductId.clear();
+      console.log(
+        `Vector index: database mode (${embeddingCount.toLocaleString()} embeddings; in-memory threshold ${EMBEDDING_IN_MEMORY_THRESHOLD.toLocaleString()}).`,
+      );
+      return;
+    }
+
     const rows = await prismaClient.productEmbedding.findMany();
     embeddingByProductId.clear();
     for (const row of rows) {

@@ -283,6 +283,7 @@ import {
   getMaxCatalogProducts,
   ensureProductCatalogLoaded,
   hydrateProductCatalog,
+  prepareCatalogScaleMode,
   filterProductCatalogByCatalogId,
   isLargeCatalogMode,
 } from "./catalog-store.js";
@@ -1438,7 +1439,10 @@ app.use("/api/v1/admin", enforceAdminRateLimit);
 app.use("/api/v1/admin", enforceAdminJsonContentType);
 
 app.get("/health", async (_req, res) => {
-  await ensureProductCatalogLoaded();
+  if (catalogStartupComplete) {
+    await ensureProductCatalogLoaded();
+  }
+
   const body: HealthResponseDto = {
     ok: true,
     service: "search-api",
@@ -5037,8 +5041,10 @@ app.use(
 );
 
 let databaseConnected = false;
+let catalogStartupComplete = false;
 
 async function hydratePersistentStores(): Promise<void> {
+  await prepareCatalogScaleMode();
   await hydrateBootstrapStore();
   await ensureBootstrapState();
   await hydrateAuthStore();
@@ -5062,18 +5068,22 @@ async function hydratePersistentStores(): Promise<void> {
 }
 
 async function loadProductCatalogAtStartup(): Promise<number> {
-  const productCount = await hydrateProductCatalog();
-  syncProductSearchIndexFromCatalog();
-  if (productCount === 0) {
-    console.warn(
-      "Product catalog is empty. Run: pnpm prisma:seed (from repo root)",
-    );
-  } else {
-    console.log(
-      `Catalog ready: ${productCount.toLocaleString()} products (${getProductCatalogSource()}, mode=${getCatalogScaleMode()}).`,
-    );
+  try {
+    const productCount = await hydrateProductCatalog();
+    syncProductSearchIndexFromCatalog();
+    if (productCount === 0) {
+      console.warn(
+        "Product catalog is empty. Run: pnpm prisma:seed (from repo root)",
+      );
+    } else {
+      console.log(
+        `Catalog ready: ${productCount.toLocaleString()} products (${getProductCatalogSource()}, mode=${getCatalogScaleMode()}).`,
+      );
+    }
+    return productCount;
+  } finally {
+    catalogStartupComplete = true;
   }
-  return productCount;
 }
 
 async function getSearchProductCatalog() {
@@ -5114,8 +5124,11 @@ async function startServer(): Promise<void> {
     }
   }
 
-  await loadProductCatalogAtStartup();
   databaseConnected = dbConnected;
+
+  void loadProductCatalogAtStartup().catch((error) => {
+    console.error("Product catalog startup load failed.", error);
+  });
 
   startReleaseScheduler({
     promoteSnapshot: (input) => {
