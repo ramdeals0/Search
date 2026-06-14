@@ -2926,8 +2926,8 @@ app.get("/api/v1/admin/analytics/summary", (_req, res) => {
 });
 
 app.get("/api/v1/admin/analytics/zero-results", async (req, res) => {
-  const admin = requireAdminUser(req, res);
-  if (!admin) {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
     return;
   }
 
@@ -3026,8 +3026,8 @@ app.get("/api/v1/admin/search-indexes", async (req, res) => {
 });
 
 app.get("/api/v1/admin/scheduled-releases", async (req, res) => {
-  const admin = requireAdminUser(req, res);
-  if (!admin) {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
     return;
   }
   const releases = await listScheduledReleases();
@@ -3039,8 +3039,8 @@ app.get("/api/v1/admin/scheduled-releases", async (req, res) => {
 });
 
 app.post("/api/v1/admin/scheduled-releases", async (req, res) => {
-  const admin = requireAdminUser(req, res);
-  if (!admin) {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
     return;
   }
   if (!requireJsonContentType(req, res)) {
@@ -3051,15 +3051,15 @@ app.post("/api/v1/admin/scheduled-releases", async (req, res) => {
     return;
   }
   const release = await createScheduledRelease(parsed.data, {
-    userId: admin.id,
-    email: admin.email,
+    userId: user.id,
+    email: user.email,
   });
   res.status(201).json(release);
 });
 
 app.delete("/api/v1/admin/scheduled-releases/:id", async (req, res) => {
-  const admin = requireAdminUser(req, res);
-  if (!admin) {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
     return;
   }
   const cancelled = await cancelScheduledRelease(req.params.id);
@@ -3071,8 +3071,8 @@ app.delete("/api/v1/admin/scheduled-releases/:id", async (req, res) => {
 });
 
 app.get("/api/v1/admin/rule-drafts", async (req, res) => {
-  const admin = requireAdminUser(req, res);
-  if (!admin) {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
     return;
   }
   const drafts = await listRuleDrafts();
@@ -3084,8 +3084,8 @@ app.get("/api/v1/admin/rule-drafts", async (req, res) => {
 });
 
 app.post("/api/v1/admin/rule-drafts/generate", async (req, res) => {
-  const admin = requireAdminUser(req, res);
-  if (!admin) {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
     return;
   }
   if (!requireJsonContentType(req, res)) {
@@ -3095,13 +3095,13 @@ app.post("/api/v1/admin/rule-drafts/generate", async (req, res) => {
   if (!assertValidBody(parsed, res, req, "Invalid rule draft payload")) {
     return;
   }
-  const draft = await generateRuleDraft(parsed.data, admin.id);
+  const draft = await generateRuleDraft(parsed.data, user.id);
   res.status(201).json(draft);
 });
 
 app.post("/api/v1/admin/rule-drafts/:id/approve", async (req, res) => {
-  const admin = requireAdminUser(req, res);
-  if (!admin) {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
     return;
   }
   const draft = await approveRuleDraft(req.params.id);
@@ -3113,8 +3113,8 @@ app.post("/api/v1/admin/rule-drafts/:id/approve", async (req, res) => {
 });
 
 app.post("/api/v1/admin/rule-drafts/:id/reject", async (req, res) => {
-  const admin = requireAdminUser(req, res);
-  if (!admin) {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
     return;
   }
   const draft = await rejectRuleDraft(req.params.id);
@@ -3126,8 +3126,8 @@ app.post("/api/v1/admin/rule-drafts/:id/reject", async (req, res) => {
 });
 
 app.post("/api/v1/admin/rule-drafts/:id/apply", async (req, res) => {
-  const admin = requireAdminUser(req, res);
-  if (!admin) {
+  const user = requireAuthenticatedUser(req, res);
+  if (!user) {
     return;
   }
   const draft = await getRuleDraftById(req.params.id);

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ScheduledReleaseDto } from "@retailer-search/shared-types";
 import { getSearchApiUrl } from "./lib/search-api-url";
+import { getAuthHeaders } from "./lib/auth-headers";
 
 const panelStyle = {
   padding: "1rem",
@@ -36,6 +37,8 @@ export function ScheduledReleasesPanel() {
     try {
       const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/scheduled-releases`, {
         cache: "no-store",
+        credentials: "same-origin",
+        headers: getAuthHeaders("none"),
       });
       if (!response.ok) {
         throw new Error(`Failed to load scheduled releases (${response.status})`);
@@ -66,7 +69,11 @@ export function ScheduledReleasesPanel() {
     try {
       const response = await fetch(
         `${getSearchApiUrl()}/api/v1/admin/scheduled-releases/${id}`,
-        { method: "DELETE" },
+        {
+          method: "DELETE",
+          credentials: "same-origin",
+          headers: getAuthHeaders("none"),
+        },
       );
       if (!response.ok) {
         throw new Error(`Cancel failed (${response.status})`);

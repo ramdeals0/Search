@@ -6,6 +6,7 @@ import type {
   CreateApiKeyResponseDto,
 } from "@retailer-search/shared-types";
 import { getSearchApiUrl } from "./lib/search-api-url";
+import { getAuthHeaders } from "./lib/auth-headers";
 
 const panelStyle = {
   padding: "1rem",
@@ -48,6 +49,8 @@ export function ApiKeysPanel() {
     try {
       const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/api-keys`, {
         cache: "no-store",
+        credentials: "same-origin",
+        headers: getAuthHeaders("none"),
       });
       if (!response.ok) {
         throw new Error(`Failed to load API keys (${response.status})`);
@@ -78,7 +81,8 @@ export function ApiKeysPanel() {
     try {
       const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/api-keys`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           name: name.trim(),
           tenantId: tenantId.trim() || "default",
@@ -106,6 +110,8 @@ export function ApiKeysPanel() {
     try {
       const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/api-keys/${id}`, {
         method: "DELETE",
+        credentials: "same-origin",
+        headers: getAuthHeaders("none"),
       });
       if (!response.ok) {
         throw new Error(`Revoke failed (${response.status})`);

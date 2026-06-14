@@ -128,9 +128,9 @@ ForgeOps uses role-based navigation. The **workspace role switcher** in the side
 | Section | Pages |
 |---------|-------|
 | **Overview** | Dashboard |
-| **Catalog** | Products, Search, Merchandising, Experiments |
+| **Catalog** | Products, Search, Zero-results inbox, Merchandising, Experiments |
 | **Governance** | Approvals, Access, Audit, Notifications |
-| **Operations** | Exports, Integrations, Settings |
+| **Operations** | Exports, Integrations, API keys, Settings |
 
 Pages hidden for your role will not appear in the sidebar.
 
@@ -158,6 +158,21 @@ The storefront is the shopper-facing search experience. Locally it runs at **htt
 1. Type a query in the search bar (e.g. `cordless drill`, `mulch`, `gfci outlet`)
 2. Press **Enter** or select a suggestion from autocomplete
 3. Browse results on the right; use **filters** on the left
+4. When there are multiple pages, use **Previous** / **Next** below the results
+
+### Browse catalog (without a query)
+
+**Path:** `/browse` (link: **Browse catalog** on the home page)
+
+Use browse when shoppers want to explore the catalog by category instead of typing a search query.
+
+1. Open **Browse catalog** from the storefront home page
+2. Pick a **category** from the sidebar (or stay on **All products**)
+3. Optionally filter by **brand**, **stock status**, or change **sort** (relevance, price, title)
+4. Click **Apply filters** to refresh results
+5. Use **Previous** / **Next** when results span multiple pages
+
+Browse uses the search API’s browse endpoints (`/api/v1/browse` and `/api/v1/browse/categories`). It reflects the **live** product catalog, not staging merchandising rules.
 
 ### Autocomplete
 
@@ -184,7 +199,7 @@ If the platform corrects a typo (e.g. `dril` → `drill`), a message shows the c
 
 ### Analytics impact
 
-Every storefront search and product click is recorded. This data powers admin analytics, suggestions, and the **Products** insight panels. Run realistic searches during demos to populate dashboards.
+Every storefront search and product click is recorded in the search API database. This data powers admin analytics, suggestions, the **Zero-results inbox**, and the **Products** insight panels. Run realistic searches during demos to populate dashboards.
 
 ---
 
@@ -288,6 +303,25 @@ Test any query against the current staging configuration:
 2. Click **Preview**
 3. Review ranked products, scores, and applied rules
 
+### Zero-results inbox
+
+**Path:** `/admin/search/zero-results` (also embedded on the Search workspace page)
+
+The zero-results inbox turns persistent “no results” queries into actionable fixes.
+
+**Inbox table** — lists queries that returned zero hits, with occurrence count and last-seen time (from durable analytics, not just the current session).
+
+**For each query:**
+
+1. Click **Generate draft** — the platform proposes a merchandising rule (LLM-assisted when configured, heuristic fallback otherwise)
+2. Review the draft in the **Rule drafts** section below the table
+3. **Approve** or **Reject** the draft
+4. If approved, click **Apply to staging** — the suggested rule is written to staging configuration
+
+After applying, preview the query in **Products** or **Search**, snapshot staging, and release through the normal approval path.
+
+**Tip:** Start here for high-volume zero-result queries before manually authoring rules in Merchandising.
+
 ---
 
 ## 7. Merchandising workspace
@@ -359,6 +393,31 @@ Same assisted suggestions as the Search workspace, available here while editing 
 
 Execute or request promotion of an approved snapshot to **live**. Shows promotion history and the currently active live configuration.
 
+### Promotions workspace and scheduled releases
+
+**Path:** `/admin/merchandising/promotions`
+
+The promotions workspace lists snapshot promotion activity and hosts the **Scheduled releases** panel.
+
+**Scheduled releases panel** shows pending jobs (promote or rollback) with their scheduled time. Cancel a pending job with **Cancel** before it runs. The search-api background scheduler executes due jobs automatically (typically within about one minute of the scheduled time).
+
+### Guided promotion workflow
+
+**Path:** `/admin/merchandising/workflows/new-promotion`
+
+A step-by-step wizard to promote a snapshot with targeting, review, and controlled launch:
+
+1. **Campaign details** — name and reason
+2. **Select snapshot** — choose the configuration to promote
+3. **Targeting** — optional experiment link
+4. **Launch timing and mode**
+   - **Launch immediately** or **Schedule for later** (date/time picker)
+   - **Request approval** (recommended) or **Direct promote** (emergency bypass)
+5. **Review** — confirm snapshot, timing, and mode
+6. **Launch** — submit approval request, promote immediately, or **Schedule promotion**
+
+When you schedule a promotion, ForgeOps creates a `promote_snapshot` job. Approval policy is enforced when the job runs, not at schedule time.
+
 ---
 
 ## 8. Experiments workspace
@@ -373,7 +432,19 @@ Define a set of queries to evaluate consistently (e.g. hero queries like `cordle
 
 ### Experiments panel
 
-Create and manage A/B-style search experiments comparing configurations.
+Create and manage A/B-style search experiments comparing **baseline** and **candidate** merchandising snapshots against a saved query set.
+
+When creating an experiment, optionally enable **Candidate LLM overrides** (candidate arm only):
+
+| Override | Effect on candidate arm |
+|----------|-------------------------|
+| **Query rewrite** | LLM rewrites the shopper query before retrieval |
+| **Zero-results recovery** | LLM attempts alternate queries when retrieval returns no hits |
+| **LLM rerank (page 1)** | Reranks top candidates with an LLM on the first results page |
+
+The baseline arm always uses standard search (no LLM). Overrides are useful for testing LLM features against a known snapshot before enabling them platform-wide via environment variables.
+
+**Run experiment** executes evaluation across every query in the linked query set and records per-query outcomes. Experiments with LLM overrides may take longer per run depending on provider latency.
 
 ### Experiment run view
 
@@ -513,6 +584,25 @@ View job history and download completed exports.
 
 Configure **webhook endpoints** and inspect **delivery logs** for external systems (SIEM, Slack, custom automation).
 
+### API keys
+
+**Path:** `/admin/integrations/api-keys` *(Admin only)*
+
+Issue scoped API keys for storefront apps, partner integrations, and automation.
+
+**Default scopes** on new keys: `search:read`, `browse:read`, `events:write`.
+
+**Create a key:**
+
+1. Enter a **Name** (e.g. `storefront-prod`)
+2. Optionally set **Tenant ID** and **Rate limit / minute** (default 120)
+3. Click **Create key**
+4. **Copy the secret immediately** — it is shown only once
+
+**Revoke** disables a key without deleting audit history.
+
+**Enforcing keys in production:** set `SEARCH_API_KEY_REQUIRED=true` on the search-api service. Clients must then send the key in the `X-API-Key` header (or `Authorization: Bearer <key>`) on public routes such as `/api/v1/search`, `/api/v1/browse`, and event ingestion endpoints.
+
 ---
 
 ## 13. Settings
@@ -530,12 +620,30 @@ Configure **webhook endpoints** and inspect **delivery logs** for external syste
 
 ### Fix a zero-result query
 
-1. **Search** workspace → find the query in zero-result list
-2. Open the **suggestion** or **query preview**
+1. **Search** workspace or **Zero-results inbox** (`/admin/search/zero-results`) → find the query
+2. In the inbox, click **Generate draft** → **Approve** → **Apply to staging**  
+   *Or* open a **suggestion** / **query preview** and fix manually
 3. If it is a vocabulary gap → add a **synonym** or improve catalog coverage
 4. If products exist but rank poorly → create a **boost** or **pin** rule in **Merchandising**
 5. **Preview** the query in Products or Search
-6. **Snapshot** → **request approval** → **promote**
+6. **Snapshot** → **request approval** → **promote** (or **schedule** via guided promotion)
+
+### Schedule a promotion for a future launch
+
+1. **Merchandising** → **Guided promotion** (`/admin/merchandising/workflows/new-promotion`)
+2. Complete campaign details and select the snapshot
+3. On **Launch timing and mode**, choose **Schedule for later** and pick date/time
+4. Choose **Request approval** or **Direct promote** (policy enforced when the job runs)
+5. Click **Schedule promotion**
+6. Monitor pending jobs on **Promotions** (`/admin/merchandising/promotions`) — cancel if plans change
+
+### Test LLM search changes in an experiment
+
+1. Create **baseline** and **candidate** snapshots in Merchandising
+2. Create a **query set** with representative shopper queries
+3. **Experiments** → create experiment, enable **Candidate LLM overrides** as needed
+4. **Run experiment** and review the scorecard / run view
+5. If results look good, promote the candidate snapshot (immediate or scheduled)
 
 ### Boost a brand for seasonal campaigns
 
@@ -591,6 +699,17 @@ The demo catalog is synthetic home-improvement data (~1,000 products, 80+ brands
 | `mulch` | Lawn & garden seasonal boost |
 | `led shop light` | Garage/workshop lighting |
 
+### Browse categories worth exploring
+
+| Category | What to expect |
+|----------|----------------|
+| **Power Tools** | Drills, saws, sanders |
+| **Lawn & Garden** | Mulch, trimmers, seasonal items |
+| **Electrical** | Outlets, switches, GFCI products |
+| **Lighting** | Shop lights, bulbs, fixtures |
+
+On `/browse`, try sorting by **Price: low to high** or filtering **In stock** only.
+
 ### Typo correction examples
 
 | Type this | Corrected to |
@@ -606,7 +725,11 @@ The demo catalog is synthetic home-improvement data (~1,000 products, 80+ brands
 
 ### Metrics show zero searches
 
-Run queries on the **storefront** first. Analytics are in-memory until the API restarts—searches and clicks accumulate during the session.
+Run queries on the **storefront** first. Search and click events are stored in the database; dashboards update as traffic accumulates. A fresh deploy with no storefront traffic will show zeros until shoppers (or demo searches) run queries.
+
+### Browse page shows an API error
+
+Confirm the search API is running and reachable at `NEXT_PUBLIC_SEARCH_API_URL`. Browse requires the same connectivity as search (`/api/v1/browse` and `/api/v1/browse/categories`). If `SEARCH_API_KEY_REQUIRED=true`, the storefront must send a valid API key (configure at the platform layer—keys are managed under **Integrations → API keys**).
 
 ### Rule change not visible on storefront
 
@@ -717,6 +840,19 @@ Add a **PostgreSQL** plugin in the same Railway project. Only **search-api** nee
 
 Do **not** set `SEARCH_API_PORT` on Railway.
 
+**Optional variables (platform features):**
+
+| Variable | Purpose |
+|----------|---------|
+| `SEARCH_API_KEY_REQUIRED` | Set to `true` to require API keys on public search/browse/event routes |
+| `DEFAULT_API_KEY_RATE_LIMIT` | Default per-key rate limit when not set on the key (default 120/min) |
+| `LLM_PROVIDER` | `openrouter`, `groq`, or `none` (default) |
+| `OPENROUTER_API_KEY` / `GROQ_API_KEY` | Provider credentials when LLM features are enabled |
+| `LLM_QUERY_REWRITE_ENABLED` | Enable live query rewrite (`true` / `false`) |
+| `LLM_ZERO_RESULTS_ENABLED` | Enable live zero-results recovery |
+| `LLM_RERANK_ENABLED` | Enable live LLM reranking |
+| `HYBRID_VECTOR_ENABLED` | Enable hybrid vector retrieval stub (`true` / `false`) |
+
 **Verify:** `GET /health` returns `"ok": true`, `"database.connected": true`, and `"productCount" > 0` after migrate/seed.
 
 ### ForgeOps admin service
@@ -778,6 +914,8 @@ This loads ~1,000 demo products and the demo user accounts listed in [Demo envir
 - [ ] Admin `SEARCH_API_URL` points at the search-api public URL
 - [ ] Storefront `NEXT_PUBLIC_SEARCH_API_URL` matches the search-api public URL
 - [ ] Generate public domains for all three services in Railway **Networking**
+- [ ] (Optional) Configure LLM provider env vars if using query rewrite, zero-results recovery, or rerank in production
+- [ ] (Optional) Create API keys under ForgeOps **Integrations → API keys** and set `SEARCH_API_KEY_REQUIRED=true` if partners must authenticate
 
 ---
 
@@ -787,8 +925,11 @@ This loads ~1,000 demo products and the demo user accounts listed in [Demo envir
 |-------|---------|
 | `/admin` | Dashboard |
 | `/admin/products` | Catalog search preview and insights |
-| `/admin/search` | Analytics, suggestions, query preview |
+| `/admin/search` | Analytics, suggestions, query preview, zero-results panel |
+| `/admin/search/zero-results` | Zero-results inbox and rule draft workflow |
 | `/admin/merchandising` | Rules, snapshots, environments, promotion |
+| `/admin/merchandising/promotions` | Promotions workspace and scheduled releases |
+| `/admin/merchandising/workflows/new-promotion` | Guided promotion (immediate or scheduled) |
 | `/admin/experiments` | Query sets, experiments, scorecards |
 | `/admin/approvals` | Approval queue, SLA, exceptions, delegation |
 | `/admin/access` | JIT access, role requests, access reviews |
@@ -796,12 +937,20 @@ This loads ~1,000 demo products and the demo user accounts listed in [Demo envir
 | `/admin/notifications` | Notification inbox |
 | `/admin/exports` | Export jobs |
 | `/admin/integrations` | Webhooks |
+| `/admin/integrations/api-keys` | API key management |
 | `/admin/settings` | Environment and policy defaults |
 | `/login` | Sign in |
 | `/setup` | First-run instance setup |
 | `/health` | Admin service health (production ops) |
 
-**Search API (backend):** `/health` — JSON status and catalog counts.
+**Storefront routes:**
+
+| Route | Purpose |
+|-------|---------|
+| `/` | Shopper search |
+| `/browse` | Category browse, filters, sort, pagination |
+
+**Search API (backend):** `/health` — JSON status and catalog counts. Public routes include `/api/v1/search`, `/api/v1/browse`, `/api/v1/browse/categories`, and event ingestion under `/api/v1/events/*`.
 
 ---
 

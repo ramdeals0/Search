@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { AUTH_TOKEN_COOKIE_NAME } from "../../auth-session";
 
 function getSearchApiBaseUrl(): string {
   const base =
@@ -35,6 +36,28 @@ async function proxyRequest(
   const authorization = request.headers.get("authorization");
   if (authorization) {
     headers.set("authorization", authorization);
+  } else {
+    const cookieHeader = request.headers.get("cookie");
+    if (cookieHeader) {
+      const prefix = `${AUTH_TOKEN_COOKIE_NAME}=`;
+      const match = cookieHeader
+        .split(";")
+        .map((part) => part.trim())
+        .find((part) => part.startsWith(prefix));
+      if (match) {
+        const raw = match.slice(prefix.length);
+        try {
+          const token = decodeURIComponent(raw);
+          if (token) {
+            headers.set("authorization", `Bearer ${token}`);
+          }
+        } catch {
+          if (raw) {
+            headers.set("authorization", `Bearer ${raw}`);
+          }
+        }
+      }
+    }
   }
 
   const init: RequestInit = {

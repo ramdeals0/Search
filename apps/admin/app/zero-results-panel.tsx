@@ -6,6 +6,7 @@ import type {
   ZeroResultInsightsResponseDto,
 } from "@retailer-search/shared-types";
 import { getSearchApiUrl } from "./lib/search-api-url";
+import { getAuthHeaders } from "./lib/auth-headers";
 
 const panelStyle = {
   padding: "1rem",
@@ -54,12 +55,23 @@ export function ZeroResultsPanel() {
     setError(null);
 
     try {
+      const authHeaders = getAuthHeaders("none");
       const [insightsRes, draftsRes] = await Promise.all([
         fetch(`${getSearchApiUrl()}/api/v1/admin/analytics/zero-results?limit=25`, {
           cache: "no-store",
+          credentials: "same-origin",
+          headers: authHeaders,
         }),
-        fetch(`${getSearchApiUrl()}/api/v1/admin/rule-drafts`, { cache: "no-store" }),
+        fetch(`${getSearchApiUrl()}/api/v1/admin/rule-drafts`, {
+          cache: "no-store",
+          credentials: "same-origin",
+          headers: authHeaders,
+        }),
       ]);
+
+      if (insightsRes.status === 401) {
+        throw new Error("Sign in to ForgeOps to view the zero-results inbox.");
+      }
 
       if (!insightsRes.ok) {
         throw new Error(`Failed to load zero-result queries (${insightsRes.status})`);
@@ -92,7 +104,8 @@ export function ZeroResultsPanel() {
         `${getSearchApiUrl()}/api/v1/admin/rule-drafts/generate`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          headers: getAuthHeaders(),
           body: JSON.stringify({ query }),
         },
       );
@@ -121,7 +134,11 @@ export function ZeroResultsPanel() {
     try {
       const response = await fetch(
         `${getSearchApiUrl()}/api/v1/admin/rule-drafts/${draftId}/${action}`,
-        { method: "POST" },
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: getAuthHeaders("none"),
+        },
       );
 
       if (!response.ok) {
@@ -158,9 +175,10 @@ export function ZeroResultsPanel() {
 
       {loading ? (
         <p style={{ margin: 0, fontSize: 14, color: "#64748b" }}>Loading inbox...</p>
-      ) : insights.queries.length === 0 ? (
+      ) : error ? null : insights.queries.length === 0 ? (
         <p style={{ margin: 0, fontSize: 14, color: "#64748b" }}>
-          No zero-result queries recorded yet.
+          No zero-result queries recorded yet. Run searches on the storefront that return
+          no products to populate this inbox.
         </p>
       ) : (
         <div style={{ overflowX: "auto" }}>
