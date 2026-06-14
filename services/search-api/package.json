@@ -10,9 +10,10 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "start:prod": "prisma migrate deploy && node dist/index.js",
+    "start:worker": "prisma migrate deploy && node dist/embedding-worker.js",
     "typecheck": "prisma generate && tsc -b --noEmit",
     "lint": "echo \"lint pending\"",
-    "test": "tsx --test src/ai-search/ai-search.test.ts src/catalog/catalog-scale.test.ts src/catalog/catalog-filter.test.ts src/suggestion-engine.test.ts src/auth/login-protection.test.ts src/auth/csrf-protection.test.ts src/auth/session-policy.test.ts src/privacy/pii-masking.test.ts src/access-governance/jit-access-store.test.ts src/validation/safe-text-validation.test.ts src/data-tenancy.test.ts",
+    "test": "tsx --test src/ai-search/ai-search.test.ts src/ai-search/hybrid-pipeline.test.ts src/ai-search/embedding-queue.test.ts src/catalog/catalog-scale.test.ts src/catalog/catalog-filter.test.ts src/suggestion-engine.test.ts src/auth/login-protection.test.ts src/auth/csrf-protection.test.ts src/auth/session-policy.test.ts src/privacy/pii-masking.test.ts src/access-governance/jit-access-store.test.ts src/validation/safe-text-validation.test.ts src/data-tenancy.test.ts",
     "seed:luxury": "tsx prisma/seed-luxury.ts",
     "db:test-aiven": "node scripts/test-aiven-postgres.mjs"
   },

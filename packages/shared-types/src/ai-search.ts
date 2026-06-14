@@ -4,7 +4,9 @@ export type EmbeddingsProviderName = "mock" | "openai" | "openrouter";
 
 export type AiSearchPreviewMode =
   | "lexical"
+  | "semantic"
   | "hybrid"
+  | "hybrid_rerank"
   | "hybrid_personalization"
   | "semantic_rescue";
 
@@ -77,6 +79,10 @@ export interface AiRankingDebugDto {
   semanticRecoveryApplied: boolean;
   embeddingProvider: EmbeddingsProviderName;
   embeddingModel: string;
+  vectorIndexType?: "hnsw" | "ivfflat" | "none";
+  rerankEnabled?: boolean;
+  rerankProvider?: "off" | "score_fusion" | "cross_encoder" | "llm";
+  fusedCandidateCount?: number;
   experimentArm?: "baseline" | "candidate";
 }
 
@@ -84,19 +90,25 @@ export interface ExtendedRankingDebugDto extends RankingDebugDto {
   lexicalScore?: number;
   semanticScore?: number;
   personalizationScore?: number;
+  fusedScore?: number;
+  rerankScore?: number;
+  retrievalSources?: Array<"lexical" | "semantic">;
   explanationCodes?: SearchExplanationCode[];
 }
 
 export interface EmbeddingJobDto {
   id: string;
-  status: "queued" | "running" | "completed" | "failed";
-  jobType: "backfill" | "incremental" | "reindex";
+  status: "queued" | "running" | "completed" | "failed" | "dead_letter";
+  jobType: "backfill" | "incremental" | "reindex" | "consistency_scan";
   totalProducts: number;
   processedProducts: number;
   failedProducts: number;
+  skippedProducts?: number;
   model: string;
   provider: EmbeddingsProviderName;
   errorMessage?: string;
+  retryCount?: number;
+  maxRetries?: number;
   startedAt?: ISODateString;
   completedAt?: ISODateString;
   createdAt: ISODateString;

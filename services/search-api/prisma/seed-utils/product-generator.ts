@@ -11,7 +11,6 @@ import {
 } from "../seed-data/brands.js";
 import {
   HERO_PRODUCT_TEMPLATES,
-  LEAF_SEARCH_KEYWORDS,
   VARIANT_FAMILY_TEMPLATES,
   type HeroProductTemplate,
   type VariantFamilyTemplate,
@@ -25,6 +24,7 @@ import {
   slugify,
   type SeededRng,
 } from "./random.js";
+import { generateProductCopy } from "./product-attribute-templates.js";
 
 const MAX_CATALOG_PRODUCTS = 80_000_000;
 
@@ -60,6 +60,8 @@ interface InternalProduct extends ProductDocument {
     popularityScore: number;
     compareAtPrice?: number;
     keywords: string[];
+    useCases?: string[];
+    searchCriteria?: string[];
     department: string;
     productType: string;
     isHero?: boolean;
@@ -180,6 +182,14 @@ function mapHeroToProduct(hero: HeroProductTemplate, rng: SeededRng): InternalPr
       popularityScore: hero.popularityScore,
       compareAtPrice: hero.compareAtPrice,
       keywords: hero.keywords,
+      useCases: hero.keywords.slice(0, 3),
+      searchCriteria: [
+        ...hero.keywords,
+        hero.brand.toLowerCase(),
+        leaf.productType.toLowerCase(),
+        leaf.subcategory.toLowerCase(),
+        ...Object.values(hero.specs).map(String),
+      ],
       department: leaf.department,
       productType: leaf.productType,
       isHero: true,
@@ -212,6 +222,14 @@ function mapVariantProduct(input: {
   const slug = slugify(title);
   const createdAt = isoDateDaysAgo(input.rng, 720);
   const inStock = input.inventoryStatus !== "out_of_stock" && input.inventory > 0;
+  const copy = generateProductCopy({
+    leaf: input.leaf,
+    brand: input.brand,
+    rng: input.rng,
+    title,
+    extraSpecs: input.specs,
+    variantSuffix: input.suffix,
+  });
 
   return {
     id: seedId("prod", input.productIndex),
@@ -220,7 +238,7 @@ function mapVariantProduct(input: {
     brand: input.family.brand,
     category: input.leaf.department,
     subcategory: input.leaf.subcategory,
-    description: `${input.family.description} Selected option: ${input.suffix}.`,
+    description: copy.description,
     price: input.price,
     inventory: input.inventory,
     inStock,
@@ -228,14 +246,16 @@ function mapVariantProduct(input: {
     createdAt,
     updatedAt: createdAt,
     attributes: {
-      ...input.specs,
+      ...copy.specs,
       slug,
-      shortDescription: input.family.description,
-      longDescription: `${input.family.description} Available configuration: ${input.suffix}.`,
+      shortDescription: copy.shortDescription,
+      longDescription: copy.longDescription,
       productGroupId: input.family.id,
       inventoryStatus: input.inventoryStatus,
       popularityScore: input.popularityScore,
-      keywords: input.family.keywords,
+      keywords: [...input.family.keywords, ...copy.searchCriteria],
+      useCases: copy.useCases,
+      searchCriteria: copy.searchCriteria,
       department: input.leaf.department,
       productType: input.leaf.productType,
       isContractorGrade: input.leaf.contractorOriented ?? false,
@@ -268,12 +288,12 @@ function mapSimpleProduct(input: {
     tierPriceMultiplier(input.brand.tier);
   const price = formatMoney(basePrice);
   const createdAt = isoDateDaysAgo(input.rng, 900);
-  const keywords = [
-    input.leaf.productType.toLowerCase(),
-    input.leaf.subcategory.toLowerCase(),
-    input.brand.name.toLowerCase(),
-    ...(LEAF_SEARCH_KEYWORDS[input.leaf.id] ?? []),
-  ];
+  const copy = generateProductCopy({
+    leaf: input.leaf,
+    brand: input.brand,
+    rng: input.rng,
+    title,
+  });
 
   return {
     id: seedId("prod", input.productIndex),
@@ -282,7 +302,7 @@ function mapSimpleProduct(input: {
     brand: input.brand.name,
     category: input.leaf.department,
     subcategory: input.leaf.subcategory,
-    description: `${title} is built for ${input.leaf.diyFriendly ? "DIY homeowners" : "professional trade use"} in ${input.leaf.subcategory.toLowerCase()} projects.`,
+    description: copy.description,
     price,
     inventory,
     inStock,
@@ -290,12 +310,15 @@ function mapSimpleProduct(input: {
     createdAt,
     updatedAt: createdAt,
     attributes: {
+      ...copy.specs,
       slug,
-      shortDescription: `${input.brand.name} ${input.leaf.productType} for ${input.leaf.subcategory.toLowerCase()}.`,
-      longDescription: `Reliable ${input.leaf.productType.toLowerCase()} from ${input.brand.name} with category-specific specs for ${input.leaf.department.toLowerCase()} applications.`,
+      shortDescription: copy.shortDescription,
+      longDescription: copy.longDescription,
       inventoryStatus,
       popularityScore,
-      keywords,
+      keywords: copy.searchCriteria,
+      useCases: copy.useCases,
+      searchCriteria: copy.searchCriteria,
       department: input.leaf.department,
       productType: input.leaf.productType,
       isContractorGrade: input.leaf.contractorOriented ?? false,

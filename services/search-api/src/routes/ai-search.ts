@@ -60,7 +60,14 @@ const previewSchema = z.object({
   pageSize: z.coerce.number().int().positive().max(50).default(10),
   environment: z.enum(["staging", "live"]).default("staging"),
   previewMode: z
-    .enum(["lexical", "hybrid", "hybrid_personalization", "semantic_rescue"])
+    .enum([
+      "lexical",
+      "semantic",
+      "hybrid",
+      "hybrid_rerank",
+      "hybrid_personalization",
+      "semantic_rescue",
+    ])
     .default("hybrid"),
   sessionId: z.string().optional(),
 });

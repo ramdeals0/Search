@@ -23,7 +23,11 @@ test("buildCanonicalProductText includes title brand and category", () => {
     price: 129,
     inventory: 10,
     inStock: true,
-    attributes: { voltage: "20V" },
+    attributes: {
+      voltage: "20V",
+      useCases: ["deck building", "framing"],
+      searchCriteria: ["cordless drill", "battery drill"],
+    },
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   });
@@ -32,6 +36,8 @@ test("buildCanonicalProductText includes title brand and category", () => {
   assert.match(text, /RapidDrive/);
   assert.match(text, /Power Tools > Drills/);
   assert.match(text, /20V/);
+  assert.match(text, /deck building/);
+  assert.match(text, /cordless drill/);
 });
 
 test("hashCanonicalText is stable", () => {

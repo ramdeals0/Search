@@ -10,7 +10,12 @@ import { forEachProductBatchFromDatabase } from "../catalog/catalog-db-queries.j
 import { CATALOG_DB_BATCH_SIZE } from "../catalog/catalog-scale-config.js";
 import { isLargeCatalogMode } from "../catalog-store.js";
 import { getAiRankingConfig } from "./ai-ranking-config-store.js";
+import {
+  enqueueEmbeddingJob,
+  enqueueIncrementalEmbeddingJobs,
+} from "./embedding-job-queue.js";
 import { embedProductsBatch, getEmbeddingCoverage, hydrateVectorIndex } from "./vector-index.js";
+import { getEmbeddingWorkerRuntimeConfig } from "./vector-config.js";
 
 const prismaClient = prisma as any;
 
@@ -23,9 +28,12 @@ function toDto(row: {
   totalProducts: number;
   processedProducts: number;
   failedProducts: number;
+  skippedProducts?: number;
   model: string;
   provider: string;
   errorMessage: string | null;
+  retryCount?: number;
+  maxRetries?: number;
   startedAt: Date | null;
   completedAt: Date | null;
   createdAt: Date;
@@ -37,9 +45,12 @@ function toDto(row: {
     totalProducts: row.totalProducts,
     processedProducts: row.processedProducts,
     failedProducts: row.failedProducts,
+    skippedProducts: row.skippedProducts ?? 0,
     model: row.model,
     provider: row.provider as EmbeddingsProviderName,
     errorMessage: row.errorMessage ?? undefined,
+    retryCount: row.retryCount,
+    maxRetries: row.maxRetries,
     startedAt: row.startedAt?.toISOString(),
     completedAt: row.completedAt?.toISOString(),
     createdAt: row.createdAt.toISOString(),
@@ -73,42 +84,9 @@ export async function getEmbeddingCoverageSummary(
   };
 }
 
-export async function triggerEmbeddingJob(
-  products: ProductDocument[],
-  request: TriggerEmbeddingJobRequestDto = {},
-): Promise<EmbeddingJobDto> {
-  if (activeJobId) {
-    const active = await getEmbeddingJob(activeJobId);
-    if (active && (active.status === "queued" || active.status === "running")) {
-      return active;
-    }
-  }
+export { enqueueIncrementalEmbeddingJobs };
 
-  const config = await getAiRankingConfig();
-  const useDatabaseCatalog = isLargeCatalogMode();
-  const targetCount =
-    request.productIds && request.productIds.length > 0
-      ? request.productIds.length
-      : useDatabaseCatalog
-        ? await prisma.product.count()
-        : products.length;
-
-  const row = await prismaClient.embeddingJob.create({
-    data: {
-      status: "queued",
-      jobType: request.jobType ?? "backfill",
-      totalProducts: targetCount,
-      model: config.embeddingsModel,
-      provider: config.embeddingsProvider,
-    },
-  });
-
-  activeJobId = row.id;
-  void runEmbeddingJob(row.id, products, config.embeddingBatchSize, request.productIds);
-  return toDto(row);
-}
-
-async function runEmbeddingJob(
+async function runEmbeddingJobInline(
   jobId: string,
   products: ProductDocument[],
   batchSize: number,
@@ -116,6 +94,7 @@ async function runEmbeddingJob(
 ): Promise<void> {
   let processedTotal = 0;
   let failedTotal = 0;
+  let skippedTotal = 0;
 
   try {
     await prismaClient.embeddingJob.update({
@@ -130,11 +109,13 @@ async function runEmbeddingJob(
           const result = await embedProductsBatch(batch, batchSize);
           processedTotal += result.processed + result.skipped;
           failedTotal += result.failed;
+          skippedTotal += result.skipped;
           await prismaClient.embeddingJob.update({
             where: { id: jobId },
             data: {
               processedProducts: processedTotal,
               failedProducts: failedTotal,
+              skippedProducts: skippedTotal,
             },
           });
         },
@@ -154,11 +135,13 @@ async function runEmbeddingJob(
         const result = await embedProductsBatch(batch, batchSize);
         processedTotal += result.processed + result.skipped;
         failedTotal += result.failed;
+        skippedTotal += result.skipped;
         await prismaClient.embeddingJob.update({
           where: { id: jobId },
           data: {
             processedProducts: processedTotal,
             failedProducts: failedTotal,
+            skippedProducts: skippedTotal,
           },
         });
       }
@@ -170,6 +153,7 @@ async function runEmbeddingJob(
         status: "completed",
         processedProducts: processedTotal,
         failedProducts: failedTotal,
+        skippedProducts: skippedTotal,
         completedAt: new Date(),
       },
     });
@@ -181,6 +165,7 @@ async function runEmbeddingJob(
         errorMessage: error instanceof Error ? error.message : "Embedding job failed",
         processedProducts: processedTotal,
         failedProducts: failedTotal,
+        skippedProducts: skippedTotal,
         completedAt: new Date(),
       },
     });
@@ -189,4 +174,38 @@ async function runEmbeddingJob(
       activeJobId = null;
     }
   }
+}
+
+export async function triggerEmbeddingJob(
+  products: ProductDocument[],
+  request: TriggerEmbeddingJobRequestDto = {},
+): Promise<EmbeddingJobDto> {
+  if (activeJobId) {
+    const active = await getEmbeddingJob(activeJobId);
+    if (active && (active.status === "queued" || active.status === "running")) {
+      return active;
+    }
+  }
+
+  const config = await getAiRankingConfig();
+  const workerConfig = getEmbeddingWorkerRuntimeConfig();
+  const useDatabaseCatalog = isLargeCatalogMode();
+  const targetCount =
+    request.productIds && request.productIds.length > 0
+      ? request.productIds.length
+      : useDatabaseCatalog
+        ? await prisma.product.count()
+        : products.length;
+
+  const { id: jobId } = await enqueueEmbeddingJob(request, targetCount);
+
+  if (workerConfig.enabled) {
+    const job = await getEmbeddingJob(jobId);
+    return job ?? toDto(await prismaClient.embeddingJob.findUnique({ where: { id: jobId } }));
+  }
+
+  activeJobId = jobId;
+  void runEmbeddingJobInline(jobId, products, config.embeddingBatchSize, request.productIds);
+  const created = await getEmbeddingJob(jobId);
+  return created ?? toDto(await prismaClient.embeddingJob.findUnique({ where: { id: jobId } }));
 }

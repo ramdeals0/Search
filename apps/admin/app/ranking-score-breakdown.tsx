@@ -78,6 +78,16 @@ export function RankingScoreBreakdown({
           hint: "Session/profile affinity rerank contribution",
           value: rankingDebug.personalizationScore ?? 0,
         },
+        {
+          label: "Fused score",
+          hint: "Weighted combination of lexical, semantic, and personalization (0–1)",
+          value: rankingDebug.fusedScore ?? 0,
+        },
+        {
+          label: "Rerank score",
+          hint: "Unified rerank output after optional provider rerank (0–1)",
+          value: rankingDebug.rerankScore ?? rankingDebug.fusedScore ?? 0,
+        },
       ]
     : [];
 
@@ -224,6 +234,15 @@ export function RankingScoreBreakdown({
             </tr>
           </tbody>
         </table>
+
+        {rankingDebug.retrievalSources && rankingDebug.retrievalSources.length > 0 ? (
+          <p style={{ margin: "0.65rem 0 0", fontSize: 12, color: "var(--forge-text-subtle, #64748b)" }}>
+            Retrieval sources:{" "}
+            <strong style={{ color: "var(--forge-text)" }}>
+              {rankingDebug.retrievalSources.join(", ")}
+            </strong>
+          </p>
+        ) : null}
 
         {rankingDebug.explanationCodes && rankingDebug.explanationCodes.length > 0 ? (
           <p style={{ margin: "0.65rem 0 0", fontSize: 12, color: "var(--forge-text-subtle, #64748b)" }}>

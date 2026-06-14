@@ -604,31 +604,46 @@ model SearchContentModule {
 }
 
 model ProductEmbedding {
-  productId   String   @id
-  embedding   Json
-  textHash    String?
-  model       String   @default("mock-hash-v1")
-  provider    String   @default("mock")
-  dimensions  Int      @default(64)
-  updatedAt   DateTime @updatedAt
+  productId      String    @id
+  embedding      Json
+  /// Canonical text hash used for content-hash dedupe (content_hash).
+  textHash       String?
+  sourceText     String?
+  model          String    @default("mock-hash-v1")
+  provider       String    @default("mock")
+  dimensions     Int       @default(64)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lastIndexedAt  DateTime?
+
+  @@index([model])
+  @@index([lastIndexedAt])
 }
 
 model EmbeddingJob {
-  id                String   @id @default(cuid())
-  status            String   @default("queued")
-  jobType           String   @default("backfill")
-  totalProducts     Int      @default(0)
-  processedProducts Int      @default(0)
-  failedProducts    Int      @default(0)
-  model             String   @default("mock-hash-v1")
-  provider          String   @default("mock")
+  id                String    @id @default(cuid())
+  status            String    @default("queued")
+  jobType           String    @default("backfill")
+  totalProducts     Int       @default(0)
+  processedProducts Int       @default(0)
+  failedProducts    Int       @default(0)
+  skippedProducts   Int       @default(0)
+  model             String    @default("mock-hash-v1")
+  provider          String    @default("mock")
   errorMessage      String?
+  retryCount        Int       @default(0)
+  maxRetries        Int       @default(3)
+  lockedAt          DateTime?
+  lockedBy          String?
+  nextRunAt         DateTime?
+  productIds        Json?
   startedAt         DateTime?
   completedAt       DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([status, createdAt])
+  @@index([status, nextRunAt, createdAt])
 }
 
 model ShopperProfile {

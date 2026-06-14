@@ -24,7 +24,10 @@ export function buildCanonicalProductText(product: ProductDocument): string {
     .filter(Boolean);
 
   const bullets = asString(product.attributes?.shortDescription);
-  const longDescription = product.description?.trim();
+  const longDescription =
+    asString(product.attributes?.longDescription) ?? product.description?.trim();
+  const useCases = product.attributes?.useCases;
+  const searchCriteria = product.attributes?.searchCriteria;
 
   return [
     product.title,
@@ -34,6 +37,12 @@ export function buildCanonicalProductText(product: ProductDocument): string {
       : undefined,
     bullets,
     longDescription,
+    Array.isArray(useCases) && useCases.length > 0
+      ? `Use cases: ${useCases.map(String).join(", ")}`
+      : undefined,
+    Array.isArray(searchCriteria) && searchCriteria.length > 0
+      ? `Search criteria: ${searchCriteria.map(String).join(", ")}`
+      : undefined,
     attributeParts.length > 0 ? attributeParts.join("; ") : undefined,
     product.inStock ? "in stock" : "out of stock",
   ]

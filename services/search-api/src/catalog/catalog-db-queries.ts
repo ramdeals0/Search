@@ -9,9 +9,27 @@ import type {
 } from "@retailer-search/shared-types";
 import { prisma } from "../db.js";
 import {
+  getVectorSearchRuntimeConfig,
+  vectorDistanceOperator,
+  vectorScoreSql,
+} from "../ai-search/vector-config.js";
+import {
   CATALOG_BROWSE_MAX_PAGE_SIZE,
   CATALOG_SEARCH_CANDIDATE_LIMIT,
 } from "./catalog-scale-config.js";
+
+const PRODUCT_LEXICAL_SEARCH_VECTOR_SQL = `
+  to_tsvector(
+    'english',
+    coalesce(p.title, '') || ' ' ||
+    coalesce(p.description, '') || ' ' ||
+    coalesce(p.sku, '') || ' ' ||
+    coalesce(b.name, '') || ' ' ||
+    coalesce(c.department, '') || ' ' ||
+    coalesce(c.subcategory, '') || ' ' ||
+    coalesce(p.attributes::text, '')
+  )
+`;
 
 const prismaClient = prisma as any;
 
@@ -58,7 +76,11 @@ const productInclude = {
 } as const;
 
 function resolveCatalogFilter(catalogId?: string): string {
-  return catalogId && catalogId !== "default" ? catalogId : "default";
+  const value = catalogId?.trim();
+  if (!value || value === "default") {
+    return "default";
+  }
+  return value;
 }
 
 export async function countProductsInDatabase(catalogId?: string): Promise<number> {
@@ -153,15 +175,16 @@ export async function fetchSearchCandidatesFromDatabase(input: {
     INNER JOIN "Category" c ON p."categoryId" = c.id
     WHERE ${clause}
       AND (
-        to_tsvector('english', coalesce(p.title, '') || ' ' || coalesce(p.description, '') || ' ' || coalesce(b.name, '') || ' ' || coalesce(c.department, '') || ' ' || coalesce(c.subcategory, ''))
-        @@ plainto_tsquery('english', $1)
+        ${PRODUCT_LEXICAL_SEARCH_VECTOR_SQL} @@ plainto_tsquery('english', $1)
         OR p.title ILIKE '%' || $1 || '%'
+        OR p.description ILIKE '%' || $1 || '%'
+        OR p.sku ILIKE '%' || $1 || '%'
         OR b.name ILIKE '%' || $1 || '%'
+        OR c.department ILIKE '%' || $1 || '%'
+        OR c.subcategory ILIKE '%' || $1 || '%'
+        OR p.attributes::text ILIKE '%' || $1 || '%'
       )
-    ORDER BY ts_rank(
-      to_tsvector('english', coalesce(p.title, '') || ' ' || coalesce(p.description, '')),
-      plainto_tsquery('english', $1)
-    ) DESC,
+    ORDER BY ts_rank(${PRODUCT_LEXICAL_SEARCH_VECTOR_SQL}, plainto_tsquery('english', $1)) DESC,
     p."inStock" DESC,
     p.title ASC
     LIMIT ${limit}
@@ -295,46 +318,77 @@ export async function autocompleteFromDatabase(
   }
 
   const catalog = resolveCatalogFilter(catalogId);
+  const containsPattern = `%${trimmed}%`;
+  const prefixPattern = `${trimmed}%`;
 
   const [products, brands, categories] = await Promise.all([
     prisma.$queryRawUnsafe<Array<{ title: string }>>(
       `
-      SELECT DISTINCT p.title
-      FROM "Product" p
-      WHERE p."catalogId" = $3
-        AND p.title ILIKE $1 || '%'
-      ORDER BY p.title ASC
-      LIMIT $2
+      SELECT title
+      FROM (
+        SELECT DISTINCT
+          p.title AS title,
+          CASE WHEN p.title ILIKE $1 THEN 0 ELSE 1 END AS rank_order
+        FROM "Product" p
+        WHERE p."catalogId" = $4
+          AND (
+            p.title ILIKE $1
+            OR p.title ILIKE $2
+            OR p.description ILIKE $2
+            OR p.attributes::text ILIKE $2
+          )
+      ) ranked
+      ORDER BY rank_order ASC, title ASC
+      LIMIT $3
       `,
-      trimmed,
+      prefixPattern,
+      containsPattern,
       limit,
       catalog,
     ),
     prisma.$queryRawUnsafe<Array<{ name: string }>>(
       `
-      SELECT DISTINCT b.name
-      FROM "Brand" b
-      INNER JOIN "Product" p ON p."brandId" = b.id
-      WHERE p."catalogId" = $3
-        AND b.name ILIKE $1 || '%'
-      ORDER BY b.name ASC
-      LIMIT $2
+      SELECT name
+      FROM (
+        SELECT DISTINCT
+          b.name AS name,
+          CASE WHEN b.name ILIKE $1 THEN 0 ELSE 1 END AS rank_order
+        FROM "Brand" b
+        INNER JOIN "Product" p ON p."brandId" = b.id
+        WHERE p."catalogId" = $4
+          AND (
+            b.name ILIKE $1
+            OR b.name ILIKE $2
+          )
+      ) ranked
+      ORDER BY rank_order ASC, name ASC
+      LIMIT $3
       `,
-      trimmed,
+      prefixPattern,
+      containsPattern,
       Math.max(2, Math.floor(limit / 2)),
       catalog,
     ),
     prisma.$queryRawUnsafe<Array<{ department: string }>>(
       `
-      SELECT DISTINCT c.department
-      FROM "Category" c
-      INNER JOIN "Product" p ON p."categoryId" = c.id
-      WHERE p."catalogId" = $3
-        AND c.department ILIKE $1 || '%'
-      ORDER BY c.department ASC
-      LIMIT $2
+      SELECT department
+      FROM (
+        SELECT DISTINCT
+          c.department AS department,
+          CASE WHEN c.department ILIKE $1 THEN 0 ELSE 1 END AS rank_order
+        FROM "Category" c
+        INNER JOIN "Product" p ON p."categoryId" = c.id
+        WHERE p."catalogId" = $4
+          AND (
+            c.department ILIKE $1
+            OR c.department ILIKE $2
+          )
+      ) ranked
+      ORDER BY rank_order ASC, department ASC
+      LIMIT $3
       `,
-      trimmed,
+      prefixPattern,
+      containsPattern,
       Math.max(2, Math.floor(limit / 2)),
       catalog,
     ),
@@ -416,18 +470,38 @@ export async function searchEmbeddingsFromDatabase(
   limit: number,
   candidateProductIds?: string[],
 ): Promise<Array<{ productId: string; score: number }>> {
+  const vectorConfig = getVectorSearchRuntimeConfig();
+  if (!vectorConfig.pgvectorEnabled) {
+    return [];
+  }
+
   const vectorLiteral = `[${queryVector.join(",")}]`;
   const cappedLimit = Math.max(1, Math.min(limit, 500));
+  const distanceOp = vectorDistanceOperator(vectorConfig.distanceMetric);
+  const scoreExpr = vectorScoreSql(distanceOp);
+
+  // IVFFlat recall tuning: SET ivfflat.probes before query (default from VECTOR_QUERY_PROBES).
+  if (vectorConfig.indexType === "ivfflat" && vectorConfig.queryProbes > 0) {
+    await prisma.$executeRawUnsafe(
+      `SET LOCAL ivfflat.probes = ${vectorConfig.queryProbes}`,
+    );
+  }
+  // HNSW recall tuning: SET hnsw.ef_search (VECTOR_QUERY_EF_SEARCH).
+  if (vectorConfig.indexType === "hnsw" && vectorConfig.queryEfSearch > 0) {
+    await prisma.$executeRawUnsafe(
+      `SET LOCAL hnsw.ef_search = ${vectorConfig.queryEfSearch}`,
+    );
+  }
 
   if (candidateProductIds && candidateProductIds.length > 0) {
     const rows = (await prisma.$queryRawUnsafe(
       `
       SELECT pe."productId" AS product_id,
-             (1 - (pe."embeddingVector" <=> $1::vector)) AS score
+             ${scoreExpr} AS score
       FROM "ProductEmbedding" pe
       WHERE pe."productId" = ANY($2::text[])
         AND pe."embeddingVector" IS NOT NULL
-      ORDER BY pe."embeddingVector" <=> $1::vector
+      ORDER BY pe."embeddingVector" ${distanceOp} $1::vector
       LIMIT $3
       `,
       vectorLiteral,
@@ -445,10 +519,10 @@ export async function searchEmbeddingsFromDatabase(
   const rows = (await prisma.$queryRawUnsafe(
     `
     SELECT pe."productId" AS product_id,
-           (1 - (pe."embeddingVector" <=> $1::vector)) AS score
+           ${scoreExpr} AS score
     FROM "ProductEmbedding" pe
     WHERE pe."embeddingVector" IS NOT NULL
-    ORDER BY pe."embeddingVector" <=> $1::vector
+    ORDER BY pe."embeddingVector" ${distanceOp} $1::vector
     LIMIT $2
     `,
     vectorLiteral,
@@ -461,15 +535,20 @@ export async function searchEmbeddingsFromDatabase(
 export async function syncEmbeddingVectorColumn(
   productId: string,
   vector: number[],
+  metadata?: { sourceText?: string; textHash?: string },
 ): Promise<void> {
   const vectorLiteral = `[${vector.join(",")}]`;
   await prisma.$executeRawUnsafe(
     `
     UPDATE "ProductEmbedding"
-    SET "embeddingVector" = $1::vector
+    SET
+      "embeddingVector" = $1::vector,
+      "sourceText" = COALESCE($3, "sourceText"),
+      "lastIndexedAt" = NOW()
     WHERE "productId" = $2
     `,
     vectorLiteral,
     productId,
+    metadata?.sourceText ?? null,
   );
 }

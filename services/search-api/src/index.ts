@@ -1628,14 +1628,18 @@ app.get("/api/v1/search", requireApiKeyScope("search:read"), enforceApiKeyRateLi
 
   await ensureProductCatalogLoaded();
   const largeCatalog = isLargeCatalogMode();
-  const allProducts = largeCatalog ? [] : getProductCatalog();
   const products = largeCatalog
-    ? await fetchSearchCandidatesFromDatabase({
-        query: request.query,
-        catalogId,
-        filters: request.filters,
-      })
-    : filterProductCatalogByCatalogId(allProducts, catalogId);
+    ? []
+    : filterProductCatalogByCatalogId(getProductCatalog(), catalogId);
+
+  let largeCatalogCandidates: ProductDocument[] | undefined;
+  if (largeCatalog) {
+    largeCatalogCandidates = await fetchSearchCandidatesFromDatabase({
+      query: request.query,
+      catalogId,
+      filters: request.filters,
+    });
+  }
   const sessionId = req.header("x-session-id")?.trim();
   const pluginContext = {
     tenantId: analyticsContext.tenantId,
@@ -1716,6 +1720,7 @@ app.get("/api/v1/search", requireApiKeyScope("search:read"), enforceApiKeyRateLi
   const result = largeCatalog
     ? await searchLargeCatalog(request, {
         catalogId,
+        candidates: largeCatalogCandidates,
         rules,
         debug,
         ...pipeline,
@@ -1735,7 +1740,7 @@ app.get("/api/v1/search", requireApiKeyScope("search:read"), enforceApiKeyRateLi
   await finalizeSearchResponse(req, res, request, result, started, {
     sessionId,
     experimentArm: experimentResolution.arm ?? experimentAi.arm,
-    products,
+    products: largeCatalog ? largeCatalogCandidates : products,
     pluginContext,
   });
 });
@@ -1751,7 +1756,11 @@ app.get("/api/v1/autocomplete", requireApiKeyScope("search:read"), enforceApiKey
   const autocompleteCatalogId = await resolveCatalogId(
     req.header("x-catalog-id")?.trim(),
   );
-  if (isLargeCatalogMode()) {
+  const useDatabaseAutocomplete =
+    isLargeCatalogMode() ||
+    filterProductCatalogByCatalogId(getProductCatalog(), autocompleteCatalogId).length === 0;
+
+  if (useDatabaseAutocomplete) {
     const suggestions = await autocompleteFromDatabase(
       parsed.data.query,
       autocompleteCatalogId,

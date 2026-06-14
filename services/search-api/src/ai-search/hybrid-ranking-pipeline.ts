@@ -3,18 +3,24 @@ import type {
   AiRankingConfigDto,
   AiRankingDebugDto,
   AiSearchPreviewMode,
-  ExtendedRankingDebugDto,
   MerchandisingRule,
   ProductDocument,
   SearchExplanationCode,
   SearchRequestDto,
   SearchResponseDto,
 } from "@retailer-search/shared-types";
+import { fuseRetrievalCandidates } from "./candidate-fusion.js";
 import { resolveEmbeddingProviderFromEnv } from "./embedding-provider.js";
 import {
   computePersonalizationScores,
   getPersonalizationBoosts,
 } from "./personalization-profile-service.js";
+import {
+  rerankedToSearchHits,
+  unifiedRerankCandidates,
+  type PersonalizationEntry,
+} from "./unified-rerank.js";
+import { getRerankRuntimeConfig, getVectorSearchRuntimeConfig } from "./vector-config.js";
 import { StoredVectorSearchProvider } from "./vector-index.js";
 
 export interface HybridRankingOptions {
@@ -28,47 +34,57 @@ export interface HybridRankingOptions {
   experimentArm?: "baseline" | "candidate" | null;
 }
 
-function normalizeScore(value: number, max: number): number {
-  if (max <= 0) {
-    return 0;
-  }
-  return Math.min(1, Math.max(0, value / max));
-}
+function buildSemanticOnlyHits(
+  products: ProductDocument[],
+  semanticHits: Array<{ productId: string; score: number }>,
+  pageSize: number,
+  debug: boolean,
+): SearchResponseDto["hits"] {
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const semanticMax =
+    semanticHits.reduce((max, hit) => Math.max(max, hit.score), 0) || 1;
 
-function mergeWeightedScore(input: {
-  lexical: number;
-  semantic: number;
-  personalization: number;
-  weights: AiRankingConfigDto["weights"];
-}): number {
-  return (
-    input.weights.lexicalWeight * input.lexical +
-    input.weights.semanticWeight * input.semantic +
-    input.weights.personalizationWeight * input.personalization
-  );
-}
-
-function extendRankingDebug(
-  hit: SearchResponseDto["hits"][number],
-  input: {
-    lexicalScore: number;
-    semanticScore: number;
-    personalizationScore: number;
-    explanationCodes: SearchExplanationCode[];
-    finalScore: number;
-  },
-): ExtendedRankingDebugDto | undefined {
-  if (!hit.rankingDebug) {
-    return undefined;
-  }
-  return {
-    ...hit.rankingDebug,
-    lexicalScore: input.lexicalScore,
-    semanticScore: input.semanticScore,
-    personalizationScore: input.personalizationScore,
-    explanationCodes: input.explanationCodes,
-    finalScore: input.finalScore,
-  };
+  return semanticHits
+    .slice(0, pageSize)
+    .map((hit) => {
+      const product = productById.get(hit.productId);
+      if (!product) {
+        return null;
+      }
+      const normalized = hit.score / semanticMax;
+      return {
+        id: product.id,
+        sku: product.sku,
+        title: product.title,
+        brand: product.brand,
+        category: product.category,
+        subcategory: product.subcategory,
+        description: product.description,
+        price: product.price,
+        imageUrl: product.imageUrl,
+        inStock: product.inStock,
+        score: normalized * 100,
+        rankingDebug: debug
+          ? {
+              productId: product.id,
+              baseScore: 0,
+              exactMatchScore: 0,
+              inventoryScore: 0,
+              popularityScore: 0,
+              merchandisingAdjustment: 0,
+              finalScore: normalized * 100,
+              appliedRuleNames: [],
+              lexicalScore: 0,
+              semanticScore: normalized,
+              fusedScore: normalized,
+              rerankScore: normalized,
+              retrievalSources: ["semantic"],
+              explanationCodes: ["semantic_match"] as SearchExplanationCode[],
+            }
+          : undefined,
+      };
+    })
+    .filter(Boolean) as SearchResponseDto["hits"];
 }
 
 export async function executeHybridRankingPipeline(
@@ -78,6 +94,11 @@ export async function executeHybridRankingPipeline(
 ): Promise<SearchResponseDto & { aiRankingDebug?: AiRankingDebugDto }> {
   const started = Date.now();
   const config = options.config;
+  const vectorConfig = getVectorSearchRuntimeConfig();
+  const rerankConfig = getRerankRuntimeConfig();
+  const semanticOnly = options.previewMode === "semantic";
+  const rerankPreview = options.previewMode === "hybrid_rerank";
+
   const lexicalResult = searchProducts(products, request, {
     rules: options.rules,
     debug: options.debug,
@@ -85,157 +106,154 @@ export async function executeHybridRankingPipeline(
     queryProcessorConfig: options.queryProcessorConfig,
   });
 
-  const lexicalMax = lexicalResult.hits[0]?.score ?? 1;
   let semanticRecoveryApplied = false;
   let semanticHits = 0;
+  const semanticRawHits: Array<{ productId: string; score: number }> = [];
 
-  const semanticScores = new Map<string, number>();
-  if (config.enabled && config.semanticRetrievalEnabled) {
-    const provider = resolveEmbeddingProviderFromEnv({
-      provider: config.embeddingsProvider,
-      model: config.embeddingsModel,
-      dimensions: config.embeddingDimensions,
-    });
-    const vectorProvider = new StoredVectorSearchProvider(
-      provider,
-      products,
-      products.map((product) => product.id),
-    );
-    const vectorLimit = Math.max(request.pageSize * 5, 50);
-    const vectorResults = await vectorProvider.search(request.query, vectorLimit);
-    semanticHits = vectorResults.length;
-    for (const hit of vectorResults) {
-      semanticScores.set(hit.productId, hit.score);
+  if (config.enabled && config.semanticRetrievalEnabled && vectorConfig.pgvectorEnabled) {
+    try {
+      const provider = resolveEmbeddingProviderFromEnv({
+        provider: config.embeddingsProvider,
+        model: config.embeddingsModel,
+        dimensions: config.embeddingDimensions,
+      });
+      const vectorProvider = new StoredVectorSearchProvider(
+        provider,
+        products,
+        products.map((product) => product.id),
+      );
+      const vectorLimit = Math.max(request.pageSize * 5, 50);
+      const vectorResults = await vectorProvider.search(request.query, vectorLimit);
+      semanticHits = vectorResults.length;
+      for (const hit of vectorResults) {
+        semanticRawHits.push(hit);
+      }
+    } catch (error) {
+      console.warn(
+        "Vector retrieval failed; continuing with lexical only:",
+        error instanceof Error ? error.message : error,
+      );
     }
   }
 
-  const semanticMax =
-    [...semanticScores.values()].reduce((max, value) => Math.max(max, value), 0) || 1;
+  if (semanticOnly) {
+    const hits = buildSemanticOnlyHits(
+      products,
+      semanticRawHits,
+      request.pageSize,
+      Boolean(options.debug),
+    );
+    return {
+      ...lexicalResult,
+      hits,
+      totalHits: hits.length,
+      totalPages: hits.length > 0 ? 1 : 0,
+      processingTimeMs: Date.now() - started,
+      rankingMode: "semantic",
+      aiRankingDebug: {
+        rankingMode: "semantic",
+        lexicalWeight: config.weights.lexicalWeight,
+        semanticWeight: config.weights.semanticWeight,
+        personalizationWeight: config.weights.personalizationWeight,
+        semanticHits,
+        semanticRecoveryApplied: false,
+        embeddingProvider: config.embeddingsProvider,
+        embeddingModel: config.embeddingsModel,
+        vectorIndexType: vectorConfig.indexType,
+        rerankEnabled: rerankConfig.enabled,
+        rerankProvider: rerankConfig.provider,
+        experimentArm: options.experimentArm ?? undefined,
+      },
+      experimentArm: options.experimentArm ?? undefined,
+    };
+  }
 
-  let candidateHits = lexicalResult.hits;
   if (
     config.semanticZeroResultsFallbackEnabled &&
     lexicalResult.totalHits < config.semanticFallbackMinHits &&
-    semanticScores.size > 0
+    semanticRawHits.length > 0 &&
+    options.previewMode === "semantic_rescue"
   ) {
     semanticRecoveryApplied = true;
-    const productById = new Map(products.map((product) => [product.id, product]));
-    const rescued = [...semanticScores.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, request.pageSize)
-      .map(([productId, semanticScore]) => {
-        const product = productById.get(productId);
-        if (!product) {
-          return null;
-        }
-        return {
-          id: product.id,
-          sku: product.sku,
-          title: product.title,
-          brand: product.brand,
-          category: product.category,
-          subcategory: product.subcategory,
-          description: product.description,
-          price: product.price,
-          imageUrl: product.imageUrl,
-          inStock: product.inStock,
-          score: semanticScore * 100,
-          rankingDebug: options.debug
-            ? {
-                productId: product.id,
-                baseScore: 0,
-                exactMatchScore: 0,
-                inventoryScore: 0,
-                popularityScore: 0,
-                merchandisingAdjustment: 0,
-                finalScore: semanticScore * 100,
-                appliedRuleNames: [],
-                lexicalScore: 0,
-                semanticScore,
-                explanationCodes: ["zero_results_semantic_recovery", "semantic_match"],
-              }
-            : undefined,
-        };
-      })
-      .filter(Boolean) as SearchResponseDto["hits"];
-
+    const rescued = buildSemanticOnlyHits(
+      products,
+      semanticRawHits,
+      request.pageSize,
+      Boolean(options.debug),
+    );
     if (rescued.length > 0) {
-      candidateHits = rescued;
+      return {
+        ...lexicalResult,
+        hits: rescued,
+        totalHits: rescued.length,
+        totalPages: 1,
+        processingTimeMs: Date.now() - started,
+        rankingMode: "semantic_rescue",
+        aiRankingDebug: {
+          rankingMode: "semantic_rescue",
+          lexicalWeight: config.weights.lexicalWeight,
+          semanticWeight: config.weights.semanticWeight,
+          personalizationWeight: config.weights.personalizationWeight,
+          semanticHits,
+          semanticRecoveryApplied: true,
+          embeddingProvider: config.embeddingsProvider,
+          embeddingModel: config.embeddingsModel,
+          vectorIndexType: vectorConfig.indexType,
+          rerankEnabled: rerankConfig.enabled,
+          rerankProvider: rerankConfig.provider,
+          experimentArm: options.experimentArm ?? undefined,
+        },
+        experimentArm: options.experimentArm ?? undefined,
+      };
     }
   }
 
-  const personalizationScores = options.sessionId
-    ? await computePersonalizationScores(options.sessionId, products, config)
-    : new Map();
-  const personalizationMax =
-    [...personalizationScores.values()].reduce(
-      (max, entry) => Math.max(max, entry.score),
-      0,
-    ) || 1;
-
-  const mergedHits = candidateHits.map((hit) => {
-    const lexicalScore = normalizeScore(hit.score, lexicalMax);
-    const semanticScore = normalizeScore(semanticScores.get(hit.id) ?? 0, semanticMax);
-    const personalizationEntry = personalizationScores.get(hit.id);
-    const personalizationScore = normalizeScore(
-      personalizationEntry?.score ?? 0,
-      personalizationMax,
-    );
-
-    const explanationCodes: SearchExplanationCode[] = [];
-    if (lexicalScore > 0) {
-      explanationCodes.push("lexical_match");
-    }
-    if (semanticScore > 0) {
-      explanationCodes.push("semantic_match");
-    }
-    if (semanticRecoveryApplied && semanticScore > 0) {
-      explanationCodes.push("zero_results_semantic_recovery");
-    }
-    for (const code of personalizationEntry?.codes ?? []) {
-      explanationCodes.push(code);
-    }
-    if ((hit.rankingDebug?.appliedRuleNames.length ?? 0) > 0) {
-      explanationCodes.push("merchandising_rule_applied");
-    }
-    if (personalizationScore > 0) {
-      explanationCodes.push("personalization_rerank");
-    }
-
-    const weightedScore = mergeWeightedScore({
-      lexical: lexicalScore,
-      semantic: semanticScore,
-      personalization: personalizationScore,
-      weights: config.weights,
-    });
-
-    const scaledScore = weightedScore * 100;
-    return {
-      ...hit,
-      score: scaledScore,
-      rankingDebug: extendRankingDebug(hit, {
-        lexicalScore,
-        semanticScore,
-        personalizationScore,
-        explanationCodes,
-        finalScore: scaledScore,
-      }),
-    };
+  const fused = fuseRetrievalCandidates({
+    lexicalHits: semanticOnly ? [] : lexicalResult.hits,
+    semanticHits: semanticRawHits,
   });
 
-  mergedHits.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+  const personalizationScoresRaw = options.sessionId
+    ? await computePersonalizationScores(options.sessionId, products, config)
+    : new Map<string, { score: number; codes: SearchExplanationCode[] }>();
+
+  const personalizationScores = new Map<string, PersonalizationEntry>(
+    [...personalizationScoresRaw.entries()].map(([id, entry]) => [id, entry]),
+  );
+
+  const effectiveRerankConfig =
+    rerankPreview || rerankConfig.enabled ? { ...rerankConfig, enabled: true } : rerankConfig;
+
+  const ranked = await unifiedRerankCandidates({
+    query: request.query,
+    fused,
+    products,
+    config,
+    personalizationScores,
+    rerankConfig: effectiveRerankConfig,
+  });
+
+  const productsById = new Map(products.map((product) => [product.id, product]));
+  const mergedHits = rerankedToSearchHits(ranked, productsById, Boolean(options.debug));
+
+  const pageOffset = (request.page - 1) * request.pageSize;
+  const pagedHits = mergedHits.slice(pageOffset, pageOffset + request.pageSize);
 
   const rankingMode =
     options.previewMode ??
-    (config.personalizationEnabled
-      ? "hybrid_personalization"
-      : config.semanticRetrievalEnabled
-        ? "hybrid"
-        : "lexical");
+    (effectiveRerankConfig.enabled
+      ? "hybrid_rerank"
+      : config.personalizationEnabled
+        ? "hybrid_personalization"
+        : config.semanticRetrievalEnabled
+          ? "hybrid"
+          : "lexical");
 
   return {
     ...lexicalResult,
-    hits: mergedHits,
+    hits: pagedHits,
+    totalHits: mergedHits.length,
+    totalPages: Math.ceil(mergedHits.length / request.pageSize),
     processingTimeMs: Date.now() - started,
     rankingMode,
     aiRankingDebug: {
@@ -247,6 +265,10 @@ export async function executeHybridRankingPipeline(
       semanticRecoveryApplied,
       embeddingProvider: config.embeddingsProvider,
       embeddingModel: config.embeddingsModel,
+      vectorIndexType: vectorConfig.indexType,
+      rerankEnabled: effectiveRerankConfig.enabled,
+      rerankProvider: effectiveRerankConfig.provider,
+      fusedCandidateCount: fused.length,
       experimentArm: options.experimentArm ?? undefined,
     },
     experimentArm: options.experimentArm ?? undefined,
