@@ -128,7 +128,7 @@ async function runEmbeddingJob(
       await forEachProductBatchFromDatabase(
         async (batch) => {
           const result = await embedProductsBatch(batch, batchSize);
-          processedTotal += result.processed;
+          processedTotal += result.processed + result.skipped;
           failedTotal += result.failed;
           await prismaClient.embeddingJob.update({
             where: { id: jobId },
@@ -148,9 +148,20 @@ async function runEmbeddingJob(
         productIds && productIds.length > 0
           ? products.filter((product) => productIds.includes(product.id))
           : products;
-      const result = await embedProductsBatch(targetProducts, batchSize);
-      processedTotal = result.processed;
-      failedTotal = result.failed;
+
+      for (let index = 0; index < targetProducts.length; index += batchSize) {
+        const batch = targetProducts.slice(index, index + batchSize);
+        const result = await embedProductsBatch(batch, batchSize);
+        processedTotal += result.processed + result.skipped;
+        failedTotal += result.failed;
+        await prismaClient.embeddingJob.update({
+          where: { id: jobId },
+          data: {
+            processedProducts: processedTotal,
+            failedProducts: failedTotal,
+          },
+        });
+      }
     }
 
     await prismaClient.embeddingJob.update({

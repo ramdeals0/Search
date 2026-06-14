@@ -45,6 +45,20 @@ function jobStatusColor(status: EmbeddingJobDto["status"]): string {
   }
 }
 
+function isActiveJobStatus(status: EmbeddingJobDto["status"]): boolean {
+  return status === "queued" || status === "running";
+}
+
+function jobProgressPercent(job: EmbeddingJobDto): number {
+  if (job.totalProducts <= 0) {
+    return 0;
+  }
+  return Math.min(
+    100,
+    Math.round((job.processedProducts / job.totalProducts) * 100),
+  );
+}
+
 export function AiSearchSettingsPanel() {
   const [config, setConfig] = useState<AiRankingConfigDto | null>(null);
   const [coverage, setCoverage] = useState<EmbeddingCoverageDto | null>(null);
@@ -55,8 +69,10 @@ export function AiSearchSettingsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -90,13 +106,31 @@ export function AiSearchSettingsPanel() {
         loadError instanceof Error ? loadError.message : "Failed to load AI search settings",
       );
     } finally {
-      setLoading(false);
+      if (!options?.silent) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const activeJob = jobs.find((job) => isActiveJobStatus(job.status));
+
+  useEffect(() => {
+    if (!activeJob) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadData({ silent: true });
+    }, 3000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [activeJob?.id, activeJob?.status, loadData]);
 
   const updateField = <K extends keyof AiRankingConfigDto>(
     field: K,
@@ -503,6 +537,45 @@ export function AiSearchSettingsPanel() {
           </label>
         </div>
 
+        {activeJob ? (
+          <div
+            className="forge-callout forge-callout--info"
+            style={{ margin: 0, borderColor: "#93c5fd", background: "#eff6ff" }}
+          >
+            <strong style={{ fontSize: 13 }}>Reindex in progress</strong>
+            <p style={{ margin: "0.35rem 0 0.5rem", fontSize: 12, color: "#475569" }}>
+              Job {activeJob.id.slice(0, 8)} · {activeJob.jobType} ·{" "}
+              {activeJob.processedProducts.toLocaleString()} /{" "}
+              {activeJob.totalProducts.toLocaleString()} products (
+              {jobProgressPercent(activeJob)}%) · status{" "}
+              <span style={{ color: jobStatusColor(activeJob.status), fontWeight: 600 }}>
+                {activeJob.status}
+              </span>
+            </p>
+            <div
+              style={{
+                height: 6,
+                borderRadius: 999,
+                background: "#dbeafe",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${jobProgressPercent(activeJob)}%`,
+                  height: "100%",
+                  background: "#2563eb",
+                  transition: "width 0.3s ease",
+                }}
+              />
+            </div>
+            <p style={{ margin: "0.5rem 0 0", fontSize: 11, color: "#64748b" }}>
+              Progress refreshes every few seconds. OpenAI/OpenRouter jobs on large catalogs can
+              take 30+ minutes. Mock provider is much faster.
+            </p>
+          </div>
+        ) : null}
+
         {jobs.length > 0 ? (
           <div>
             <strong style={{ fontSize: 13 }}>Recent embedding jobs</strong>
@@ -527,7 +600,10 @@ export function AiSearchSettingsPanel() {
                   }}
                 >
                   <span>
-                    {job.jobType} · {job.processedProducts}/{job.totalProducts} products
+                    {job.jobType} · {job.processedProducts.toLocaleString()}/
+                    {job.totalProducts.toLocaleString()} products
+                    {job.failedProducts > 0 ? ` · ${job.failedProducts} failed` : ""}
+                    {job.errorMessage ? ` · ${job.errorMessage}` : ""}
                   </span>
                   <span style={{ color: jobStatusColor(job.status), fontWeight: 600 }}>
                     {job.status}

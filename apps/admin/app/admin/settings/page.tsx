@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { ActiveConfigBadge } from "../../active-config-badge";
-import { AiSearchSettingsPanel } from "../../ai-search-settings-panel";
 import { ApprovalPolicyPanel } from "../../approval-policy-panel";
 import { EnvironmentPanel } from "../../environment-panel";
 import { EnvironmentSwitcher } from "../../environment-switcher";
@@ -14,7 +13,7 @@ export default function AdminSettingsPage() {
       <AdminPageHeader
         eyebrow="Operations"
         title="Settings"
-        description="Environment configuration, LLM and AI hybrid search settings, approval policies, and ForgeOps platform defaults."
+        description="Environment configuration, LLM settings, approval policies, and ForgeOps platform defaults."
       />
 
       <EnvironmentSwitcher />
@@ -26,11 +25,10 @@ export default function AdminSettingsPage() {
       <section className="forge-callout forge-callout--info">
         <strong>AI hybrid search</strong>
         <p style={{ margin: "0.35rem 0 0" }}>
-          Configure embeddings, hybrid weights, and reindex jobs on the dedicated{" "}
-          <Link href="/admin/ai-search">AI Search</Link> page or below.
+          Configure embeddings, hybrid weights, and reindex jobs on the{" "}
+          <Link href="/admin/ai-search">AI Search</Link> page.
         </p>
       </section>
-      <AiSearchSettingsPanel />
 
       <ApprovalPolicyPanel />
 

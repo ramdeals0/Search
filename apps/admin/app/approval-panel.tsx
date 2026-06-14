@@ -1,4 +1,5 @@
 "use client";
+import { getAuthHeaders } from "./lib/auth-headers";
 import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
@@ -299,7 +300,7 @@ export function ApprovalPanel() {
     try {
       const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/approvals`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           snapshotId,
           reason: trimmedReason,
@@ -351,7 +352,7 @@ export function ApprovalPanel() {
         `${getSearchApiUrl()}/api/v1/admin/approvals/${requestId}/assign-reviewers`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ reviewerIds }),
         },
       );
@@ -403,7 +404,7 @@ export function ApprovalPanel() {
         `${getSearchApiUrl()}/api/v1/admin/approvals/${requestId}/reassign`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ nextReviewerIds, reason: reassignReason }),
         },
       );
@@ -452,7 +453,7 @@ export function ApprovalPanel() {
         `${getSearchApiUrl()}/api/v1/admin/approvals/${requestId}/resolve`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders(),
           body: JSON.stringify({
             decision,
             decisionNote: decisionNotes[requestId]?.trim() || undefined,
@@ -509,7 +510,7 @@ export function ApprovalPanel() {
         `${getSearchApiUrl()}/api/v1/admin/approvals/${request.id}/execute`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ actorId }),
         },
       );

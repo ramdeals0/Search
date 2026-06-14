@@ -1,4 +1,5 @@
 "use client";
+import { getAuthHeaders } from "../../../../lib/auth-headers";
 import { getSearchApiUrl } from "../../../../lib/search-api-url";
 
 import { useRouter } from "next/navigation";
@@ -105,7 +106,7 @@ export default function NewPromotionWorkflowPage() {
     try {
       const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/approvals`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           snapshotId,
           reason: `[${campaignName.trim()}] ${reason.trim()}`,
@@ -144,7 +145,7 @@ export default function NewPromotionWorkflowPage() {
     try {
       const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/scheduled-releases`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           type: "promote_snapshot",
           snapshotId,
@@ -182,7 +183,7 @@ export default function NewPromotionWorkflowPage() {
     try {
       const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/promote-snapshot`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           snapshotId,
           reason: `[${campaignName.trim()}] ${reason.trim()}`,
@@ -197,7 +198,9 @@ export default function NewPromotionWorkflowPage() {
       } | null;
 
       if (!response.ok) {
-        throw new Error(body?.error ?? `Promotion failed with HTTP ${response.status}`);
+        throw new Error(
+          body?.error ?? body?.message ?? `Promotion failed with HTTP ${response.status}`,
+        );
       }
 
       setFeedback(

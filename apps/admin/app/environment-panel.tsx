@@ -1,4 +1,5 @@
 "use client";
+import { getAuthHeaders } from "./lib/auth-headers";
 import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
@@ -138,7 +139,7 @@ export function EnvironmentPanel() {
         `${getSearchApiUrl()}/api/v1/admin/environments/copy`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders(),
           body: JSON.stringify({
             fromEnvironment: "live",
             toEnvironment: "staging",
@@ -153,7 +154,9 @@ export function EnvironmentPanel() {
       } | null;
 
       if (!response.ok) {
-        throw new Error(body?.error ?? `Copy failed with HTTP ${response.status}`);
+        throw new Error(
+          body?.error ?? body?.message ?? `Copy failed with HTTP ${response.status}`,
+        );
       }
 
       setFeedback(body?.message ?? "Copied live configuration to staging.");
@@ -192,7 +195,7 @@ export function EnvironmentPanel() {
         `${getSearchApiUrl()}/api/v1/admin/environments/promote`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders(),
           body: JSON.stringify({
             fromEnvironment: "staging",
             toEnvironment: "live",
@@ -208,7 +211,9 @@ export function EnvironmentPanel() {
 
       if (!response.ok) {
         throw new Error(
-          body?.error ?? `Promotion failed with HTTP ${response.status}`,
+          body?.error ??
+            body?.message ??
+            `Promotion failed with HTTP ${response.status}`,
         );
       }
 

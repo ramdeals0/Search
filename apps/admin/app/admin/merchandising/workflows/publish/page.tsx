@@ -1,4 +1,5 @@
 "use client";
+import { getAuthHeaders } from "../../../../lib/auth-headers";
 import { getSearchApiUrl } from "../../../../lib/search-api-url";
 
 import { useRouter } from "next/navigation";
@@ -114,7 +115,7 @@ export default function PublishWorkflowPage() {
     try {
       const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/environments/promote`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           fromEnvironment: "staging",
           toEnvironment: "live",
@@ -128,7 +129,9 @@ export default function PublishWorkflowPage() {
       } | null;
 
       if (!response.ok) {
-        throw new Error(body?.error ?? `Publish failed with HTTP ${response.status}`);
+        throw new Error(
+          body?.error ?? body?.message ?? `Publish failed with HTTP ${response.status}`,
+        );
       }
 
       setFeedback(body?.message ?? "Staging promoted to live.");

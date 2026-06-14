@@ -1,4 +1,5 @@
 "use client";
+import { getAuthHeaders } from "./lib/auth-headers";
 import { getSearchApiUrl } from "./lib/search-api-url";
 
 import { useCallback, useEffect, useState } from "react";
@@ -152,7 +153,7 @@ export function PromotionPanel() {
     try {
       const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/approvals`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           snapshotId,
           reason: trimmedReason,
@@ -168,6 +169,7 @@ export function PromotionPanel() {
       if (!response.ok) {
         throw new Error(
           body?.error ??
+            body?.message ??
             `Approval request failed with HTTP ${response.status}`,
         );
       }
@@ -207,7 +209,7 @@ export function PromotionPanel() {
         `${getSearchApiUrl()}/api/v1/admin/promote-snapshot`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: getAuthHeaders(),
           body: JSON.stringify({
             snapshotId,
             reason: trimmedReason,
@@ -224,7 +226,9 @@ export function PromotionPanel() {
 
       if (!response.ok) {
         throw new Error(
-          body?.error ?? `Promotion failed with HTTP ${response.status}`,
+          body?.error ??
+            body?.message ??
+            `Promotion failed with HTTP ${response.status}`,
         );
       }
 
