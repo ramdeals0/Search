@@ -9,7 +9,7 @@ watchPatterns = [
 ]
 
 [deploy]
-startCommand = "pnpm --filter @retailer-search/storefront start"
+startCommand = "HOSTNAME=0.0.0.0 pnpm --filter @retailer-search/storefront start"
 healthcheckPath = "/"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
