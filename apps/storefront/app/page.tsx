@@ -124,22 +124,6 @@ async function fetchSearchResults(
   }
 }
 
-async function recordSearchEvent(
-  query: string,
-  resultCount: number,
-): Promise<void> {
-  try {
-    await fetch(`${SEARCH_API_URL}/api/v1/events/search`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, resultCount }),
-      cache: "no-store",
-    });
-  } catch {
-    // Analytics should not block page rendering.
-  }
-}
-
 export default async function HomePage({ searchParams }: PageProps) {
   const params = await searchParams;
   const query = readParam(params, "query", "").trim();
@@ -161,10 +145,6 @@ export default async function HomePage({ searchParams }: PageProps) {
       ? fetchSearchResults(query, page, pageSize, activeFilters, debug)
       : Promise.resolve(null),
   ]);
-
-  if (hasQuery && searchResult?.data) {
-    await recordSearchEvent(query, searchResult.data.totalHits);
-  }
 
   if (!hasQuery) {
     return <HomeHero categories={categories} />;

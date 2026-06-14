@@ -247,7 +247,7 @@ function renderSectionContent(
     case "environment":
       return <EnvironmentPanel />;
     case "analytics":
-      return <AnalyticsPanel analytics={initialAnalytics} />;
+      return <AnalyticsPanel />;
     case "suggestions":
       return <SuggestionsPanel />;
     case "query-preview":

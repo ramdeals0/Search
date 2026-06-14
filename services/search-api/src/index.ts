@@ -177,6 +177,7 @@ import {
   hydrateAnalyticsStore,
   recordSearchClick,
   recordSearchEvent,
+  recordSearchAnalytics,
 } from "./analytics-store.js";
 import {
   createApiKey,
@@ -294,6 +295,7 @@ import {
 } from "./merch-runtime/index.js";
 import { registerInternalLlmDebugRoutes } from "./routes/internal-llm-debug.js";
 import { registerAccessGovernanceRoutes } from "./routes/access-governance.js";
+import { registerLlmSettingsRoutes } from "./routes/llm-settings.js";
 import { llmEnhancedSearch } from "./search/llm-enhanced-search.js";
 import { isAnyLlmFeatureEnabled } from "./search/search-feature-flags.js";
 import {
@@ -303,6 +305,7 @@ import {
   hydrateAccessGovernanceStore,
   hydrateJitAccessStore,
 } from "./access-governance/index.js";
+import { hydrateLlmConfigStore } from "./llm/llm-config-store.js";
 import {
   createAuthenticatedUserContext,
   createSession,
@@ -384,6 +387,19 @@ function getAnalyticsContext(req: express.Request) {
     apiKeyId: req.apiKey?.id,
     sessionId: req.header("x-session-id") ?? undefined,
   };
+}
+
+function finishSearchResponse(
+  req: express.Request,
+  res: express.Response,
+  request: SearchRequestDto,
+  result: { totalHits: number },
+  started: number,
+  body?: unknown,
+): void {
+  res.json(body ?? result);
+  recordSearchRequest(Date.now() - started);
+  recordSearchAnalytics(request.query, result.totalHits, getAnalyticsContext(req));
 }
 
 function parseIndexNames(
@@ -1478,43 +1494,39 @@ app.get("/api/v1/search", requireApiKeyScope("search:read"), enforceApiKeyRateLi
       mergedHitCount: result.totalHits,
       hybridVectorEnabled: isHybridVectorEnabled(),
     };
-    res.json({ ...result, federatedDebug });
-    recordSearchRequest(Date.now() - started);
+    finishSearchResponse(req, res, request, result, started, {
+      ...result,
+      federatedDebug,
+    });
     return;
   }
 
   if (isAnyLlmFeatureEnabled()) {
-    res.json(
-      await llmEnhancedSearch(products, request, {
-        rules,
-        debug,
-        ...pipeline,
-      }),
-    );
-    recordSearchRequest(Date.now() - started);
+    const result = await llmEnhancedSearch(products, request, {
+      rules,
+      debug,
+      ...pipeline,
+    });
+    finishSearchResponse(req, res, request, result, started, result);
     return;
   }
 
   if (isHybridVectorEnabled()) {
-    res.json(
-      await hybridSearchProducts(products, request, {
-        rules,
-        debug,
-        ...pipeline,
-      }),
-    );
-    recordSearchRequest(Date.now() - started);
-    return;
-  }
-
-  res.json(
-    searchProducts(products, request, {
+    const result = await hybridSearchProducts(products, request, {
       rules,
       debug,
       ...pipeline,
-    }),
-  );
-  recordSearchRequest(Date.now() - started);
+    });
+    finishSearchResponse(req, res, request, result, started, result);
+    return;
+  }
+
+  const result = searchProducts(products, request, {
+    rules,
+    debug,
+    ...pipeline,
+  });
+  finishSearchResponse(req, res, request, result, started, result);
 });
 
 app.get("/api/v1/autocomplete", requireApiKeyScope("search:read"), enforceApiKeyRateLimit("autocomplete"), async (req, res) => {
@@ -1709,6 +1721,11 @@ registerAccessGovernanceRoutes(app, {
   assertValidBody,
   syncJitAccess,
   dispatchWebhookEvent,
+});
+
+registerLlmSettingsRoutes(app, {
+  requireAdminUser,
+  assertValidBody,
 });
 
 app.get("/api/v1/admin/security-timeline", (req, res) => {
@@ -4563,6 +4580,7 @@ async function hydratePersistentStores(): Promise<void> {
   await hydrateExportStore();
   await hydrateEnvironmentConfigStore();
   await hydrateAnalyticsStore();
+  await hydrateLlmConfigStore();
 }
 
 async function loadProductCatalogAtStartup(): Promise<number> {

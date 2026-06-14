@@ -119,6 +119,19 @@ export function recordSearchEvent(
   return stored;
 }
 
+export function recordSearchAnalytics(
+  query: string,
+  resultCount: number,
+  options: RecordSearchEventOptions = {},
+): SearchEventDto | null {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return recordSearchEvent({ query: trimmed, resultCount }, options);
+}
+
 export interface RecordClickEventOptions {
   tenantId?: string;
   apiKeyId?: string;

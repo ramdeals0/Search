@@ -1,10 +1,64 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
 import type { SearchAnalyticsSummaryDto } from "@retailer-search/shared-types";
+import { getSearchApiUrl } from "./lib/search-api-url";
 
-interface AnalyticsPanelProps {
-  analytics: SearchAnalyticsSummaryDto;
-}
+const EMPTY_ANALYTICS: SearchAnalyticsSummaryDto = {
+  totalSearches: 0,
+  totalClicks: 0,
+  topQueries: [],
+  noResultQueries: [],
+};
 
-export function AnalyticsPanel({ analytics }: AnalyticsPanelProps) {
+const REFRESH_INTERVAL_MS = 20_000;
+
+export function AnalyticsPanel() {
+  const [analytics, setAnalytics] = useState<SearchAnalyticsSummaryDto>(EMPTY_ANALYTICS);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadAnalytics = useCallback(async () => {
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `${getSearchApiUrl()}/api/v1/admin/analytics/summary`,
+        { cache: "no-store" },
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to load analytics: HTTP ${response.status}`);
+      }
+
+      setAnalytics((await response.json()) as SearchAnalyticsSummaryDto);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error ? loadError.message : "Failed to load analytics",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAnalytics();
+
+    const intervalId = window.setInterval(() => {
+      void loadAnalytics();
+    }, REFRESH_INTERVAL_MS);
+
+    const handleFocus = () => {
+      void loadAnalytics();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [loadAnalytics]);
+
   return (
     <section
       style={{
@@ -14,9 +68,36 @@ export function AnalyticsPanel({ analytics }: AnalyticsPanelProps) {
         background: "#fff",
       }}
     >
-      <h2 style={{ margin: "0 0 1rem", fontSize: "1.1rem" }}>
-        Search analytics
-      </h2>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: "0.75rem",
+          alignItems: "center",
+          marginBottom: "1rem",
+        }}
+      >
+        <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Search analytics</h2>
+        <button
+          type="button"
+          onClick={() => void loadAnalytics()}
+          disabled={loading}
+          style={{
+            padding: "0.35rem 0.65rem",
+            border: "1px solid #cbd5e1",
+            borderRadius: 6,
+            background: "#fff",
+            cursor: "pointer",
+            fontSize: 12,
+          }}
+        >
+          Refresh
+        </button>
+      </div>
+
+      {error ? (
+        <p style={{ margin: "0 0 0.75rem", color: "#b91c1c", fontSize: 13 }}>{error}</p>
+      ) : null}
 
       <div
         style={{
@@ -51,7 +132,7 @@ export function AnalyticsPanel({ analytics }: AnalyticsPanelProps) {
           <h3 style={{ margin: "0 0 0.5rem", fontSize: 14 }}>Top queries</h3>
           {analytics.topQueries.length === 0 ? (
             <p style={{ margin: 0, fontSize: 13, color: "#94a3b8" }}>
-              No search data yet
+              {loading ? "Loading search data..." : "No search data yet"}
             </p>
           ) : (
             <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: 13 }}>
@@ -69,7 +150,9 @@ export function AnalyticsPanel({ analytics }: AnalyticsPanelProps) {
           </h3>
           {analytics.noResultQueries.length === 0 ? (
             <p style={{ margin: 0, fontSize: 13, color: "#94a3b8" }}>
-              No zero-result queries yet
+              {loading
+                ? "Loading zero-result data..."
+                : "No zero-result queries yet"}
             </p>
           ) : (
             <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: 13 }}>

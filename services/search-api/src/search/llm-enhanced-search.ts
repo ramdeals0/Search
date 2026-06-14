@@ -4,7 +4,7 @@ import type {
   ProductDocument,
   SearchRequestDto,
 } from "@retailer-search/shared-types";
-import { createLlmProvider } from "../llm/provider.js";
+import { getCachedLlmProvider } from "../llm/provider-cache.js";
 import type {
   EnhancedSearchResponseDto,
   LlmConfig,
@@ -26,30 +26,8 @@ export interface LlmEnhancedSearchOptions {
   >;
 }
 
-let cachedProviderKey = "";
-let cachedProvider: ReturnType<typeof createLlmProvider> = null;
-
 function getProvider(config = getSearchFeatureFlags()) {
-  const key = [
-    config.provider,
-    config.model,
-    config.timeoutMs,
-    process.env.OPENROUTER_API_KEY ?? "",
-    process.env.GROQ_API_KEY ?? "",
-  ].join("|");
-
-  if (key !== cachedProviderKey) {
-    cachedProviderKey = key;
-    cachedProvider = createLlmProvider({
-      provider: config.provider,
-      model: config.model,
-      timeoutMs: config.timeoutMs,
-      openRouterApiKey: process.env.OPENROUTER_API_KEY,
-      groqApiKey: process.env.GROQ_API_KEY,
-    });
-  }
-
-  return cachedProvider;
+  return getCachedLlmProvider(config);
 }
 
 export async function llmEnhancedSearch(

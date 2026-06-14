@@ -3,6 +3,7 @@ import { ActiveConfigBadge } from "../../active-config-badge";
 import { ApprovalPolicyPanel } from "../../approval-policy-panel";
 import { EnvironmentPanel } from "../../environment-panel";
 import { EnvironmentSwitcher } from "../../environment-switcher";
+import { LlmSettingsPanel } from "../../llm-settings-panel";
 import { AdminPageHeader } from "../admin-page-header";
 
 export default function AdminSettingsPage() {
@@ -11,12 +12,13 @@ export default function AdminSettingsPage() {
       <AdminPageHeader
         eyebrow="Operations"
         title="Settings"
-        description="Environment configuration, approval policies, and ForgeOps platform defaults."
+        description="Environment configuration, LLM search settings, approval policies, and ForgeOps platform defaults."
       />
 
       <EnvironmentSwitcher />
       <ActiveConfigBadge />
       <EnvironmentPanel />
+      <LlmSettingsPanel />
       <ApprovalPolicyPanel />
 
       <section className="forge-card forge-card--panel">

@@ -25,6 +25,12 @@ export type {
   ResolveJitElevationRequestDto,
   UpdateJitPolicyRequestDto,
 } from "./access-governance.js";
+export type {
+  LlmCredentialsStatusDto,
+  LlmProviderName,
+  LlmSettingsDto,
+  UpdateLlmSettingsRequestDto,
+} from "./llm-settings.js";
 
 import type { UserRole } from "./user-role.js";
 import type { ActivePrivilegeDto } from "./access-governance.js";
@@ -441,6 +447,7 @@ export type AuditActionType =
   | "expire_jit_elevation"
   | "revoke_jit_elevation"
   | "update_jit_policy"
+  | "update_llm_settings"
   | "create_export_job"
   | "download_export"
   | "create_webhook_endpoint"
@@ -473,6 +480,7 @@ export type AuditEntityType =
   | "access_review"
   | "jit_elevation_request"
   | "jit_policy"
+  | "llm_settings"
   | "export_job"
   | "webhook_endpoint"
   | "webhook_delivery"
