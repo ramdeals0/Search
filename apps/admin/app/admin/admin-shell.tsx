@@ -6,6 +6,7 @@ import { BrandedSidebarBrand, BrandingProvider } from "../branding-provider";
 import { CatalogSwitcher } from "../catalog-switcher";
 import { CurrentUserBadge } from "../components/current-user-badge";
 import { SessionTimeoutMonitor } from "../components/session-timeout-monitor";
+import { CsrfBootstrap } from "../components/csrf-bootstrap";
 import { useWorkspaceRoleState } from "../lib/use-workspace-role";
 import { WorkspaceSummaryCards } from "../workspace-summary-cards";
 import { WorkspaceSwitcher } from "../workspace-switcher";
@@ -35,6 +36,7 @@ export function AdminShell({ children }: AdminShellProps) {
 
   return (
     <BrandingProvider>
+    <CsrfBootstrap />
     <SessionTimeoutMonitor />
     <div className={`forge-shell${isMobile ? " forge-shell--mobile" : ""}`}>
       {!isMobile ? (

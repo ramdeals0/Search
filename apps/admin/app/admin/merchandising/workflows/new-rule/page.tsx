@@ -13,7 +13,7 @@ import {
   validateRuleName,
   validateSearchQuery,
 } from "@retailer-search/config/safe-text";
-import { getAuthHeaders } from "../../../../lib/auth-headers";
+import { authFetch } from "../../../../lib/auth-headers";
 import { CatalogAutocompleteInput } from "../../../../catalog-autocomplete-input";
 import {
   WorkflowShell,
@@ -177,9 +177,8 @@ export default function NewRuleWorkflowPage() {
     };
 
     try {
-      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/rules`, {
+      const response = await authFetch(`${getSearchApiUrl()}/api/v1/admin/rules`, {
         method: "POST",
-        headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       });
 
@@ -189,7 +188,7 @@ export default function NewRuleWorkflowPage() {
           | null;
         const detailMessage = body?.details?.fieldErrors
           ? Object.values(body.details.fieldErrors).flat().join(" ")
-          : body?.error;
+          : body?.message ?? body?.error;
         throw new Error(detailMessage ?? `Create failed with HTTP ${response.status}`);
       }
 

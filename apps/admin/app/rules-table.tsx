@@ -1,5 +1,6 @@
 "use client";
 import { getSearchApiUrl } from "./lib/search-api-url";
+import { authFetch } from "./lib/auth-headers";
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -53,15 +54,26 @@ export function RulesTable({ initialRules }: RulesTableProps) {
     router.refresh();
   };
 
+  async function readApiError(response: Response, fallback: string): Promise<string> {
+    const body = (await response.json().catch(() => null)) as
+      | { message?: string; error?: string; details?: { fieldErrors?: Record<string, string[]> } }
+      | null;
+    const fieldErrors = body?.details?.fieldErrors
+      ? Object.values(body.details.fieldErrors).flat().join(" ")
+      : "";
+    return fieldErrors || body?.message || body?.error || fallback;
+  }
+
   const createRule = async (payload: CreateMerchandisingRuleDto) => {
-    const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/rules`, {
+    const response = await authFetch(`${getSearchApiUrl()}/api/v1/admin/rules`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
-      throw new Error(`Create failed with HTTP ${response.status}`);
+      throw new Error(
+        await readApiError(response, `Create failed with HTTP ${response.status}`),
+      );
     }
 
     setCreating(false);
@@ -72,14 +84,15 @@ export function RulesTable({ initialRules }: RulesTableProps) {
     id: string,
     payload: UpdateMerchandisingRuleDto,
   ) => {
-    const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/rules/${id}`, {
+    const response = await authFetch(`${getSearchApiUrl()}/api/v1/admin/rules/${id}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
-      throw new Error(`Update failed with HTTP ${response.status}`);
+      throw new Error(
+        await readApiError(response, `Update failed with HTTP ${response.status}`),
+      );
     }
 
     setEditingRule(null);
@@ -92,12 +105,12 @@ export function RulesTable({ initialRules }: RulesTableProps) {
     }
 
     setError(null);
-    const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/rules/${id}`, {
+    const response = await authFetch(`${getSearchApiUrl()}/api/v1/admin/rules/${id}`, {
       method: "DELETE",
     });
 
     if (!response.ok) {
-      setError(`Delete failed with HTTP ${response.status}`);
+      setError(await readApiError(response, `Delete failed with HTTP ${response.status}`));
       return;
     }
 
@@ -106,17 +119,16 @@ export function RulesTable({ initialRules }: RulesTableProps) {
 
   const toggleActive = async (rule: MerchandisingRule) => {
     setError(null);
-    const response = await fetch(
+    const response = await authFetch(
       `${getSearchApiUrl()}/api/v1/admin/rules/${rule.id}`,
       {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ active: !rule.active }),
       },
     );
 
     if (!response.ok) {
-      setError(`Toggle failed with HTTP ${response.status}`);
+      setError(await readApiError(response, `Toggle failed with HTTP ${response.status}`));
       return;
     }
 

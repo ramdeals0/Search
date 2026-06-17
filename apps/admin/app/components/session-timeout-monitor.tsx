@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CurrentUserResponseDto } from "@retailer-search/shared-types";
-import { clearAuthSession } from "../auth-session";
+import { clearAuthSession, persistCsrfToken } from "../auth-session";
 import { getAuthHeaders } from "../lib/auth-headers";
 import { getSearchApiUrl } from "../lib/search-api-url";
 
@@ -51,6 +51,10 @@ export function SessionTimeoutMonitor() {
       if (!body.authenticated || !body.session) {
         await logout();
         return;
+      }
+
+      if (body.csrfToken) {
+        persistCsrfToken(body.csrfToken);
       }
 
       const now = Date.now();
