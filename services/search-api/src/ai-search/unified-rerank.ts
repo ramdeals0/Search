@@ -4,6 +4,12 @@ import type {
   ProductDocument,
   SearchExplanationCode,
 } from "@retailer-search/shared-types";
+import {
+  computeCommercialPriorityBoost,
+  computeInventoryScore,
+  computeProfitMarginScore,
+  resolveProfitMarginPercent,
+} from "@retailer-search/search-core";
 import type { FusedCandidate, RetrievalSource } from "./candidate-fusion.js";
 import { getRerankRuntimeConfig, type RerankRuntimeConfig } from "./vector-config.js";
 
@@ -100,6 +106,7 @@ export async function unifiedRerankCandidates(input: {
   const baseRanked: RerankedCandidate[] = input.fused
     .filter((candidate) => productsById.has(candidate.productId))
     .map((candidate) => {
+      const product = productsById.get(candidate.productId)!;
       const personalizationEntry = input.personalizationScores.get(candidate.productId);
       const personalizationScore = normalizeScore(
         personalizationEntry?.score ?? 0,
@@ -111,6 +118,9 @@ export async function unifiedRerankCandidates(input: {
         personalization: personalizationScore,
         weights: input.config.weights,
       });
+      const inventoryScore = computeInventoryScore(product);
+      const profitMarginScore = computeProfitMarginScore(product);
+      const commercialBoost = (inventoryScore + profitMarginScore) / 100;
 
       const explanationCodes: SearchExplanationCode[] = [];
       if (candidate.lexicalScore > 0) {
@@ -129,6 +139,12 @@ export async function unifiedRerankCandidates(input: {
       if (personalizationScore > 0) {
         explanationCodes.push("personalization_rerank");
       }
+      if (inventoryScore > 0) {
+        explanationCodes.push("in_stock_boost");
+      }
+      if (profitMarginScore > 0) {
+        explanationCodes.push("profit_margin_boost");
+      }
 
       return {
         productId: candidate.productId,
@@ -136,8 +152,8 @@ export async function unifiedRerankCandidates(input: {
         semanticScore: candidate.semanticScore,
         personalizationScore,
         fusedScore,
-        rerankScore: fusedScore,
-        finalScore: fusedScore,
+        rerankScore: fusedScore + commercialBoost,
+        finalScore: fusedScore + commercialBoost,
         retrievalSources: candidate.retrievalSources,
         explanationCodes,
         rulesApplied,
@@ -156,7 +172,9 @@ export async function unifiedRerankCandidates(input: {
     );
     for (const candidate of baseRanked) {
       const adjustment = providerAdjustments.get(candidate.productId) ?? 0;
-      candidate.rerankScore = candidate.fusedScore + adjustment;
+      const product = productsById.get(candidate.productId);
+      const commercialBoost = product ? computeCommercialPriorityBoost(product) / 100 : 0;
+      candidate.rerankScore = candidate.fusedScore + commercialBoost + adjustment;
       candidate.finalScore = candidate.rerankScore;
     }
     baseRanked.sort(
@@ -179,6 +197,8 @@ export function rerankedToSearchHits(
         return null;
       }
       const scaledScore = entry.finalScore * 100;
+      const inventoryScore = computeInventoryScore(product);
+      const profitMarginScore = computeProfitMarginScore(product);
       const baseHit = entry.lexicalHit ?? {
         id: product.id,
         sku: product.sku,
@@ -201,8 +221,13 @@ export function rerankedToSearchHits(
               productId: product.id,
               baseScore: entry.lexicalHit?.rankingDebug?.baseScore ?? 0,
               exactMatchScore: entry.lexicalHit?.rankingDebug?.exactMatchScore ?? 0,
-              inventoryScore: entry.lexicalHit?.rankingDebug?.inventoryScore ?? 0,
+              inventoryScore: entry.lexicalHit?.rankingDebug?.inventoryScore ?? inventoryScore,
               popularityScore: entry.lexicalHit?.rankingDebug?.popularityScore ?? 0,
+              profitMarginScore:
+                entry.lexicalHit?.rankingDebug?.profitMarginScore ?? profitMarginScore,
+              profitMarginPercent:
+                entry.lexicalHit?.rankingDebug?.profitMarginPercent ??
+                resolveProfitMarginPercent(product),
               merchandisingAdjustment:
                 entry.lexicalHit?.rankingDebug?.merchandisingAdjustment ?? 0,
               finalScore: scaledScore,

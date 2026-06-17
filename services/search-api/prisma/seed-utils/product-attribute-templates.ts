@@ -11,15 +11,182 @@ export interface ProductCopyBundle {
   shortDescription: string;
   longDescription: string;
   description: string;
+  aiSearchBlurb: string;
   useCases: string[];
   searchCriteria: string[];
 }
 
+export interface HeroCopyInput {
+  title: string;
+  brand: string;
+  shortDescription: string;
+  longDescription: string;
+  keywords: string[];
+  specs: Record<string, string | number | boolean>;
+  isContractorGrade?: boolean;
+  isSeasonal?: boolean;
+}
+
 function specSummary(specs: Record<string, string | number | boolean>): string {
   return Object.entries(specs)
-    .slice(0, 6)
+    .slice(0, 8)
     .map(([key, value]) => `${key.replace(/([A-Z])/g, " $1").trim()} ${value}`)
     .join(", ");
+}
+
+function formatCategoryPath(leaf: LeafCategory): string {
+  return `${leaf.department} > ${leaf.category} > ${leaf.subcategory}`;
+}
+
+const TEMPLATE_SHOPPER_PHRASES: Record<AttributeTemplateKey, string[]> = {
+  power_tool: [
+    "cordless power tool",
+    "battery powered tool",
+    "job site drill",
+    "home workshop tool",
+    "driver bit compatible",
+  ],
+  hand_tool: [
+    "hand tool",
+    "toolbox essential",
+    "home repair tool",
+    "trade quality hand tool",
+  ],
+  hardware: [
+    "fastener pack",
+    "mounting hardware",
+    "construction fasteners",
+    "project hardware kit",
+  ],
+  lumber: [
+    "framing lumber",
+    "construction lumber",
+    "wood stud",
+    "outdoor rated lumber",
+  ],
+  building_material: [
+    "building supplies",
+    "remodel material",
+    "construction panel",
+    "insulation and drywall supplies",
+  ],
+  plumbing: [
+    "plumbing fixture",
+    "bath and kitchen plumbing",
+    "water supply upgrade",
+    "leak repair parts",
+  ],
+  electrical: [
+    "electrical supply",
+    "wiring upgrade",
+    "outlet and switch parts",
+    "home electrical code compliance",
+  ],
+  lighting: [
+    "light fixture",
+    "home lighting upgrade",
+    "energy efficient lighting",
+    "room lighting refresh",
+  ],
+  paint: [
+    "paint and primer",
+    "wall coating",
+    "interior refresh paint",
+    "project finishing supplies",
+  ],
+  flooring: [
+    "floor covering",
+    "waterproof flooring",
+    "click lock flooring",
+    "room flooring update",
+  ],
+  kitchen: [
+    "kitchen upgrade",
+    "sink and faucet install",
+    "cabinet area refresh",
+    "countertop companion product",
+  ],
+  bath: [
+    "bathroom remodel",
+    "vanity upgrade",
+    "bath refresh",
+    "guest bath update",
+  ],
+  appliance: [
+    "major appliance",
+    "kitchen appliance replacement",
+    "energy efficient appliance",
+    "move in ready appliance",
+  ],
+  hvac: [
+    "home comfort",
+    "climate control",
+    "safety and ventilation",
+    "seasonal heating and cooling",
+  ],
+  lawn_garden: [
+    "yard care",
+    "landscape supplies",
+    "curb appeal project",
+    "garden bed maintenance",
+  ],
+  outdoor_power: [
+    "yard power equipment",
+    "outdoor cleanup tool",
+    "lawn and landscape equipment",
+    "seasonal yard maintenance",
+  ],
+  storage: [
+    "garage organization",
+    "workshop storage",
+    "tool storage solution",
+    "utility room organization",
+  ],
+  smart_home: [
+    "connected home device",
+    "smart home upgrade",
+    "Wi-Fi home automation",
+    "remote control home product",
+  ],
+  safety: [
+    "job site safety",
+    "PPE gear",
+    "workshop protection",
+    "ANSI rated safety gear",
+  ],
+};
+
+function buildAiSearchBlurb(input: {
+  title: string;
+  brand: SyntheticBrand | { name: string };
+  leaf: LeafCategory;
+  shortDescription: string;
+  longDescription: string;
+  useCases: string[];
+  searchCriteria: string[];
+  specs: Record<string, string | number | boolean>;
+  variantSuffix?: string;
+}): string {
+  const shopperPhrases = TEMPLATE_SHOPPER_PHRASES[input.leaf.attributeTemplate] ?? [];
+  const alternateNames = [
+    ...shopperPhrases.slice(0, 2),
+    ...(LEAF_SEARCH_KEYWORDS[input.leaf.id] ?? []).slice(0, 3),
+  ].filter((value, index, list) => list.indexOf(value) === index);
+
+  return [
+    input.shortDescription,
+    input.longDescription,
+    `Shopper-friendly terms include ${alternateNames.join(", ")}.`,
+    `Common projects: ${input.useCases.join(", ")}.`,
+    `Category path: ${formatCategoryPath(input.leaf)}.`,
+    `Key specifications: ${specSummary(input.specs)}.`,
+    input.variantSuffix
+      ? `This configuration is optimized for ${input.variantSuffix.toLowerCase()} applications.`
+      : undefined,
+    `Related search terms: ${input.searchCriteria.slice(0, 12).join(", ")}.`,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function buildSearchCriteria(input: {
@@ -45,6 +212,7 @@ function buildSearchCriteria(input: {
     input.leaf.department.toLowerCase(),
     input.brand.name.toLowerCase(),
     ...leafKeywords,
+    ...(TEMPLATE_SHOPPER_PHRASES[input.leaf.attributeTemplate] ?? []),
     ...input.useCases.map((item) => item.toLowerCase()),
     ...fromSpecs.map((item) => item.toLowerCase()),
   ].filter((value, index, list) => value.length > 1 && list.indexOf(value) === index);
@@ -393,8 +561,10 @@ export function generateProductCopy(input: {
     input.rng,
     input.extraSpecs ?? {},
   );
-  const useCases = input.rng.shuffle(USE_CASES_BY_TEMPLATE[input.leaf.attributeTemplate]).slice(0, 3);
+  const useCases = input.rng.shuffle(USE_CASES_BY_TEMPLATE[input.leaf.attributeTemplate]).slice(0, 4);
   const audience = input.leaf.contractorOriented ? "professional contractors" : "DIY homeowners";
+  const shopperPhrases = TEMPLATE_SHOPPER_PHRASES[input.leaf.attributeTemplate] ?? [];
+  const leafKeywords = LEAF_SEARCH_KEYWORDS[input.leaf.id] ?? [];
   const searchCriteria = buildSearchCriteria({
     leaf: input.leaf,
     brand: input.brand,
@@ -403,22 +573,40 @@ export function generateProductCopy(input: {
   });
 
   const shortDescription = input.variantSuffix
-    ? `${input.brand.name} ${input.leaf.productType} configured as ${input.variantSuffix} for ${input.leaf.subcategory.toLowerCase()} projects.`
-    : `${input.brand.name} ${input.leaf.productType} designed for ${input.leaf.subcategory.toLowerCase()} work in ${input.leaf.department.toLowerCase()}.`;
+    ? `${input.brand.name} ${input.leaf.productType} configured as ${input.variantSuffix} for ${input.leaf.subcategory.toLowerCase()} projects in ${input.leaf.department.toLowerCase()}.`
+    : `${input.brand.name} ${input.leaf.productType} designed for ${input.leaf.subcategory.toLowerCase()} work across ${input.leaf.department.toLowerCase()} projects.`;
 
   const longDescription = [
-    `${input.title} delivers dependable performance for ${useCases.join(", ")}.`,
-    `Built for ${audience}, this ${input.leaf.productType.toLowerCase()} includes ${specSummary(specs)}.`,
+    `${input.title} is a ${input.leaf.productType.toLowerCase()} built for ${audience} tackling ${useCases.slice(0, 2).join(" and ")}.`,
+    `It performs reliably in ${formatCategoryPath(input.leaf).toLowerCase()} applications and includes ${specSummary(specs)}.`,
+    `Shoppers often search for this item when planning ${useCases.join(", ")} or comparing ${shopperPhrases.slice(0, 2).join(" and ")} options.`,
+    leafKeywords.length > 0
+      ? `Also relevant for searches like ${leafKeywords.slice(0, 4).join(", ")}.`
+      : undefined,
     input.leaf.seasonal
-      ? "Seasonal availability makes it a strong choice for peak project windows."
-      : "Suitable for year-round home improvement and trade applications.",
-  ].join(" ");
+      ? "Seasonal availability makes it a strong choice for peak spring and summer project windows."
+      : "Suitable for year-round home improvement, maintenance, and trade applications.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const aiSearchBlurb = buildAiSearchBlurb({
+    title: input.title,
+    brand: input.brand,
+    leaf: input.leaf,
+    shortDescription,
+    longDescription,
+    useCases,
+    searchCriteria,
+    specs,
+    variantSuffix: input.variantSuffix,
+  });
 
   const description = [
     shortDescription,
+    longDescription,
     `Ideal for ${useCases.join(", ")}.`,
     `Specifications include ${specSummary(specs)}.`,
-    `Search tags: ${searchCriteria.slice(0, 8).join(", ")}.`,
   ].join(" ");
 
   return {
@@ -426,6 +614,68 @@ export function generateProductCopy(input: {
     shortDescription,
     longDescription,
     description,
+    aiSearchBlurb,
+    useCases,
+    searchCriteria,
+  };
+}
+
+export function enrichHeroProductCopy(input: {
+  hero: HeroCopyInput;
+  leaf: LeafCategory;
+}): ProductCopyBundle {
+  const useCases = (
+    USE_CASES_BY_TEMPLATE[input.leaf.attributeTemplate] ?? ["home improvement projects"]
+  ).slice(0, 4);
+  const searchCriteria = [
+    ...input.hero.keywords,
+    input.hero.brand.toLowerCase(),
+    input.leaf.productType.toLowerCase(),
+    input.leaf.subcategory.toLowerCase(),
+    input.leaf.category.toLowerCase(),
+    input.leaf.department.toLowerCase(),
+    ...(LEAF_SEARCH_KEYWORDS[input.leaf.id] ?? []),
+    ...(TEMPLATE_SHOPPER_PHRASES[input.leaf.attributeTemplate] ?? []),
+    ...Object.values(input.hero.specs).map(String),
+  ].filter((value, index, list) => value.length > 1 && list.indexOf(value) === index);
+
+  const audience = input.hero.isContractorGrade
+    ? "professional contractors and serious DIYers"
+    : "DIY homeowners and weekend project planners";
+  const shortDescription = input.hero.shortDescription;
+  const longDescription = [
+    input.hero.longDescription,
+    `${input.hero.title} is trusted for ${useCases.slice(0, 2).join(" and ")} in the ${input.leaf.department.toLowerCase()} aisle.`,
+    `Built for ${audience}, it fits ${formatCategoryPath(input.leaf).toLowerCase()} needs and includes ${specSummary(input.hero.specs)}.`,
+    input.hero.keywords.length > 0
+      ? `Common search phrases include ${input.hero.keywords.join(", ")}.`
+      : undefined,
+    input.hero.isSeasonal
+      ? "Popular during seasonal project peaks when shoppers refresh yards, exteriors, or comfort systems."
+      : "A dependable choice for everyday repairs, remodels, and maintenance tasks.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const aiSearchBlurb = buildAiSearchBlurb({
+    title: input.hero.title,
+    brand: { name: input.hero.brand },
+    leaf: input.leaf,
+    shortDescription,
+    longDescription,
+    useCases,
+    searchCriteria,
+    specs: input.hero.specs,
+  });
+
+  const description = [shortDescription, longDescription].join(" ");
+
+  return {
+    specs: input.hero.specs,
+    shortDescription,
+    longDescription,
+    description,
+    aiSearchBlurb,
     useCases,
     searchCriteria,
   };

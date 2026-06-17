@@ -23,11 +23,13 @@ export function buildCanonicalProductText(product: ProductDocument): string {
     })
     .filter(Boolean);
 
+  const aiSearchBlurb = asString(product.attributes?.aiSearchBlurb);
   const bullets = asString(product.attributes?.shortDescription);
   const longDescription =
     asString(product.attributes?.longDescription) ?? product.description?.trim();
   const useCases = product.attributes?.useCases;
   const searchCriteria = product.attributes?.searchCriteria;
+  const keywords = product.attributes?.keywords;
 
   return [
     product.title,
@@ -35,8 +37,12 @@ export function buildCanonicalProductText(product: ProductDocument): string {
     product.category
       ? `Category: ${product.category}${product.subcategory ? ` > ${product.subcategory}` : ""}`
       : undefined,
+    aiSearchBlurb,
     bullets,
     longDescription,
+    Array.isArray(keywords) && keywords.length > 0
+      ? `Keywords: ${keywords.map(String).join(", ")}`
+      : undefined,
     Array.isArray(useCases) && useCases.length > 0
       ? `Use cases: ${useCases.map(String).join(", ")}`
       : undefined,

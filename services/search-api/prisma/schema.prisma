@@ -417,6 +417,8 @@ model Product {
   price       Float
   inventory   Int
   inStock     Boolean
+  unitCost    Float?
+  profitMarginPercent Float?
   imageUrl    String?
   attributes  Json
   createdAt   DateTime
@@ -426,6 +428,7 @@ model Product {
   @@index([categoryId])
   @@index([catalogId])
   @@index([inStock])
+  @@index([profitMarginPercent])
   @@index([title])
   @@index([updatedAt])
 }

@@ -42,6 +42,31 @@ test("buildCanonicalProductText includes title brand and category", () => {
   assert.match(text, /cordless drill/);
 });
 
+test("buildCanonicalProductText prioritizes aiSearchBlurb and keywords", () => {
+  const text = buildCanonicalProductText({
+    id: "p2",
+    sku: "SKU-2",
+    title: "Wet Dry Shop Vacuum",
+    brand: "IronPeak",
+    category: "Tools",
+    subcategory: "Vacuums",
+    description: "Compact utility vacuum.",
+    price: 99,
+    inventory: 10,
+    inStock: true,
+    attributes: {
+      aiSearchBlurb:
+        "Heavy-duty shop vac for garage cleanup, wet spills, and workshop dust collection.",
+      keywords: ["shop vac", "wet dry vacuum"],
+    },
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  assert.match(text, /Heavy-duty shop vac/);
+  assert.match(text, /Keywords: shop vac, wet dry vacuum/);
+});
+
 test("hashCanonicalText is stable", () => {
   const hashA = hashCanonicalText("hello world");
   const hashB = hashCanonicalText("hello world");

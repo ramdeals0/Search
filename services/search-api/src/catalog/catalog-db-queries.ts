@@ -41,6 +41,8 @@ export interface ProductRowWithRelations {
   price: number;
   inventory: number;
   inStock: boolean;
+  unitCost?: number | null;
+  profitMarginPercent?: number | null;
   imageUrl: string | null;
   attributes: unknown;
   catalogId: string;
@@ -62,6 +64,8 @@ export function mapProductRow(row: ProductRowWithRelations): ProductDocument {
     price: row.price,
     inventory: row.inventory,
     inStock: row.inStock,
+    unitCost: row.unitCost ?? undefined,
+    profitMarginPercent: row.profitMarginPercent ?? undefined,
     imageUrl: row.imageUrl ?? undefined,
     attributes: row.attributes as ProductAttributeMap,
     catalogId: row.catalogId,
@@ -161,7 +165,7 @@ export async function fetchSearchCandidatesFromDatabase(input: {
     const rows = await prisma.product.findMany({
       where: buildPrismaBrowseWhere(catalog, input.filters),
       include: productInclude,
-      orderBy: [{ inStock: "desc" }, { title: "asc" }],
+      orderBy: [{ inStock: "desc" }, { profitMarginPercent: "desc" }, { title: "asc" }],
       take: limit,
     });
     return rows.map((row) => mapProductRow(row as ProductRowWithRelations));
@@ -186,6 +190,7 @@ export async function fetchSearchCandidatesFromDatabase(input: {
       )
     ORDER BY ts_rank(${PRODUCT_LEXICAL_SEARCH_VECTOR_SQL}, plainto_tsquery('english', $1)) DESC,
     p."inStock" DESC,
+    p."profitMarginPercent" DESC NULLS LAST,
     p.title ASC
     LIMIT ${limit}
   `;

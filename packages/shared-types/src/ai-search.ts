@@ -23,6 +23,8 @@ export type SearchExplanationCode =
   | "user_category_affinity"
   | "user_product_affinity"
   | "merchandising_rule_applied"
+  | "in_stock_boost"
+  | "profit_margin_boost"
   | "zero_results_semantic_recovery"
   | "personalization_rerank";
 

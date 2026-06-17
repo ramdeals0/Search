@@ -132,5 +132,5 @@ test("unifiedRerankCandidates fail-open when rerank provider disabled", async ()
   });
 
   assert.equal(ranked[0]?.productId, "p1");
-  assert.equal(ranked[0]?.fusedScore, ranked[0]?.rerankScore);
+  assert.ok((ranked[0]?.fusedScore ?? 0) <= (ranked[0]?.rerankScore ?? 0));
 });

@@ -118,6 +118,8 @@ export async function seedCatalogTables(
     price: product.price,
     inventory: product.inventory,
     inStock: product.inStock,
+    unitCost: product.unitCost ?? null,
+    profitMarginPercent: product.profitMarginPercent ?? null,
     imageUrl: product.imageUrl ?? null,
     attributes: product.attributes as Prisma.InputJsonValue,
     createdAt: new Date(product.createdAt),

@@ -101,6 +101,8 @@ export interface ProductDocument {
   price: number;
   inventory: number;
   inStock: boolean;
+  unitCost?: number;
+  profitMarginPercent?: number;
   imageUrl?: string;
   attributes: ProductAttributeMap;
   catalogId?: string;
@@ -177,6 +179,8 @@ export interface RankingDebugDto {
   exactMatchScore: number;
   inventoryScore: number;
   popularityScore: number;
+  profitMarginScore?: number;
+  profitMarginPercent?: number;
   merchandisingAdjustment: number;
   finalScore: number;
   appliedRuleNames: string[];

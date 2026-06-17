@@ -290,9 +290,12 @@ export class StoredVectorSearchProvider implements VectorSearchProvider {
     const queryVector = await this.provider.embedQuery(query);
 
     if (databaseVectorSearchEnabled) {
+      const scopedCandidateIds =
+        this.candidateProductIds && this.candidateProductIds.length > 0
+          ? this.candidateProductIds
+          : undefined;
       const candidateIds =
-        this.candidateProductIds ??
-        this.fallbackProducts?.map((product) => product.id);
+        scopedCandidateIds ?? this.fallbackProducts?.map((product) => product.id);
       const hits = await searchEmbeddingsFromDatabase(
         queryVector,
         cappedLimit,
@@ -311,6 +314,7 @@ export class StoredVectorSearchProvider implements VectorSearchProvider {
     for (const [productId, entry] of embeddingByProductId.entries()) {
       if (
         this.candidateProductIds &&
+        this.candidateProductIds.length > 0 &&
         !this.candidateProductIds.includes(productId)
       ) {
         continue;

@@ -24,7 +24,8 @@ import {
   slugify,
   type SeededRng,
 } from "./random.js";
-import { generateProductCopy } from "./product-attribute-templates.js";
+import { enrichHeroProductCopy, generateProductCopy } from "./product-attribute-templates.js";
+import { generateProfitMetrics } from "./profit-metrics.js";
 
 const MAX_CATALOG_PRODUCTS = 80_000_000;
 
@@ -149,6 +150,28 @@ function shippingClassForLeaf(leaf: LeafCategory): string {
   return "standard";
 }
 
+function attachProfitMetrics(
+  product: InternalProduct,
+  input: {
+    price: number;
+    brand: SyntheticBrand | { name: string; tier?: SyntheticBrand["tier"] };
+    leaf: LeafCategory;
+    rng: SeededRng;
+  },
+): InternalProduct {
+  const metrics = generateProfitMetrics(input);
+  return {
+    ...product,
+    unitCost: metrics.unitCost,
+    profitMarginPercent: metrics.profitMarginPercent,
+    attributes: {
+      ...product.attributes,
+      unitCost: metrics.unitCost,
+      profitMarginPercent: metrics.profitMarginPercent,
+    },
+  };
+}
+
 function mapHeroToProduct(hero: HeroProductTemplate, rng: SeededRng): InternalProduct {
   const leaf = getLeafCategoryById(hero.leafId);
   if (!leaf) {
@@ -158,50 +181,54 @@ function mapHeroToProduct(hero: HeroProductTemplate, rng: SeededRng): InternalPr
   const createdAt = isoDateDaysAgo(rng, 540);
   const slug = slugify(hero.title);
   const inStock = hero.inventoryStatus !== "out_of_stock" && hero.inventory > 0;
+  const copy = enrichHeroProductCopy({ hero, leaf });
 
-  return {
-    id: hero.id,
-    sku: buildSku(leaf, Number(hero.id.replace("prod-hero-", ""))),
-    title: hero.title,
-    brand: hero.brand,
-    category: leaf.department,
-    subcategory: leaf.subcategory,
-    description: hero.longDescription,
-    price: hero.price,
-    inventory: hero.inventory,
-    inStock,
-    imageUrl: placeholderImageUrl(hero.id),
-    createdAt,
-    updatedAt: createdAt,
-    attributes: {
-      ...hero.specs,
-      slug,
-      shortDescription: hero.shortDescription,
-      longDescription: hero.longDescription,
-      inventoryStatus: hero.inventoryStatus,
-      popularityScore: hero.popularityScore,
-      compareAtPrice: hero.compareAtPrice,
-      keywords: hero.keywords,
-      useCases: hero.keywords.slice(0, 3),
-      searchCriteria: [
-        ...hero.keywords,
-        hero.brand.toLowerCase(),
-        leaf.productType.toLowerCase(),
-        leaf.subcategory.toLowerCase(),
-        ...Object.values(hero.specs).map(String),
-      ],
-      department: leaf.department,
-      productType: leaf.productType,
-      isHero: true,
-      isContractorGrade: hero.isContractorGrade ?? leaf.contractorOriented ?? false,
-      isSeasonal: hero.isSeasonal ?? leaf.seasonal ?? false,
-      shippingClass: shippingClassForLeaf(leaf),
-      fulfillmentPickup: true,
-      fulfillmentDelivery: rng.bool(0.65),
-      reviewCount: reviewCountForPopularity(hero.popularityScore, rng),
-      rating: ratingForPopularity(hero.popularityScore, rng),
+  return attachProfitMetrics(
+    {
+      id: hero.id,
+      sku: buildSku(leaf, Number(hero.id.replace("prod-hero-", ""))),
+      title: hero.title,
+      brand: hero.brand,
+      category: leaf.department,
+      subcategory: leaf.subcategory,
+      description: copy.description,
+      price: hero.price,
+      inventory: hero.inventory,
+      inStock,
+      imageUrl: placeholderImageUrl(hero.id),
+      createdAt,
+      updatedAt: createdAt,
+      attributes: {
+        ...hero.specs,
+        slug,
+        shortDescription: copy.shortDescription,
+        longDescription: copy.longDescription,
+        aiSearchBlurb: copy.aiSearchBlurb,
+        inventoryStatus: hero.inventoryStatus,
+        popularityScore: hero.popularityScore,
+        compareAtPrice: hero.compareAtPrice,
+        keywords: [...hero.keywords, ...copy.searchCriteria.slice(0, 8)],
+        useCases: copy.useCases,
+        searchCriteria: copy.searchCriteria,
+        department: leaf.department,
+        productType: leaf.productType,
+        isHero: true,
+        isContractorGrade: hero.isContractorGrade ?? leaf.contractorOriented ?? false,
+        isSeasonal: hero.isSeasonal ?? leaf.seasonal ?? false,
+        shippingClass: shippingClassForLeaf(leaf),
+        fulfillmentPickup: true,
+        fulfillmentDelivery: rng.bool(0.65),
+        reviewCount: reviewCountForPopularity(hero.popularityScore, rng),
+        rating: ratingForPopularity(hero.popularityScore, rng),
+      },
     },
-  };
+    {
+      price: hero.price,
+      brand: { name: hero.brand },
+      leaf,
+      rng,
+    },
+  );
 }
 
 function mapVariantProduct(input: {
@@ -231,42 +258,51 @@ function mapVariantProduct(input: {
     variantSuffix: input.suffix,
   });
 
-  return {
-    id: seedId("prod", input.productIndex),
-    sku: buildSku(input.leaf, input.productIndex, input.suffix),
-    title,
-    brand: input.family.brand,
-    category: input.leaf.department,
-    subcategory: input.leaf.subcategory,
-    description: copy.description,
-    price: input.price,
-    inventory: input.inventory,
-    inStock,
-    imageUrl: placeholderImageUrl(`${input.family.id}-${input.variantIndex}`),
-    createdAt,
-    updatedAt: createdAt,
-    attributes: {
-      ...copy.specs,
-      slug,
-      shortDescription: copy.shortDescription,
-      longDescription: copy.longDescription,
-      productGroupId: input.family.id,
-      inventoryStatus: input.inventoryStatus,
-      popularityScore: input.popularityScore,
-      keywords: [...input.family.keywords, ...copy.searchCriteria],
-      useCases: copy.useCases,
-      searchCriteria: copy.searchCriteria,
-      department: input.leaf.department,
-      productType: input.leaf.productType,
-      isContractorGrade: input.leaf.contractorOriented ?? false,
-      isSeasonal: input.leaf.seasonal ?? false,
-      shippingClass: shippingClassForLeaf(input.leaf),
-      fulfillmentPickup: true,
-      fulfillmentDelivery: input.rng.bool(0.55),
-      reviewCount: reviewCountForPopularity(input.popularityScore, input.rng),
-      rating: ratingForPopularity(input.popularityScore, input.rng),
+  return attachProfitMetrics(
+    {
+      id: seedId("prod", input.productIndex),
+      sku: buildSku(input.leaf, input.productIndex, input.suffix),
+      title,
+      brand: input.family.brand,
+      category: input.leaf.department,
+      subcategory: input.leaf.subcategory,
+      description: copy.description,
+      price: input.price,
+      inventory: input.inventory,
+      inStock,
+      imageUrl: placeholderImageUrl(`${input.family.id}-${input.variantIndex}`),
+      createdAt,
+      updatedAt: createdAt,
+      attributes: {
+        ...copy.specs,
+        slug,
+        shortDescription: copy.shortDescription,
+        longDescription: copy.longDescription,
+        aiSearchBlurb: copy.aiSearchBlurb,
+        productGroupId: input.family.id,
+        inventoryStatus: input.inventoryStatus,
+        popularityScore: input.popularityScore,
+        keywords: [...input.family.keywords, ...copy.searchCriteria],
+        useCases: copy.useCases,
+        searchCriteria: copy.searchCriteria,
+        department: input.leaf.department,
+        productType: input.leaf.productType,
+        isContractorGrade: input.leaf.contractorOriented ?? false,
+        isSeasonal: input.leaf.seasonal ?? false,
+        shippingClass: shippingClassForLeaf(input.leaf),
+        fulfillmentPickup: true,
+        fulfillmentDelivery: input.rng.bool(0.55),
+        reviewCount: reviewCountForPopularity(input.popularityScore, input.rng),
+        rating: ratingForPopularity(input.popularityScore, input.rng),
+      },
     },
-  };
+    {
+      price: input.price,
+      brand: input.brand,
+      leaf: input.leaf,
+      rng: input.rng,
+    },
+  );
 }
 
 function mapSimpleProduct(input: {
@@ -295,42 +331,51 @@ function mapSimpleProduct(input: {
     title,
   });
 
-  return {
-    id: seedId("prod", input.productIndex),
-    sku: buildSku(input.leaf, input.productIndex),
-    title,
-    brand: input.brand.name,
-    category: input.leaf.department,
-    subcategory: input.leaf.subcategory,
-    description: copy.description,
-    price,
-    inventory,
-    inStock,
-    imageUrl: placeholderImageUrl(`simple-${input.productIndex}`),
-    createdAt,
-    updatedAt: createdAt,
-    attributes: {
-      ...copy.specs,
-      slug,
-      shortDescription: copy.shortDescription,
-      longDescription: copy.longDescription,
-      inventoryStatus,
-      popularityScore,
-      keywords: copy.searchCriteria,
-      useCases: copy.useCases,
-      searchCriteria: copy.searchCriteria,
-      department: input.leaf.department,
-      productType: input.leaf.productType,
-      isContractorGrade: input.leaf.contractorOriented ?? false,
-      isSeasonal: input.leaf.seasonal ?? false,
-      shippingClass: shippingClassForLeaf(input.leaf),
-      fulfillmentPickup: true,
-      fulfillmentDelivery: input.rng.bool(0.5),
-      reviewCount: reviewCountForPopularity(popularityScore, input.rng),
-      rating: ratingForPopularity(popularityScore, input.rng),
-      audience: input.leaf.contractorOriented ? "contractor" : "consumer",
+  return attachProfitMetrics(
+    {
+      id: seedId("prod", input.productIndex),
+      sku: buildSku(input.leaf, input.productIndex),
+      title,
+      brand: input.brand.name,
+      category: input.leaf.department,
+      subcategory: input.leaf.subcategory,
+      description: copy.description,
+      price,
+      inventory,
+      inStock,
+      imageUrl: placeholderImageUrl(`simple-${input.productIndex}`),
+      createdAt,
+      updatedAt: createdAt,
+      attributes: {
+        ...copy.specs,
+        slug,
+        shortDescription: copy.shortDescription,
+        longDescription: copy.longDescription,
+        aiSearchBlurb: copy.aiSearchBlurb,
+        inventoryStatus,
+        popularityScore,
+        keywords: copy.searchCriteria,
+        useCases: copy.useCases,
+        searchCriteria: copy.searchCriteria,
+        department: input.leaf.department,
+        productType: input.leaf.productType,
+        isContractorGrade: input.leaf.contractorOriented ?? false,
+        isSeasonal: input.leaf.seasonal ?? false,
+        shippingClass: shippingClassForLeaf(input.leaf),
+        fulfillmentPickup: true,
+        fulfillmentDelivery: input.rng.bool(0.5),
+        reviewCount: reviewCountForPopularity(popularityScore, input.rng),
+        rating: ratingForPopularity(popularityScore, input.rng),
+        audience: input.leaf.contractorOriented ? "contractor" : "consumer",
+      },
     },
-  };
+    {
+      price,
+      brand: input.brand,
+      leaf: input.leaf,
+      rng: input.rng,
+    },
+  );
 }
 
 function expandVariantFamilies(

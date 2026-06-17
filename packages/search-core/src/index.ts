@@ -11,10 +11,15 @@ import type {
   SearchResponseDto,
 } from "@retailer-search/shared-types";
 import {
-  type ProductSearchIndex,
-  type QueryProcessorConfig,
-  processSearchQueryWithConfig,
+  computeInventoryScore,
+  computeProfitMarginScore,
+  resolveProfitMarginPercent,
+} from "./commercial-priority.js";
+import type {
+  ProductSearchIndex,
+  QueryProcessorConfig,
 } from "./search-index/index.js";
+import { processSearchQueryWithConfig } from "./search-index/index.js";
 
 export type {
   ProcessedQuery,
@@ -33,6 +38,13 @@ export {
   type VectorSearchHit,
   type VectorSearchProvider,
 } from "./vector/hybrid-retrieval-stub.js";
+export {
+  computeCommercialPriorityBoost,
+  computeInventoryScore,
+  computeProfitMarginScore,
+  resolveProfitMarginPercent,
+  resolveUnitCost,
+} from "./commercial-priority.js";
 
 type FacetKey = keyof AvailableFacetsDto;
 
@@ -49,6 +61,7 @@ interface ScoredProduct {
   exactMatchScore: number;
   inventoryScore: number;
   popularityScore: number;
+  profitMarginScore: number;
   merchandisingAdjustment: number;
   finalScore: number;
   appliedRuleNames: string[];
@@ -347,11 +360,11 @@ function computeExactMatchScore(product: ProductDocument, query: string): number
   return 0;
 }
 
-function computeInventoryScore(product: ProductDocument): number {
-  return product.inStock ? Math.min(product.inventory / 20, 8) : 0;
-}
-
 function computePopularityScore(product: ProductDocument): number {
+  const attributePopularity = product.attributes?.popularityScore;
+  if (typeof attributePopularity === "number" && Number.isFinite(attributePopularity)) {
+    return Math.min(attributePopularity / 10, 10);
+  }
   return Math.min(product.inventory / 15, 10);
 }
 
@@ -434,6 +447,7 @@ function applyMerchandisingRules(
     scored.exactMatchScore +
     scored.inventoryScore +
     scored.popularityScore +
+    scored.profitMarginScore +
     scored.merchandisingAdjustment;
 
   return !hidden;
@@ -506,6 +520,7 @@ function scoreProducts(
       exactMatchScore: computeExactMatchScore(product, query),
       inventoryScore: computeInventoryScore(product),
       popularityScore: computePopularityScore(product),
+      profitMarginScore: computeProfitMarginScore(product),
       merchandisingAdjustment: 0,
       finalScore: 0,
       appliedRuleNames: [],
@@ -554,6 +569,8 @@ function toHit(
       exactMatchScore: scored.exactMatchScore,
       inventoryScore: scored.inventoryScore,
       popularityScore: scored.popularityScore,
+      profitMarginScore: scored.profitMarginScore,
+      profitMarginPercent: resolveProfitMarginPercent(scored.product),
       merchandisingAdjustment: scored.merchandisingAdjustment,
       finalScore: scored.finalScore,
       appliedRuleNames: scored.appliedRuleNames,
