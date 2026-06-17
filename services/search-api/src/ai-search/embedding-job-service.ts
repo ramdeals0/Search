@@ -15,6 +15,7 @@ import {
   enqueueIncrementalEmbeddingJobs,
 } from "./embedding-job-queue.js";
 import { embedProductsBatch, getEmbeddingCoverage, hydrateVectorIndex } from "./vector-index.js";
+import { getEmbeddingProviderStatus } from "./embedding-provider.js";
 import { getEmbeddingWorkerRuntimeConfig } from "./vector-config.js";
 
 const prismaClient = prisma as any;
@@ -71,6 +72,8 @@ export async function getEmbeddingJob(id: string): Promise<EmbeddingJobDto | nul
 }
 
 async function findActiveCatalogEmbeddingJob(): Promise<EmbeddingJobDto | null> {
+  await abandonStaleCatalogEmbeddingJobs();
+
   const row = await prismaClient.embeddingJob.findFirst({
     where: {
       status: { in: ["queued", "running"] },
@@ -81,16 +84,76 @@ async function findActiveCatalogEmbeddingJob(): Promise<EmbeddingJobDto | null> 
   return row ? toDto(row) : null;
 }
 
+async function abandonStaleCatalogEmbeddingJobs(): Promise<void> {
+  const workerConfig = getEmbeddingWorkerRuntimeConfig();
+  const staleBefore = new Date(Date.now() - workerConfig.lockTimeoutMs);
+
+  await prismaClient.embeddingJob.updateMany({
+    where: {
+      status: "running",
+      jobType: { in: ["backfill", "reindex", "consistency_scan"] },
+      OR: [
+        { startedAt: { lt: staleBefore } },
+        { lockedAt: { lt: staleBefore } },
+        { startedAt: null, createdAt: { lt: staleBefore } },
+      ],
+    },
+    data: {
+      status: "failed",
+      errorMessage: "Job abandoned after exceeding the worker lock timeout",
+      completedAt: new Date(),
+      lockedAt: null,
+      lockedBy: null,
+    },
+  });
+}
+
+async function abandonActiveCatalogEmbeddingJobs(reason: string): Promise<number> {
+  const rows = await prismaClient.embeddingJob.findMany({
+    where: {
+      status: { in: ["queued", "running"] },
+      jobType: { in: ["backfill", "reindex", "consistency_scan"] },
+    },
+    select: { id: true },
+  });
+
+  if (rows.length === 0) {
+    return 0;
+  }
+
+  await prismaClient.embeddingJob.updateMany({
+    where: {
+      id: { in: rows.map((row: { id: string }) => row.id) },
+    },
+    data: {
+      status: "failed",
+      errorMessage: reason,
+      completedAt: new Date(),
+      lockedAt: null,
+      lockedBy: null,
+    },
+  });
+
+  if (activeInlineJobId && rows.some((row: { id: string }) => row.id === activeInlineJobId)) {
+    activeInlineJobId = null;
+  }
+
+  return rows.length;
+}
+
 export async function getEmbeddingCoverageSummary(
   totalProducts: number,
 ): Promise<EmbeddingCoverageDto> {
   const config = await getAiRankingConfig();
+  const providerStatus = getEmbeddingProviderStatus(config);
   const coverage = await getEmbeddingCoverage(totalProducts);
   const jobs = await listEmbeddingJobs(1);
   return {
     ...coverage,
     model: config.embeddingsModel,
     provider: config.embeddingsProvider,
+    effectiveProvider: providerStatus.effectiveProvider,
+    providerReady: providerStatus.ready,
     lastJob: jobs[0],
   };
 }
@@ -192,6 +255,12 @@ export async function triggerEmbeddingJob(
   request: TriggerEmbeddingJobRequestDto = {},
 ): Promise<EmbeddingJobDto> {
   const isScopedJob = Boolean(request.productIds && request.productIds.length > 0);
+
+  if (request.restart && !isScopedJob) {
+    await abandonActiveCatalogEmbeddingJobs("Superseded by operator restart");
+    activeInlineJobId = null;
+  }
+
   if (!isScopedJob) {
     const active = await findActiveCatalogEmbeddingJob();
     if (active) {

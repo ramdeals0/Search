@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import type {
   RuleDraftDto,
+  UpdateRuleDraftRequestDto,
   ZeroResultInsightsResponseDto,
 } from "@retailer-search/shared-types";
 import { getSearchApiUrl } from "./lib/search-api-url";
-import { getAuthHeaders } from "./lib/auth-headers";
+import { authFetch, getAuthHeaders } from "./lib/auth-headers";
+import { RuleDraftEditForm } from "./rule-draft-edit-form";
 
 const panelStyle = {
   padding: "1rem",
@@ -47,6 +49,7 @@ export function ZeroResultsPanel() {
   const [drafts, setDrafts] = useState<RuleDraftDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyQuery, setBusyQuery] = useState<string | null>(null);
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -137,6 +140,45 @@ export function ZeroResultsPanel() {
     }
   };
 
+  const saveDraft = async (draftId: string, payload: UpdateRuleDraftRequestDto) => {
+    setBusyQuery(draftId);
+    setError(null);
+    setFeedback(null);
+
+    try {
+      const response = await authFetch(
+        `${getSearchApiUrl()}/api/v1/admin/rule-drafts/${draftId}`,
+        {
+          method: "PATCH",
+          credentials: "same-origin",
+          headers: getAuthHeaders(),
+          body: JSON.stringify(payload),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+          message?: string;
+        } | null;
+        throw new Error(body?.message ?? body?.error ?? `Save failed (${response.status})`);
+      }
+
+      const updated = (await response.json()) as RuleDraftDto;
+      setEditingDraftId(null);
+      setFeedback(
+        updated.status === "pending_review"
+          ? "Draft updated. Review and approve before apply."
+          : "Draft updated.",
+      );
+      await loadData();
+    } catch (saveError) {
+      throw saveError instanceof Error ? saveError : new Error("Save failed");
+    } finally {
+      setBusyQuery(null);
+    }
+  };
+
   const updateDraft = async (
     draftId: string,
     action: "approve" | "reject" | "apply",
@@ -171,13 +213,15 @@ export function ZeroResultsPanel() {
 
   const pendingDrafts = drafts.filter((draft) => draft.status === "pending_review");
   const approvedDrafts = drafts.filter((draft) => draft.status === "approved");
+  const isDraftEditable = (draft: RuleDraftDto) =>
+    draft.status === "pending_review" || draft.status === "approved";
 
   return (
     <section style={panelStyle}>
       <h2 style={{ margin: "0 0 0.5rem", fontSize: "1.1rem" }}>Zero-results inbox</h2>
       <p style={{ margin: "0 0 1rem", fontSize: 13, color: "#64748b" }}>
         Persistent zero-result queries from analytics. Generate LLM-assisted rule drafts,
-        approve them, then apply to staging.
+        edit them, approve, then apply to staging.
       </p>
 
       {error ? (
@@ -259,6 +303,18 @@ export function ZeroResultsPanel() {
                     ) : null}
                   </div>
                   <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                    {isDraftEditable(draft) ? (
+                      <button
+                        type="button"
+                        style={buttonStyle}
+                        disabled={busyQuery === draft.id}
+                        onClick={() =>
+                          setEditingDraftId((current) => (current === draft.id ? null : draft.id))
+                        }
+                      >
+                        {editingDraftId === draft.id ? "Close editor" : "Edit draft"}
+                      </button>
+                    ) : null}
                     {draft.status === "pending_review" ? (
                       <>
                         <button
@@ -291,18 +347,27 @@ export function ZeroResultsPanel() {
                     ) : null}
                   </div>
                 </div>
-                <pre
-                  style={{
-                    margin: "0.5rem 0 0",
-                    padding: "0.5rem",
-                    fontSize: 12,
-                    background: "#fff",
-                    borderRadius: 6,
-                    overflow: "auto",
-                  }}
-                >
-                  {JSON.stringify(draft.suggestedRule, null, 2)}
-                </pre>
+                {editingDraftId === draft.id ? (
+                  <RuleDraftEditForm
+                    draft={draft}
+                    busy={busyQuery === draft.id}
+                    onCancel={() => setEditingDraftId(null)}
+                    onSave={(payload) => saveDraft(draft.id, payload)}
+                  />
+                ) : (
+                  <pre
+                    style={{
+                      margin: "0.5rem 0 0",
+                      padding: "0.5rem",
+                      fontSize: 12,
+                      background: "#fff",
+                      borderRadius: 6,
+                      overflow: "auto",
+                    }}
+                  >
+                    {JSON.stringify(draft.suggestedRule, null, 2)}
+                  </pre>
+                )}
               </div>
             ))}
           </div>

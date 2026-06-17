@@ -9,7 +9,7 @@ import type {
   EmbeddingsProviderName,
   UpdateAiRankingConfigRequestDto,
 } from "@retailer-search/shared-types";
-import { getAuthHeaders } from "./lib/auth-headers";
+import { authFetch, getAuthHeaders } from "./lib/auth-headers";
 import { getSearchApiUrl } from "./lib/search-api-url";
 import { RankingModeBadge } from "./components/ranking-mode-badge";
 
@@ -19,6 +19,12 @@ const DEFAULT_MODELS: Record<EmbeddingsProviderName, string> = {
   mock: "mock-hash-v1",
   openai: "text-embedding-3-small",
   openrouter: "openai/text-embedding-3-small",
+};
+
+const DEFAULT_DIMENSIONS: Record<EmbeddingsProviderName, number> = {
+  mock: 64,
+  openai: 1536,
+  openrouter: 1536,
 };
 
 const inputStyle = {
@@ -156,6 +162,10 @@ export function AiSearchSettingsPanel() {
 
   const activeJob = jobs.find((job) => isActiveJobStatus(job.status));
   const recentJobs = activeJob ? jobs.filter((job) => job.id !== activeJob.id) : jobs;
+  const latestIncompleteJob = jobs.find(
+    (job) => job.status !== "completed" && job.jobType !== "incremental",
+  );
+  const canRestartReindex = Boolean(activeJob) || latestIncompleteJob?.status === "failed" || latestIncompleteJob?.status === "dead_letter";
 
   useEffect(() => {
     if (!activeJob) {
@@ -198,6 +208,7 @@ export function AiSearchSettingsPanel() {
       ...config,
       embeddingsProvider: provider,
       embeddingsModel: DEFAULT_MODELS[provider],
+      embeddingDimensions: DEFAULT_DIMENSIONS[provider],
     });
   };
 
@@ -227,14 +238,24 @@ export function AiSearchSettingsPanel() {
     };
 
     try {
-      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/ai-search/config`, {
+      const response = await authFetch(`${getSearchApiUrl()}/api/v1/admin/ai-search/config`, {
         method: "PATCH",
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error(`Save AI search config failed with HTTP ${response.status}`);
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+          message?: string;
+        } | null;
+        throw new Error(
+          body?.message ??
+            body?.error ??
+            (response.status === 403
+              ? "Save failed (403). Sign in as admin@example.com and ensure CSRF is loaded."
+              : `Save AI search config failed with HTTP ${response.status}`),
+        );
       }
 
       setConfig((await response.json()) as AiRankingConfigDto);
@@ -249,16 +270,27 @@ export function AiSearchSettingsPanel() {
     }
   };
 
-  const triggerReindex = async () => {
+  const triggerReindex = async (options?: { restart?: boolean }) => {
+    const restart = options?.restart ?? canRestartReindex;
+
+    if (restart && activeJob) {
+      const confirmed = window.confirm(
+        "Abandon the in-progress reindex and start a new job? Progress on the current job will be lost.",
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
     setReindexing(true);
     setError(null);
     setFeedback(null);
 
     try {
-      const response = await fetch(`${getSearchApiUrl()}/api/v1/admin/ai-search/embedding-jobs`, {
+      const response = await authFetch(`${getSearchApiUrl()}/api/v1/admin/ai-search/embedding-jobs`, {
         method: "POST",
         headers: getAuthHeaders(),
-        body: JSON.stringify({ jobType: "reindex" }),
+        body: JSON.stringify({ jobType: "reindex", restart }),
       });
 
       if (!response.ok) {
@@ -266,7 +298,11 @@ export function AiSearchSettingsPanel() {
       }
 
       const job = (await response.json()) as EmbeddingJobDto;
-      setFeedback(`Embedding reindex job queued (${job.id.slice(0, 8)}).`);
+      setFeedback(
+        restart
+          ? `Embedding reindex restarted (${job.id.slice(0, 8)}).`
+          : `Embedding reindex job queued (${job.id.slice(0, 8)}).`,
+      );
       await loadData({ silent: true });
     } catch (reindexError) {
       setError(
@@ -310,10 +346,49 @@ export function AiSearchSettingsPanel() {
             }}
           >
             Configure embeddings provider, hybrid ranking weights, personalization, and product
-            vector coverage. API keys for OpenAI and OpenRouter stay in server environment
-            variables.
+            vector coverage. API keys stay on search-api as{" "}
+            <code>OPENROUTER_API_KEY</code>, <code>OPENAI_API_KEY</code>, or{" "}
+            <code>EMBEDDINGS_API_KEY</code>.
           </p>
         </div>
+
+        {config.embeddingsProvider !== "mock" &&
+        config.embeddingsProviderReady === false ? (
+          <div
+            className="forge-callout"
+            style={{
+              margin: 0,
+              borderColor: "#fdba74",
+              background: "#fff7ed",
+              color: "#9a3412",
+            }}
+          >
+            <strong style={{ fontSize: 13 }}>Embedding provider not ready</strong>
+            <p style={{ margin: "0.35rem 0 0", fontSize: 13 }}>
+              <code>{config.embeddingsProvider}</code> is selected, but search-api has no matching
+              API key. Embeddings and reindex jobs will fall back to <code>mock</code> until you set{" "}
+              <code>OPENROUTER_API_KEY</code> (or <code>EMBEDDINGS_API_KEY</code>) on the search-api
+              service and restart it.
+            </p>
+          </div>
+        ) : null}
+
+        {config.embeddingCredentials ? (
+          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", fontSize: 13 }}>
+            <span>
+              OpenRouter key:{" "}
+              {config.embeddingCredentials.openrouterConfigured ? "Configured" : "Not set"}
+            </span>
+            <span>
+              OpenAI key:{" "}
+              {config.embeddingCredentials.openaiConfigured ? "Configured" : "Not set"}
+            </span>
+            <span>
+              Embeddings API key:{" "}
+              {config.embeddingCredentials.embeddingsApiKeyConfigured ? "Configured" : "Not set"}
+            </span>
+          </div>
+        ) : null}
 
         {coverage ? (
           <div
@@ -335,6 +410,9 @@ export function AiSearchSettingsPanel() {
               <div style={{ marginTop: 4, fontSize: 13 }}>{coverage.model}</div>
               <div style={{ marginTop: 2, fontSize: 12, color: "var(--forge-text-muted)" }}>
                 {coverage.provider}
+                {coverage.effectiveProvider && coverage.effectiveProvider !== coverage.provider
+                  ? ` (runtime: ${coverage.effectiveProvider})`
+                  : ""}
               </div>
             </div>
             <div
@@ -624,7 +702,8 @@ export function AiSearchSettingsPanel() {
             </div>
             <p style={{ margin: "0.5rem 0 0", fontSize: 11, color: "#64748b" }}>
               Progress refreshes every few seconds. OpenAI/OpenRouter jobs on large catalogs can
-              take 30+ minutes. Mock provider is much faster.
+              take 30+ minutes. Mock provider is much faster. Use <strong>Restart reindex</strong>{" "}
+              below if the job is stuck or failed.
             </p>
           </div>
         ) : null}
@@ -708,22 +787,22 @@ export function AiSearchSettingsPanel() {
           </button>
           <button
             type="button"
-            onClick={() => void triggerReindex()}
-            disabled={reindexing || Boolean(activeJob)}
+            onClick={() => void triggerReindex({ restart: canRestartReindex })}
+            disabled={reindexing}
             style={{
               padding: "0.55rem 0.9rem",
               border: "1px solid #cbd5e1",
               borderRadius: 6,
-              background: "#fff",
-              cursor: activeJob ? "not-allowed" : "pointer",
-              opacity: activeJob ? 0.65 : 1,
+              background: canRestartReindex ? "#fff7ed" : "#fff",
+              borderColor: canRestartReindex ? "#fdba74" : "#cbd5e1",
+              cursor: reindexing ? "wait" : "pointer",
               fontSize: 14,
             }}
           >
             {reindexing
               ? "Queueing..."
-              : activeJob
-                ? "Reindex in progress..."
+              : canRestartReindex
+                ? "Restart reindex"
                 : "Reindex embeddings"}
           </button>
         </div>

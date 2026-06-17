@@ -13,6 +13,8 @@ import {
   listRuleDrafts,
   markRuleDraftApplied,
   rejectRuleDraft,
+  updateRuleDraft,
+  updateRuleDraftSchema,
 } from "../llm/rule-draft-service.js";
 import { createMerchandisingRule } from "../merchandising-rules.js";
 
@@ -91,6 +93,41 @@ export function registerZeroResultsInboxRoutes(
             : "Failed to generate rule draft. Check search-api logs and database connectivity.",
       });
     }
+  });
+
+  app.patch("/api/v1/admin/rule-drafts/:id", async (req, res) => {
+    const user = deps.requireAuthenticatedUser(req, res);
+    if (!user) {
+      return;
+    }
+
+    if (!deps.requireJsonContentType(req, res)) {
+      return;
+    }
+
+    const parsed = updateRuleDraftSchema.safeParse(req.body);
+    if (!deps.assertValidBody(parsed, res, req, "Invalid rule draft update payload")) {
+      return;
+    }
+
+    const result = await updateRuleDraft(req.params.id, parsed.data);
+    if (!result.ok) {
+      if (result.reason === "not_found") {
+        res.status(404).json({ error: "Rule draft not found" });
+        return;
+      }
+      if (result.reason === "not_editable") {
+        res.status(400).json({ error: result.message ?? "Draft cannot be edited" });
+        return;
+      }
+      res.status(400).json({
+        error: "Invalid rule draft",
+        message: result.message ?? "Draft rule payload is invalid",
+      });
+      return;
+    }
+
+    res.json(result.draft);
   });
 
   app.post("/api/v1/admin/rule-drafts/:id/approve", async (req, res) => {

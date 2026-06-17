@@ -7,6 +7,8 @@ import {
 import {
   buildMockEmbedding,
   cosineSimilarity,
+  getEmbeddingCredentialsStatus,
+  isEmbeddingsProviderReady,
   normalizeVector,
 } from "./embedding-provider.js";
 import { normalizeWeights } from "./ai-ranking-config-store.js";
@@ -69,4 +71,22 @@ test("normalizeWeights sums to one", () => {
 test("normalizeVector handles zero vector", () => {
   const vector = normalizeVector([0, 0, 0]);
   assert.deepEqual(vector, [0, 0, 0]);
+});
+
+test("openrouter embeddings require an API key to be ready", () => {
+  const credentials = {
+    ...getEmbeddingCredentialsStatus(),
+    openrouterConfigured: false,
+    embeddingsApiKeyConfigured: false,
+  };
+
+  assert.equal(isEmbeddingsProviderReady("mock", credentials), true);
+  assert.equal(isEmbeddingsProviderReady("openrouter", credentials), false);
+  assert.equal(
+    isEmbeddingsProviderReady("openrouter", {
+      ...credentials,
+      openrouterConfigured: true,
+    }),
+    true,
+  );
 });

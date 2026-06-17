@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { GenerateRuleDraftRequestDto, RuleDraftDto } from "@retailer-search/shared-types";
+import type {
+  GenerateRuleDraftRequestDto,
+  RuleDraftDto,
+  UpdateRuleDraftRequestDto,
+} from "@retailer-search/shared-types";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { createLlmProvider } from "./provider.js";
@@ -20,6 +24,52 @@ const ruleDraftSchema = z.object({
   buryAmount: z.number().optional(),
   rationale: z.string().optional(),
 });
+
+const updateRuleDraftSchema = z.object({
+  query: z.string().min(1).optional(),
+  rationale: z.string().optional(),
+  suggestedRule: ruleDraftSchema.partial().optional(),
+});
+
+function mergeSuggestedRule(
+  existing: Record<string, unknown>,
+  input: UpdateRuleDraftRequestDto,
+): Record<string, unknown> {
+  const nextSuggestedRule = {
+    ...existing,
+    ...input.suggestedRule,
+  };
+
+  const existingCondition =
+    typeof existing.condition === "object" && existing.condition !== null
+      ? (existing.condition as Record<string, unknown>)
+      : {};
+  const inputCondition = input.suggestedRule?.condition ?? {};
+
+  nextSuggestedRule.condition = {
+    ...existingCondition,
+    ...inputCondition,
+  };
+
+  if (input.query !== undefined) {
+    const normalizedQuery = input.query.trim().toLowerCase();
+    nextSuggestedRule.condition = {
+      ...(nextSuggestedRule.condition as Record<string, unknown>),
+      query:
+        input.suggestedRule?.condition?.query !== undefined
+          ? String(input.suggestedRule.condition.query).trim().toLowerCase()
+          : normalizedQuery,
+    };
+  }
+
+  return nextSuggestedRule;
+}
+
+function parseSuggestedRule(row: { suggestedRule: unknown }): Record<string, unknown> {
+  return typeof row.suggestedRule === "object" && row.suggestedRule !== null
+    ? (row.suggestedRule as Record<string, unknown>)
+    : {};
+}
 
 function buildRuleDraftPrompt(input: GenerateRuleDraftRequestDto): string {
   return [
@@ -179,3 +229,57 @@ export async function getRuleDraftById(id: string): Promise<RuleDraftDto | null>
   const row = await prisma.ruleDraft.findUnique({ where: { id } });
   return row ? toDto(row) : null;
 }
+
+export async function updateRuleDraft(
+  id: string,
+  input: UpdateRuleDraftRequestDto,
+): Promise<
+  | { ok: true; draft: RuleDraftDto }
+  | { ok: false; reason: "not_found" | "not_editable" | "invalid_rule"; message?: string }
+> {
+  const existing = await prisma.ruleDraft.findUnique({ where: { id } });
+  if (!existing) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  if (existing.status === "rejected" || existing.status === "applied") {
+    return {
+      ok: false,
+      reason: "not_editable",
+      message: "Rejected or applied drafts cannot be edited",
+    };
+  }
+
+  const mergedSuggestedRule = mergeSuggestedRule(parseSuggestedRule(existing), input);
+  const validated = ruleDraftSchema.safeParse(mergedSuggestedRule);
+  if (!validated.success) {
+    return {
+      ok: false,
+      reason: "invalid_rule",
+      message: validated.error.issues.map((issue) => issue.message).join("; "),
+    };
+  }
+
+  const nextQuery =
+    input.query !== undefined ? input.query.trim() : existing.query;
+  const nextRationale =
+    input.rationale !== undefined
+      ? input.rationale.trim() || null
+      : typeof validated.data.rationale === "string"
+        ? validated.data.rationale
+        : existing.rationale;
+
+  const row = await prisma.ruleDraft.update({
+    where: { id },
+    data: {
+      query: nextQuery,
+      suggestedRule: validated.data as Prisma.InputJsonValue,
+      rationale: nextRationale,
+      status: existing.status === "approved" ? "pending_review" : existing.status,
+    },
+  });
+
+  return { ok: true, draft: toDto(row) };
+}
+
+export { updateRuleDraftSchema };

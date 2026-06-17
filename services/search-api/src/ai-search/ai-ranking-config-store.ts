@@ -7,6 +7,7 @@ import type {
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { recordAuditLog } from "../audit-trail-store.js";
+import { getEmbeddingProviderStatus } from "./embedding-provider.js";
 
 const CONFIG_KEY = "ai.ranking.config";
 
@@ -47,8 +48,16 @@ export function getDefaultAiRankingConfig(): AiRankingConfigDto {
       process.env.EMBEDDINGS_MODEL ??
       (process.env.EMBEDDINGS_PROVIDER === "openai"
         ? "text-embedding-3-small"
-        : "mock-hash-v1"),
-    embeddingDimensions: envNumber("EMBEDDING_DIMENSIONS", 64),
+        : process.env.EMBEDDINGS_PROVIDER === "openrouter"
+          ? "openai/text-embedding-3-small"
+          : "mock-hash-v1"),
+    embeddingDimensions: envNumber(
+      "EMBEDDING_DIMENSIONS",
+      process.env.EMBEDDINGS_PROVIDER === "openai" ||
+        process.env.EMBEDDINGS_PROVIDER === "openrouter"
+        ? 1536
+        : 64,
+    ),
     weights: {
       lexicalWeight:
         Number.parseFloat(process.env.LEXICAL_WEIGHT ?? "") || DEFAULT_WEIGHTS.lexicalWeight,
@@ -134,6 +143,16 @@ export async function updateAiRankingConfig(
   });
 
   return next;
+}
+
+export function enrichAiRankingConfigResponse(config: AiRankingConfigDto): AiRankingConfigDto {
+  const status = getEmbeddingProviderStatus(config);
+  return {
+    ...config,
+    embeddingsProviderReady: status.ready,
+    effectiveEmbeddingsProvider: status.effectiveProvider,
+    embeddingCredentials: status.credentials,
+  };
 }
 
 export function mergeExperimentArmAiConfig(

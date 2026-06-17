@@ -99,12 +99,20 @@ class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embedTexts(texts: string[]): Promise<number[][]> {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.apiKey}`,
+      "Content-Type": "application/json",
+    };
+
+    if (this.name === "openrouter") {
+      headers["HTTP-Referer"] =
+        process.env.OPENROUTER_REFERER ?? "https://retailer-search-platform.local";
+      headers["X-Title"] = process.env.OPENROUTER_APP_NAME ?? "Retailer Search Platform";
+    }
+
     const response = await fetch(`${this.baseUrl}/embeddings`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify({ model: this.model, input: texts }),
     });
 
@@ -172,6 +180,65 @@ export function resolveEmbeddingProviderFromEnv(
   }
 
   return new MockEmbeddingProvider(model, dimensions);
+}
+
+export interface EmbeddingCredentialsStatus {
+  openrouterConfigured: boolean;
+  openaiConfigured: boolean;
+  embeddingsApiKeyConfigured: boolean;
+}
+
+export function getEmbeddingCredentialsStatus(): EmbeddingCredentialsStatus {
+  return {
+    openrouterConfigured: Boolean(process.env.OPENROUTER_API_KEY?.trim()),
+    openaiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
+    embeddingsApiKeyConfigured: Boolean(process.env.EMBEDDINGS_API_KEY?.trim()),
+  };
+}
+
+export function isEmbeddingsProviderReady(
+  provider: EmbeddingsProviderName,
+  credentials: EmbeddingCredentialsStatus = getEmbeddingCredentialsStatus(),
+): boolean {
+  if (provider === "mock") {
+    return true;
+  }
+
+  if (provider === "openai") {
+    return credentials.openaiConfigured || credentials.embeddingsApiKeyConfigured;
+  }
+
+  if (provider === "openrouter") {
+    return credentials.openrouterConfigured || credentials.embeddingsApiKeyConfigured;
+  }
+
+  return false;
+}
+
+export function getEmbeddingProviderStatus(config: {
+  embeddingsProvider: EmbeddingsProviderName;
+  embeddingsModel: string;
+  embeddingDimensions: number;
+}): {
+  ready: boolean;
+  credentials: EmbeddingCredentialsStatus;
+  effectiveProvider: EmbeddingsProviderName;
+  effectiveModel: string;
+} {
+  const credentials = getEmbeddingCredentialsStatus();
+  const ready = isEmbeddingsProviderReady(config.embeddingsProvider, credentials);
+  const resolved = resolveEmbeddingProviderFromEnv({
+    provider: config.embeddingsProvider,
+    model: config.embeddingsModel,
+    dimensions: config.embeddingDimensions,
+  });
+
+  return {
+    ready,
+    credentials,
+    effectiveProvider: resolved.name,
+    effectiveModel: resolved.model,
+  };
 }
 
 export function fingerprintProvider(provider: EmbeddingProvider): string {

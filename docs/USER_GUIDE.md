@@ -14,6 +14,14 @@ The demo environment includes **two product catalogs** and **two storefronts** s
 
 1. [Getting started](#1-getting-started)
 2. [Roles and navigation](#2-roles-and-navigation)
+   - [How roles work](#how-roles-work)
+   - [Demo accounts by role](#demo-accounts-by-role)
+   - [Permission matrix](#permission-matrix)
+   - [Sidebar visibility by role](#sidebar-visibility-by-role)
+   - [Role summaries](#role-summaries)
+   - [JIT elevation](#jit-elevation)
+   - [Admin-only API actions](#admin-only-api-actions)
+   - [Staging vs live](#staging-vs-live)
 3. [Customer storefront](#3-customer-storefront)
 4. [Dashboard](#4-dashboard)
 5. [Products workspace](#5-products-workspace)
@@ -98,12 +106,13 @@ To add the **luxury clothing catalog** (6,000 products) without replacing BuildM
 
 If your team ran the demo seed (`pnpm prisma:seed`), setup is already complete. Sign in with any demo account below.
 
-| Email | Password | Role |
-|-------|----------|------|
+| Email | Password | Standing role |
+|-------|----------|---------------|
 | merchandiser@example.com | demo123 | Merchandiser |
 | reviewer@example.com | demo123 | Reviewer |
 | approver@example.com | demo123 | Approver |
 | releasemanager@example.com | demo123 | Release manager |
+| developer@example.com | demo123 | Developer |
 | admin@example.com | demo123 | Admin |
 
 ### Signing in
@@ -118,19 +127,116 @@ You are redirected to the **Dashboard** (`/admin`). Your account appears in the 
 
 ## 2. Roles and navigation
 
-### Workspace roles
+### How roles work
 
-ForgeOps uses role-based navigation. The **workspace role switcher** in the sidebar controls which menu items you see. This is useful for demos and testing permissions without switching accounts.
+ForgeOps uses three related concepts:
+
+| Concept | What it is | Where you see it |
+|---------|------------|------------------|
+| **Standing role** | Your account’s permanent role | Bottom-left sidebar after sign-in |
+| **Effective role** | Standing role, or a **higher** role while JIT elevation is active | API permission checks, `/api/v1/auth/me` |
+| **Workspace role** | UI filter selected in the **workspace role switcher** | Sidebar navigation only |
+
+The **workspace role switcher** is useful for demos: you can preview what a merchandiser or reviewer sees without signing out. It does **not** by itself grant API permissions—mutations still depend on your signed-in account and any active JIT privilege.
+
+### Demo accounts by role
+
+Use the demo seed accounts from [Getting started](#demo-environment-pre-seeded) to test each role. Sign in with the matching email, or stay signed in as admin and switch the **workspace role** to preview navigation.
+
+### Workspace roles
 
 | Role | Typical responsibilities |
 |------|-------------------------|
-| **Merchandiser** | Edit rules, preview queries, configure AI search, run experiments |
-| **Reviewer** | Review changes, audit trail, approvals (read/review) |
-| **Approver** | Approve release requests, exports |
-| **Release manager** | Promote staging to live, manage snapshots |
-| **Admin** | Full access including Settings and Integrations |
+| **Merchandiser** | Edit staging rules and synonyms, snapshots, search preview, merchandising workflows |
+| **Reviewer** | Review changes, read approvals, comment on requests |
+| **Approver** | Approve or reject release requests |
+| **Release manager** | Execute approved releases, promote staging to live, manage snapshots |
+| **Developer** | Self-service API keys and usage in the developer portal |
+| **Admin** | Full access including platform catalogs, all API keys, AI Search save/reindex |
 
-**Note:** The workspace role switcher filters the UI only. API permissions still depend on your signed-in account and any active JIT elevation.
+### Permission matrix
+
+This table reflects **intended** access from the platform RBAC model. Your **effective role** (including JIT) is what the API enforces on protected endpoints. Some pages are visible to all signed-in users, but sensitive actions inside them may still require admin.
+
+| Capability | Merch | Reviewer | Approver | Release mgr | Developer | Admin |
+|------------|:-----:|:--------:|:--------:|:-----------:|:---------:|:-----:|
+| View dashboard and search analytics | Yes | Yes | Yes | Yes | Yes | Yes |
+| Preview queries (Search / Products) | Yes | Yes | Yes | Yes | Yes | Yes |
+| Create or edit merchandising rules (staging) | Yes | No | No | No | No | Yes |
+| Manage synonyms (staging) | Yes | No | No | No | No | Yes |
+| Create or restore snapshots | Yes | No | No | Yes | No | Yes |
+| Manage saved views | Yes | No | No | No | No | Yes |
+| Comment / annotate on workflows | Yes | Yes | Yes | Yes | No | Yes |
+| View approvals inbox | No | Yes | Yes | Yes | No | Yes |
+| Approve or reject release requests | No | No | Yes | No | No | Yes |
+| Execute approved releases to live | No | No | No | Yes | No | Yes |
+| Promote staging configuration to live | No | No | No | Yes | No | Yes |
+| View audit trail / security timeline | No | No | No | Yes | No | Yes |
+| Manage reviewers and approval policy | No | No | No | No | No | Yes |
+| Zero-results inbox and rule drafts | Yes | Yes | Yes | Yes | Yes | Yes |
+| Experiments workspace | Yes | Yes | Yes | Yes | Yes | Yes |
+| Exports and integrations (pages) | Yes | Yes | Yes | Yes | Yes | Yes |
+| Developer portal (own API keys) | No | No | No | No | Yes | Yes |
+| View API usage metrics | No | No | No | No | Yes | Yes |
+| Manage all API keys (integrations) | No | No | No | No | No | Yes |
+| Platform catalogs and plugins | No | No | No | No | No | Yes |
+| Branding settings | No | No | No | No | No | Yes |
+| Save AI Search settings | No | No | No | No | No | Yes |
+| Trigger embedding reindex | No | No | No | No | No | Yes |
+| LLM provider settings | No | No | No | No | No | Yes |
+
+### Sidebar visibility by role
+
+These pages are **hidden in the sidebar** when your workspace role switcher is set below the required role. The **Admin** workspace role always sees every item.
+
+| Page / area | Merch | Reviewer | Approver | Release mgr | Developer | Admin |
+|-------------|:-----:|:--------:|:--------:|:-----------:|:---------:|:-----:|
+| Dashboard, Products, Search, AI Search, Zero-results, Experiments | Yes | Yes | Yes | Yes | Yes | Yes |
+| Merchandising (rules, synonyms, snapshots, promotions, workflows) | Yes | Yes | Yes | Yes | Yes | Yes |
+| Approvals, Access, Audit, Notifications | Yes | Yes | Yes | Yes | Yes | Yes |
+| Exports, Integrations, Settings | Yes | Yes | Yes | Yes | Yes | Yes |
+| **Integrations → API keys** | No | No | No | No | No | **Yes** |
+| **Integrations → API usage** | No | No | No | No | **Yes** | **Yes** |
+| **Developer portal** | No | No | No | No | **Yes** | **Yes** |
+| **Platform → Catalogs** | No | No | No | No | No | **Yes** |
+| **Platform → Plugins** | No | No | No | No | No | **Yes** |
+
+### Role summaries
+
+| Role | Can do | Cannot do |
+|------|--------|-----------|
+| **Merchandiser** | Edit staging rules, synonyms, and snapshots; preview search; run merchandising workflows | Approve or execute releases, promote to live, platform/API admin, save AI Search settings or reindex |
+| **Reviewer** | View approvals, comment, review audit context | Edit merchandising rules, approve or execute releases, promote live |
+| **Approver** | Approve or reject release requests; view approvals | Edit rules or synonyms; execute or promote to live without release-manager rights |
+| **Release manager** | Execute approved releases, promote staging to live, snapshots, view audit | Day-to-day merchandising rule editing (merchandiser work) |
+| **Developer** | Own API keys, API usage dashboard, developer portal | Merchandising changes, approvals workflow, platform admin |
+| **Admin** | Everything, including AI Search configuration, embedding reindex, LLM settings, catalogs, and all API keys | — |
+
+### JIT elevation
+
+**Just-in-time (JIT) access** temporarily raises your **effective role** for permission-checked API calls—for example, letting a merchandiser act as an approver for a limited time.
+
+| Situation | Effect |
+|-----------|--------|
+| Merchandiser with active JIT to **Approver** | Can perform approver actions where the API checks `approve_release` |
+| JIT to **Admin** | Elevates permission checks that use **effective role** |
+| Endpoints that require **standing admin** (`user.role === "admin"`) | JIT does **not** apply—you must sign in as `admin@example.com` |
+
+Standing-admin-only actions include **Save AI Search settings**, **Reindex embeddings**, and **LLM provider settings**. Request JIT from the bottom-left sidebar or **Access → JIT elevation**.
+
+See [Access governance](#10-access-governance) for the full JIT workflow.
+
+### Admin-only API actions
+
+Even when the sidebar shows a page to all roles, these mutations require a **standing admin** account (not JIT alone):
+
+- Patch AI Search configuration (`/admin/ai-search`)
+- Queue embedding reindex jobs
+- Update LLM provider settings
+- Manage all API keys (admin integrations)
+- Some platform catalog and branding mutations
+
+Merchandisers can **view** AI Search coverage and metrics; saving config or starting reindex needs `admin@example.com` (or equivalent production admin).
 
 ### Sidebar structure
 
@@ -139,14 +245,19 @@ ForgeOps uses role-based navigation. The **workspace role switcher** in the side
 | **Overview** | Dashboard |
 | **Catalog** | Products, Search, **AI Search**, Zero-results inbox, Merchandising, Experiments |
 | **Governance** | Approvals, Access, Audit, Notifications |
-| **Operations** | Exports, Integrations, API keys, Settings |
-| **Platform** | Catalogs (multi-catalog registry) |
+| **Operations** | Exports, Integrations, API keys, Developer portal, Settings |
+| **Platform** | Catalogs (multi-catalog registry), Plugins |
 
-Pages hidden for your role will not appear in the sidebar.
+Pages hidden for your workspace role will not appear in the sidebar.
 
 ### Staging vs live
 
 Search merchandising configuration exists in two environments:
+
+| | Staging | Live (storefront) |
+|---|---------|-------------------|
+| **Who edits** | Merchandiser+ in ForgeOps | No direct editing |
+| **What shoppers see** | Preview and query tools only | Production search results |
 
 - **Staging** — where you draft and test rule changes
 - **Live** — what shoppers see on the storefront
@@ -1014,9 +1125,18 @@ After fixes, `curl https://<admin-domain>/health` should return `{"ok":true,"ser
 2. Do **not** set `SEARCH_API_PORT` — the API binds to Railway’s `PORT`.
 3. Check `/health` for `"connected": true` and `"productCount" > 0` (run seed or complete setup if zero).
 
-### Cannot access Settings or Integrations
+### Cannot access API keys, Platform, or Developer portal
 
-These pages require **Admin** workspace role (or an admin account with JIT elevation).
+These sidebar items require specific workspace roles (or sign in with a matching standing role):
+
+| Page | Workspace roles that see it |
+|------|----------------------------|
+| **Integrations → API keys** | Admin only |
+| **Integrations → API usage** | Admin, Developer |
+| **Developer portal** | Admin, Developer |
+| **Platform → Catalogs / Plugins** | Admin only |
+
+**Settings** is visible to all workspace roles. If a mutation fails with HTTP 403, sign out and back in to refresh your CSRF token, or use an account whose standing role matches the action (see [Roles and navigation](#2-roles-and-navigation)).
 
 ### Sign-in says “setup required”
 

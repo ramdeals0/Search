@@ -48,8 +48,19 @@ export interface AiRankingConfigDto {
   productEmbeddingsEnabled: boolean;
   /** Effective ranking mode for live storefront search (computed server-side). */
   liveRankingMode?: LiveRankingMode;
+  /** Whether the configured provider can run (API key present when required). */
+  embeddingsProviderReady?: boolean;
+  /** Provider actually used for embedding calls (may fall back to mock). */
+  effectiveEmbeddingsProvider?: EmbeddingsProviderName;
+  embeddingCredentials?: EmbeddingCredentialsStatusDto;
   updatedAt?: ISODateString;
   updatedByUserId?: string;
+}
+
+export interface EmbeddingCredentialsStatusDto {
+  openrouterConfigured: boolean;
+  openaiConfigured: boolean;
+  embeddingsApiKeyConfigured: boolean;
 }
 
 export interface UpdateAiRankingConfigRequestDto {
@@ -130,6 +141,8 @@ export interface EmbeddingJobListResponseDto {
 export interface TriggerEmbeddingJobRequestDto {
   jobType?: "backfill" | "incremental" | "reindex";
   productIds?: string[];
+  /** Abandon any queued/running catalog job and queue a fresh one. */
+  restart?: boolean;
 }
 
 export interface EmbeddingCoverageDto {
@@ -139,6 +152,8 @@ export interface EmbeddingCoverageDto {
   lastJob?: EmbeddingJobDto;
   model: string;
   provider: EmbeddingsProviderName;
+  effectiveProvider?: EmbeddingsProviderName;
+  providerReady?: boolean;
 }
 
 export interface AiSearchResponseDto extends SearchResponseDto {

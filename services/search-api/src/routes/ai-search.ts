@@ -9,6 +9,7 @@ import type {
   UserDto,
 } from "@retailer-search/shared-types";
 import {
+  enrichAiRankingConfigResponse,
   getAiRankingConfig,
   resolvePreviewModeConfig,
   updateAiRankingConfig,
@@ -54,6 +55,7 @@ const updateConfigSchema = z.object({
 const triggerJobSchema = z.object({
   jobType: z.enum(["backfill", "incremental", "reindex"]).optional(),
   productIds: z.array(z.string()).optional(),
+  restart: z.boolean().optional(),
 });
 
 const previewSchema = z.object({
@@ -94,7 +96,7 @@ export function registerAiSearchRoutes(app: Express, deps: AiSearchRouteDeps): v
     if (!user) {
       return;
     }
-    const config = await getAiRankingConfig();
+    const config = enrichAiRankingConfigResponse(await getAiRankingConfig());
     const body: AiRankingConfigDto = {
       ...config,
       liveRankingMode: resolveLiveRankingMode(config),
@@ -114,10 +116,11 @@ export function registerAiSearchRoutes(app: Express, deps: AiSearchRouteDeps): v
     if (!deps.assertValidBody(parsed, res, req, "Invalid AI search config")) {
       return;
     }
-    const body = await updateAiRankingConfig(parsed.data, {
+    const updated = await updateAiRankingConfig(parsed.data, {
       userId: user.id,
       email: user.email,
     });
+    const body = enrichAiRankingConfigResponse(updated);
     res.json({
       ...body,
       liveRankingMode: resolveLiveRankingMode(body),

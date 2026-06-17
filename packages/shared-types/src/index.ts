@@ -70,6 +70,7 @@ export type {
   AiSearchPreviewMode,
   AiSearchResponseDto,
   EmbeddingCoverageDto,
+  EmbeddingCredentialsStatusDto,
   EmbeddingJobDto,
   EmbeddingJobListResponseDto,
   EmbeddingsProviderName,
@@ -1637,6 +1638,30 @@ export interface RuleDraftDto {
 export interface GenerateRuleDraftRequestDto {
   query: string;
   productId?: string;
+}
+
+export interface SuggestedMerchandisingRuleDraft {
+  name: string;
+  action: "pin" | "boost" | "bury" | "hide";
+  condition?: {
+    query?: string;
+    brand?: string;
+    category?: string;
+    inStock?: boolean;
+  };
+  productIds?: string[];
+  boostAmount?: number;
+  buryAmount?: number;
+  rationale?: string;
+}
+
+export interface UpdateRuleDraftRequestDto {
+  /** Zero-result query label for this draft. Also syncs condition.query when condition is omitted. */
+  query?: string;
+  rationale?: string;
+  suggestedRule?: Partial<SuggestedMerchandisingRuleDraft> & {
+    condition?: Partial<NonNullable<SuggestedMerchandisingRuleDraft["condition"]>>;
+  };
 }
 
 export interface RuleDraftListResponseDto {
