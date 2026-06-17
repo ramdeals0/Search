@@ -184,7 +184,11 @@ export default function NewRuleWorkflowPage() {
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as
-          | { error?: string; details?: { fieldErrors?: Record<string, string[]> } }
+          | {
+              error?: string;
+              message?: string;
+              details?: { fieldErrors?: Record<string, string[]> };
+            }
           | null;
         const detailMessage = body?.details?.fieldErrors
           ? Object.values(body.details.fieldErrors).flat().join(" ")
