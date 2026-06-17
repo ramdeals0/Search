@@ -117,7 +117,15 @@ export function ZeroResultsPanel() {
       );
 
       if (!response.ok) {
-        throw new Error(`Generate draft failed (${response.status})`);
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+          message?: string;
+        } | null;
+        throw new Error(
+          body?.message ??
+            body?.error ??
+            `Generate draft failed (${response.status})`,
+        );
       }
 
       setFeedback(`Draft generated for "${query}". Review below and approve before apply.`);

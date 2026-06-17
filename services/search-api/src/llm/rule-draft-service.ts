@@ -87,25 +87,34 @@ export async function generateRuleDraft(
   let rationale = "Heuristic fallback draft when LLM is unavailable.";
 
   if (provider) {
-    const completion = await provider.complete({
-      messages: [
-        {
-          role: "user",
-          content: buildRuleDraftPrompt(input),
-        },
-      ],
-      temperature: 0.2,
-      jsonMode: true,
-      maxTokens: 500,
-    });
+    try {
+      const completion = await provider.complete({
+        messages: [
+          {
+            role: "user",
+            content: buildRuleDraftPrompt(input),
+          },
+        ],
+        temperature: 0.2,
+        jsonMode: true,
+        maxTokens: 500,
+      });
 
-    const validated = validateJsonPayload(completion.content, ruleDraftSchema);
-    if (validated.ok) {
-      suggestedRule = validated.data as Record<string, unknown>;
-      rationale =
-        typeof validated.data.rationale === "string"
-          ? validated.data.rationale
-          : "LLM-generated merchandising draft.";
+      const validated = validateJsonPayload(completion.content, ruleDraftSchema);
+      if (validated.ok) {
+        suggestedRule = validated.data as Record<string, unknown>;
+        rationale =
+          typeof validated.data.rationale === "string"
+            ? validated.data.rationale
+            : "LLM-generated merchandising draft.";
+      } else {
+        console.warn(
+          "[rule-draft] LLM returned invalid JSON; using heuristic fallback",
+          validated.error,
+        );
+      }
+    } catch (error) {
+      console.warn("[rule-draft] LLM generation failed; using heuristic fallback", error);
     }
   }
 

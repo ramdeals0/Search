@@ -78,8 +78,19 @@ export function registerZeroResultsInboxRoutes(
       return;
     }
 
-    const draft = await generateRuleDraft(parsed.data, user.id);
-    res.status(201).json(draft);
+    try {
+      const draft = await generateRuleDraft(parsed.data, user.id);
+      res.status(201).json(draft);
+    } catch (error) {
+      console.error("[rule-draft] generate failed", error);
+      res.status(500).json({
+        error: "rule_draft_generate_failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to generate rule draft. Check search-api logs and database connectivity.",
+      });
+    }
   });
 
   app.post("/api/v1/admin/rule-drafts/:id/approve", async (req, res) => {
