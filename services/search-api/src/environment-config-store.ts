@@ -9,6 +9,7 @@ import {
   buildDemoMerchandisingRules,
   buildSynonymMap,
 } from "./demo-search-config.js";
+import { stripLuxuryMerchandisingRules } from "./luxury-search-config.js";
 
 interface EnvironmentState {
   rules: MerchandisingRule[];
@@ -66,11 +67,11 @@ export async function hydrateEnvironmentConfigStore(): Promise<void> {
   ]);
 
   if (stagingRules && stagingRules.length > 0) {
-    replaceRulesForEnvironment("staging", stagingRules);
+    replaceRulesForEnvironment("staging", stripLuxuryMerchandisingRules(stagingRules));
   }
 
   if (liveRules && liveRules.length > 0) {
-    replaceRulesForEnvironment("live", liveRules);
+    replaceRulesForEnvironment("live", stripLuxuryMerchandisingRules(liveRules));
   }
 
   if (stagingSynonyms && Object.keys(stagingSynonyms).length > 0) {

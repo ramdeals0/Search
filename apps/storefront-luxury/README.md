@@ -25,7 +25,7 @@ Copy `.env.example` to `.env.local` if you need to override `SEARCH_API_URL`.
 | BuildMart (default) | http://localhost:3000 | `default` |
 | Luxe Atelier | http://localhost:3002 | `luxury-clothing` |
 
-Search `handbag` on Luxe Atelier — expect Hermès/clutch heroes and luxury merchandising rules.
+Search `handbag` on Luxe Atelier — expect luxury catalog results (pure relevance ranking; no demo pin/boost rules).
 Search `cordless drill` on BuildMart — home-improvement results only.
 
 Direct API check:

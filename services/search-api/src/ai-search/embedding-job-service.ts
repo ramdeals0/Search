@@ -19,7 +19,7 @@ import { getEmbeddingWorkerRuntimeConfig } from "./vector-config.js";
 
 const prismaClient = prisma as any;
 
-let activeJobId: string | null = null;
+let activeInlineJobId: string | null = null;
 
 function toDto(row: {
   id: string;
@@ -67,6 +67,17 @@ export async function listEmbeddingJobs(limit = 20): Promise<EmbeddingJobDto[]> 
 
 export async function getEmbeddingJob(id: string): Promise<EmbeddingJobDto | null> {
   const row = await prismaClient.embeddingJob.findUnique({ where: { id } });
+  return row ? toDto(row) : null;
+}
+
+async function findActiveCatalogEmbeddingJob(): Promise<EmbeddingJobDto | null> {
+  const row = await prismaClient.embeddingJob.findFirst({
+    where: {
+      status: { in: ["queued", "running"] },
+      jobType: { in: ["backfill", "reindex", "consistency_scan"] },
+    },
+    orderBy: { createdAt: "desc" },
+  });
   return row ? toDto(row) : null;
 }
 
@@ -170,8 +181,8 @@ async function runEmbeddingJobInline(
       },
     });
   } finally {
-    if (activeJobId === jobId) {
-      activeJobId = null;
+    if (activeInlineJobId === jobId) {
+      activeInlineJobId = null;
     }
   }
 }
@@ -180,11 +191,23 @@ export async function triggerEmbeddingJob(
   products: ProductDocument[],
   request: TriggerEmbeddingJobRequestDto = {},
 ): Promise<EmbeddingJobDto> {
-  if (activeJobId) {
-    const active = await getEmbeddingJob(activeJobId);
-    if (active && (active.status === "queued" || active.status === "running")) {
+  const isScopedJob = Boolean(request.productIds && request.productIds.length > 0);
+  if (!isScopedJob) {
+    const active = await findActiveCatalogEmbeddingJob();
+    if (active) {
       return active;
     }
+  }
+
+  if (activeInlineJobId) {
+    const inlineActive = await getEmbeddingJob(activeInlineJobId);
+    if (
+      inlineActive &&
+      (inlineActive.status === "queued" || inlineActive.status === "running")
+    ) {
+      return inlineActive;
+    }
+    activeInlineJobId = null;
   }
 
   const config = await getAiRankingConfig();
@@ -204,7 +227,7 @@ export async function triggerEmbeddingJob(
     return job ?? toDto(await prismaClient.embeddingJob.findUnique({ where: { id: jobId } }));
   }
 
-  activeJobId = jobId;
+  activeInlineJobId = jobId;
   void runEmbeddingJobInline(jobId, products, config.embeddingBatchSize, request.productIds);
   const created = await getEmbeddingJob(jobId);
   return created ?? toDto(await prismaClient.embeddingJob.findUnique({ where: { id: jobId } }));

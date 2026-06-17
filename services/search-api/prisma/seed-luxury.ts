@@ -8,10 +8,10 @@ import {
   buildSynonymMap,
 } from "./seed-data/search-rules.js";
 import {
-  buildLuxuryMerchandisingRules,
   buildLuxurySynonymMap,
   getLuxuryRuleCounts,
   LUXURY_CATALOG_ID,
+  stripLuxuryMerchandisingRules,
 } from "../src/luxury-search-config.js";
 import {
   generateLuxuryProductCatalog,
@@ -29,21 +29,6 @@ function mergeSynonymMaps(
   extra: Record<string, string>,
 ): Record<string, string> {
   return { ...base, ...extra };
-}
-
-function mergeMerchandisingRules(
-  base: MerchandisingRule[],
-  extra: MerchandisingRule[],
-): MerchandisingRule[] {
-  const existingIds = new Set(base.map((rule) => rule.id));
-  const merged = [...base];
-  for (const rule of extra) {
-    if (!existingIds.has(rule.id)) {
-      merged.push(rule);
-      existingIds.add(rule.id);
-    }
-  }
-  return merged;
 }
 
 function writeLuxuryCatalogArtifacts(
@@ -70,13 +55,10 @@ function writeLuxuryCatalogArtifacts(
 }
 
 async function mergeLuxurySearchConfig(): Promise<void> {
-  const [stagingRulesRow, liveRulesRow, stagingSynonymsRow, liveSynonymsRow] =
-    await Promise.all([
-      prisma.systemConfig.findUnique({ where: { key: "demo.search.rules.staging" } }),
-      prisma.systemConfig.findUnique({ where: { key: "demo.search.rules.live" } }),
-      prisma.systemConfig.findUnique({ where: { key: "demo.search.synonyms.staging" } }),
-      prisma.systemConfig.findUnique({ where: { key: "demo.search.synonyms.live" } }),
-    ]);
+  const [stagingRulesRow, stagingSynonymsRow] = await Promise.all([
+    prisma.systemConfig.findUnique({ where: { key: "demo.search.rules.staging" } }),
+    prisma.systemConfig.findUnique({ where: { key: "demo.search.synonyms.staging" } }),
+  ]);
 
   const baseRules =
     (stagingRulesRow?.value as MerchandisingRule[] | undefined) ??
@@ -84,15 +66,14 @@ async function mergeLuxurySearchConfig(): Promise<void> {
   const baseSynonyms =
     (stagingSynonymsRow?.value as Record<string, string> | undefined) ??
     buildSynonymMap();
-  const luxuryRules = buildLuxuryMerchandisingRules();
   const luxurySynonyms = buildLuxurySynonymMap();
 
-  const mergedRules = mergeMerchandisingRules(baseRules, luxuryRules);
+  const rulesWithoutLuxury = stripLuxuryMerchandisingRules(baseRules);
   const mergedSynonyms = mergeSynonymMaps(baseSynonyms, luxurySynonyms);
 
   const entries = [
-    { key: "demo.search.rules.staging", value: mergedRules },
-    { key: "demo.search.rules.live", value: mergedRules },
+    { key: "demo.search.rules.staging", value: rulesWithoutLuxury },
+    { key: "demo.search.rules.live", value: rulesWithoutLuxury },
     { key: "demo.search.synonyms.staging", value: mergedSynonyms },
     { key: "demo.search.synonyms.live", value: mergedSynonyms },
   ];

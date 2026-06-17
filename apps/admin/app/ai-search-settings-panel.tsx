@@ -155,6 +155,7 @@ export function AiSearchSettingsPanel() {
   }, [loadData]);
 
   const activeJob = jobs.find((job) => isActiveJobStatus(job.status));
+  const recentJobs = activeJob ? jobs.filter((job) => job.id !== activeJob.id) : jobs;
 
   useEffect(() => {
     if (!activeJob) {
@@ -265,8 +266,8 @@ export function AiSearchSettingsPanel() {
       }
 
       const job = (await response.json()) as EmbeddingJobDto;
-      setFeedback(`Embedding reindex job queued (${job.id}).`);
-      await loadData();
+      setFeedback(`Embedding reindex job queued (${job.id.slice(0, 8)}).`);
+      await loadData({ silent: true });
     } catch (reindexError) {
       setError(
         reindexError instanceof Error ? reindexError.message : "Failed to queue reindex job",
@@ -628,7 +629,7 @@ export function AiSearchSettingsPanel() {
           </div>
         ) : null}
 
-        {jobs.length > 0 ? (
+        {recentJobs.length > 0 ? (
           <div>
             <strong style={{ fontSize: 13 }}>Recent embedding jobs</strong>
             <ul
@@ -640,7 +641,7 @@ export function AiSearchSettingsPanel() {
                 gap: "0.35rem",
               }}
             >
-              {jobs.map((job) => {
+              {recentJobs.map((job) => {
                 const timing = formatJobTiming(job);
                 return (
                   <li
@@ -708,17 +709,22 @@ export function AiSearchSettingsPanel() {
           <button
             type="button"
             onClick={() => void triggerReindex()}
-            disabled={reindexing}
+            disabled={reindexing || Boolean(activeJob)}
             style={{
               padding: "0.55rem 0.9rem",
               border: "1px solid #cbd5e1",
               borderRadius: 6,
               background: "#fff",
-              cursor: "pointer",
+              cursor: activeJob ? "not-allowed" : "pointer",
+              opacity: activeJob ? 0.65 : 1,
               fontSize: 14,
             }}
           >
-            {reindexing ? "Queueing..." : "Reindex embeddings"}
+            {reindexing
+              ? "Queueing..."
+              : activeJob
+                ? "Reindex in progress..."
+                : "Reindex embeddings"}
           </button>
         </div>
       </div>
