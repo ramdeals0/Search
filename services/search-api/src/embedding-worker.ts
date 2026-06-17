@@ -63,7 +63,7 @@ async function processClaimedJob(
           }
 
           const result = await embedProductsBatch(batch, workerConfig.batchSize);
-          processedTotal += result.processed + result.skipped;
+          processedTotal += batch.length;
           failedTotal += result.failed;
           skippedTotal += result.skipped;
           lastError = result.lastError ?? lastError;
@@ -80,6 +80,7 @@ async function processClaimedJob(
         {
           batchSize: CATALOG_DB_BATCH_SIZE,
           productIds: job.productIds,
+          allCatalogs: !job.productIds?.length,
         },
       );
     } else {
@@ -103,7 +104,7 @@ async function processClaimedJob(
         updatedAt: row.updatedAt.toISOString(),
       }));
       const result = await embedProductsBatch(products, workerConfig.batchSize);
-      processedTotal = result.processed + result.skipped;
+      processedTotal = products.length;
       failedTotal = result.failed;
       skippedTotal = result.skipped;
       lastError = result.lastError;
@@ -111,6 +112,12 @@ async function processClaimedJob(
 
     if (processedTotal === 0 && failedTotal > 0) {
       throw new Error(lastError ?? "All embedding batches failed");
+    }
+
+    if (failedTotal > 0 && processedTotal > 0) {
+      console.warn(
+        `[embedding-worker] job=${job.id} completed with ${failedTotal.toLocaleString()} failed products`,
+      );
     }
 
     await completeEmbeddingJob(job.id, {

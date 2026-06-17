@@ -418,6 +418,8 @@ export async function forEachProductBatchFromDatabase(
     batchSize?: number;
     productIds?: string[];
     catalogId?: string;
+    /** When true, scan every catalog (full reindex). Default filters to the active/default catalog. */
+    allCatalogs?: boolean;
   } = {},
 ): Promise<number> {
   const batchSize = options.batchSize ?? 1000;
@@ -429,7 +431,9 @@ export async function forEachProductBatchFromDatabase(
       where: {
         ...(options.productIds?.length
           ? { id: { in: options.productIds } }
-          : { catalogId: resolveCatalogFilter(options.catalogId) }),
+          : options.allCatalogs
+            ? {}
+            : { catalogId: resolveCatalogFilter(options.catalogId) }),
         ...(cursor ? { id: { gt: cursor } } : {}),
       },
       include: productInclude,

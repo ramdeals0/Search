@@ -6,7 +6,10 @@ import type {
 } from "@retailer-search/shared-types";
 import type { ProductDocument } from "@retailer-search/shared-types";
 import { prisma } from "../db.js";
-import { forEachProductBatchFromDatabase } from "../catalog/catalog-db-queries.js";
+import {
+  countAllProductsInDatabase,
+  forEachProductBatchFromDatabase,
+} from "../catalog/catalog-db-queries.js";
 import { CATALOG_DB_BATCH_SIZE } from "../catalog/catalog-scale-config.js";
 import { isLargeCatalogMode } from "../catalog-store.js";
 import { getAiRankingConfig } from "./ai-ranking-config-store.js";
@@ -203,6 +206,19 @@ function resolveEmbeddingJobFailure(stats: {
   return null;
 }
 
+async function resolveEmbeddingJobTargetCount(
+  products: ProductDocument[],
+  productIds?: string[],
+): Promise<number> {
+  if (productIds && productIds.length > 0) {
+    return productIds.length;
+  }
+  if (isLargeCatalogMode()) {
+    return countAllProductsInDatabase();
+  }
+  return products.length;
+}
+
 async function runEmbeddingJobInline(
   jobId: string,
   products: ProductDocument[],
@@ -232,7 +248,7 @@ async function runEmbeddingJobInline(
           }
 
           const result = await embedProductsBatch(batch, batchSize);
-          processedTotal += result.processed + result.skipped;
+          processedTotal += batch.length;
           failedTotal += result.failed;
           skippedTotal += result.skipped;
           lastError = result.lastError ?? lastError;
@@ -249,6 +265,7 @@ async function runEmbeddingJobInline(
         {
           batchSize: CATALOG_DB_BATCH_SIZE,
           productIds,
+          allCatalogs: !productIds?.length,
         },
       );
     } else {
@@ -264,7 +281,7 @@ async function runEmbeddingJobInline(
 
         const batch = targetProducts.slice(index, index + batchSize);
         const result = await embedProductsBatch(batch, batchSize);
-        processedTotal += result.processed + result.skipped;
+        processedTotal += batch.length;
         failedTotal += result.failed;
         skippedTotal += result.skipped;
         lastError = result.lastError ?? lastError;
@@ -353,13 +370,7 @@ export async function triggerEmbeddingJob(
 
   const config = await getAiRankingConfig();
   const workerConfig = getEmbeddingWorkerRuntimeConfig();
-  const useDatabaseCatalog = isLargeCatalogMode();
-  const targetCount =
-    request.productIds && request.productIds.length > 0
-      ? request.productIds.length
-      : useDatabaseCatalog
-        ? await prisma.product.count()
-        : products.length;
+  const targetCount = await resolveEmbeddingJobTargetCount(products, request.productIds);
 
   const { id: jobId } = await enqueueEmbeddingJob(request, targetCount);
 

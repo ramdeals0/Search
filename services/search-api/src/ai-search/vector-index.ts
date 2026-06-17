@@ -157,6 +157,20 @@ export async function embedProductsBatch(
   for (let index = 0; index < products.length; index += size) {
     const batch = products.slice(index, index + size);
     const pending: Array<{ product: ProductDocument; text: string; textHash: string }> = [];
+    const existingByProductId = new Map<string, { textHash: string | null; model: string }>();
+
+    if (isLargeCatalogMode() && persistenceEnabled) {
+      const rows = await prismaClient.productEmbedding.findMany({
+        where: { productId: { in: batch.map((product) => product.id) } },
+        select: { productId: true, textHash: true, model: true },
+      });
+      for (const row of rows) {
+        existingByProductId.set(row.productId, {
+          textHash: row.textHash,
+          model: row.model,
+        });
+      }
+    }
 
     for (const product of batch) {
       const text = buildCanonicalProductText(product);
@@ -172,10 +186,7 @@ export async function embedProductsBatch(
           continue;
         }
       } else if (persistenceEnabled) {
-        const existingRow = await prismaClient.productEmbedding.findUnique({
-          where: { productId: product.id },
-          select: { textHash: true, model: true },
-        });
+        const existingRow = existingByProductId.get(product.id);
         if (
           existingRow?.textHash === textHash &&
           existingRow?.model === provider.model

@@ -712,7 +712,12 @@ export function AiSearchSettingsPanel() {
               Job {activeJob.id.slice(0, 8)} · {activeJob.jobType} ·{" "}
               {activeJob.processedProducts.toLocaleString()} /{" "}
               {activeJob.totalProducts.toLocaleString()} products (
-              {jobProgressPercent(activeJob)}%) · status{" "}
+              {jobProgressPercent(activeJob)}%)
+              {activeJob.failedProducts > 0
+                ? ` · ${activeJob.failedProducts.toLocaleString()} failed`
+                : ""}
+              {" · "}
+              status{" "}
               <span style={{ color: jobStatusColor(activeJob.status), fontWeight: 600 }}>
                 {activeJob.status}
               </span>
