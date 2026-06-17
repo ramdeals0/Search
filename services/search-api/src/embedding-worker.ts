@@ -10,6 +10,10 @@ import { isLargeCatalogMode } from "./catalog-store.js";
 import { getAiRankingConfig } from "./ai-search/ai-ranking-config-store.js";
 import { assertEmbeddingJobCanRun } from "./ai-search/embedding-job-service.js";
 import {
+  shouldContinueEmbeddingJob,
+  updateEmbeddingJobProgress,
+} from "./ai-search/embedding-job-runtime.js";
+import {
   claimNextEmbeddingJob,
   completeEmbeddingJob,
   failEmbeddingJob,
@@ -54,20 +58,24 @@ async function processClaimedJob(
     if (isLargeCatalogMode() || job.productIds?.length) {
       await forEachProductBatchFromDatabase(
         async (batch) => {
+          if (!(await shouldContinueEmbeddingJob(job.id))) {
+            return;
+          }
+
           const result = await embedProductsBatch(batch, workerConfig.batchSize);
           processedTotal += result.processed + result.skipped;
           failedTotal += result.failed;
           skippedTotal += result.skipped;
           lastError = result.lastError ?? lastError;
-          await prismaClient.embeddingJob.update({
-            where: { id: job.id },
-            data: {
-              processedProducts: processedTotal,
-              failedProducts: failedTotal,
-              skippedProducts: skippedTotal,
-              lockedAt: new Date(),
-            },
+
+          const stillRunning = await updateEmbeddingJobProgress(job.id, {
+            processedProducts: processedTotal,
+            failedProducts: failedTotal,
+            skippedProducts: skippedTotal,
           });
+          if (!stillRunning) {
+            return;
+          }
         },
         {
           batchSize: CATALOG_DB_BATCH_SIZE,

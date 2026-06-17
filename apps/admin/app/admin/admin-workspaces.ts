@@ -20,7 +20,7 @@ export function canAccessWorkspace(
   return allowedRoles.includes(role);
 }
 
-/** Primary workspaces shown on the dashboard quick-links grid. */
+/** Primary workspaces shown on the dashboard quick-links grid (grouped to match sidebar). */
 export const ADMIN_DASHBOARD_LINKS: AdminWorkspaceLink[] = [
   {
     href: "/admin/products",
@@ -35,21 +35,27 @@ export const ADMIN_DASHBOARD_LINKS: AdminWorkspaceLink[] = [
     allowedRoles: "all",
   },
   {
+    href: "/admin/ai-search",
+    label: "AI Search",
+    hint: "Hybrid ranking, embeddings, reindex",
+    allowedRoles: "all",
+  },
+  {
     href: "/admin/search/zero-results",
     label: "Zero-results inbox",
     hint: "Rule drafts for failed queries",
     allowedRoles: "all",
   },
   {
-    href: "/admin/merchandising",
-    label: "Merchandising",
-    hint: "Rules, boosts, promotions",
-    allowedRoles: "all",
-  },
-  {
     href: "/admin/experiments",
     label: "Experiments",
     hint: "A/B configs and scorecards",
+    allowedRoles: "all",
+  },
+  {
+    href: "/admin/merchandising",
+    label: "Merchandising",
+    hint: "Rules, boosts, promotions",
     allowedRoles: "all",
   },
   {
@@ -77,15 +83,15 @@ export const ADMIN_DASHBOARD_LINKS: AdminWorkspaceLink[] = [
     allowedRoles: "all",
   },
   {
-    href: "/admin/exports",
-    label: "Exports",
-    hint: "Export jobs and downloads",
-    allowedRoles: "all",
-  },
-  {
     href: "/admin/integrations",
     label: "Integrations",
     hint: "Webhooks and delivery logs",
+    allowedRoles: "all",
+  },
+  {
+    href: "/admin/exports",
+    label: "Exports",
+    hint: "Export jobs and downloads",
     allowedRoles: "all",
   },
   {

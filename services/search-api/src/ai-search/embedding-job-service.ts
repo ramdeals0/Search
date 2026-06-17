@@ -11,6 +11,18 @@ import { CATALOG_DB_BATCH_SIZE } from "../catalog/catalog-scale-config.js";
 import { isLargeCatalogMode } from "../catalog-store.js";
 import { getAiRankingConfig } from "./ai-ranking-config-store.js";
 import {
+  cancelEmbeddingJobs,
+  clearEmbeddingJobCancellation,
+  completeEmbeddingJobInline,
+  failEmbeddingJobInline,
+  getActiveInlineJobId,
+  markEmbeddingJobRunning,
+  setActiveInlineJobId,
+  shouldContinueEmbeddingJob,
+  touchEmbeddingJobLock,
+  updateEmbeddingJobProgress,
+} from "./embedding-job-runtime.js";
+import {
   enqueueEmbeddingJob,
   enqueueIncrementalEmbeddingJobs,
 } from "./embedding-job-queue.js";
@@ -19,8 +31,6 @@ import { getEmbeddingProviderStatus } from "./embedding-provider.js";
 import { getEmbeddingWorkerRuntimeConfig } from "./vector-config.js";
 
 const prismaClient = prisma as any;
-
-let activeInlineJobId: string | null = null;
 
 function toDto(row: {
   id: string;
@@ -87,12 +97,14 @@ async function findActiveCatalogEmbeddingJob(): Promise<EmbeddingJobDto | null> 
 async function abandonStaleCatalogEmbeddingJobs(): Promise<void> {
   const workerConfig = getEmbeddingWorkerRuntimeConfig();
   const staleBefore = new Date(Date.now() - workerConfig.lockTimeoutMs);
+  const inlineJobId = getActiveInlineJobId();
 
   await prismaClient.embeddingJob.updateMany({
     where: {
       status: "running",
       jobType: { in: ["backfill", "reindex", "consistency_scan"] },
       updatedAt: { lt: staleBefore },
+      ...(inlineJobId ? { id: { not: inlineJobId } } : {}),
     },
     data: {
       status: "failed",
@@ -129,6 +141,8 @@ async function abandonActiveCatalogEmbeddingJobs(reason: string): Promise<number
     return 0;
   }
 
+  cancelEmbeddingJobs(rows.map((row: { id: string }) => row.id));
+
   await prismaClient.embeddingJob.updateMany({
     where: {
       id: { in: rows.map((row: { id: string }) => row.id) },
@@ -142,8 +156,8 @@ async function abandonActiveCatalogEmbeddingJobs(reason: string): Promise<number
     },
   });
 
-  if (activeInlineJobId && rows.some((row: { id: string }) => row.id === activeInlineJobId)) {
-    activeInlineJobId = null;
+  if (getActiveInlineJobId() && rows.some((row: { id: string }) => row.id === getActiveInlineJobId())) {
+    setActiveInlineJobId(null);
   }
 
   return rows.length;
@@ -168,14 +182,12 @@ export async function getEmbeddingCoverageSummary(
 
 export { enqueueIncrementalEmbeddingJobs };
 
-function resolveEmbeddingJobFailure(
-  stats: {
-    processedProducts: number;
-    failedProducts: number;
-    skippedProducts: number;
-    lastError?: string;
-  },
-): string | null {
+function resolveEmbeddingJobFailure(stats: {
+  processedProducts: number;
+  failedProducts: number;
+  skippedProducts: number;
+  lastError?: string;
+}): string | null {
   if (stats.processedProducts > 0) {
     return null;
   }
@@ -204,30 +216,35 @@ async function runEmbeddingJobInline(
 
   try {
     await assertEmbeddingJobCanRun();
-
-    await prismaClient.embeddingJob.update({
-      where: { id: jobId },
-      data: { status: "running", startedAt: new Date(), lockedAt: new Date() },
-    });
+    await markEmbeddingJobRunning(jobId);
+    await touchEmbeddingJobLock(jobId);
     await hydrateVectorIndex();
+
+    if (!(await shouldContinueEmbeddingJob(jobId))) {
+      return;
+    }
 
     if (isLargeCatalogMode()) {
       await forEachProductBatchFromDatabase(
         async (batch) => {
+          if (!(await shouldContinueEmbeddingJob(jobId))) {
+            return;
+          }
+
           const result = await embedProductsBatch(batch, batchSize);
           processedTotal += result.processed + result.skipped;
           failedTotal += result.failed;
           skippedTotal += result.skipped;
           lastError = result.lastError ?? lastError;
-          await prismaClient.embeddingJob.update({
-            where: { id: jobId },
-            data: {
-              processedProducts: processedTotal,
-              failedProducts: failedTotal,
-              skippedProducts: skippedTotal,
-              lockedAt: new Date(),
-            },
+
+          const stillRunning = await updateEmbeddingJobProgress(jobId, {
+            processedProducts: processedTotal,
+            failedProducts: failedTotal,
+            skippedProducts: skippedTotal,
           });
+          if (!stillRunning) {
+            return;
+          }
         },
         {
           batchSize: CATALOG_DB_BATCH_SIZE,
@@ -241,22 +258,30 @@ async function runEmbeddingJobInline(
           : products;
 
       for (let index = 0; index < targetProducts.length; index += batchSize) {
+        if (!(await shouldContinueEmbeddingJob(jobId))) {
+          break;
+        }
+
         const batch = targetProducts.slice(index, index + batchSize);
         const result = await embedProductsBatch(batch, batchSize);
         processedTotal += result.processed + result.skipped;
         failedTotal += result.failed;
         skippedTotal += result.skipped;
         lastError = result.lastError ?? lastError;
-        await prismaClient.embeddingJob.update({
-          where: { id: jobId },
-          data: {
-            processedProducts: processedTotal,
-            failedProducts: failedTotal,
-            skippedProducts: skippedTotal,
-            lockedAt: new Date(),
-          },
+
+        const stillRunning = await updateEmbeddingJobProgress(jobId, {
+          processedProducts: processedTotal,
+          failedProducts: failedTotal,
+          skippedProducts: skippedTotal,
         });
+        if (!stillRunning) {
+          break;
+        }
       }
+    }
+
+    if (!(await shouldContinueEmbeddingJob(jobId))) {
+      return;
     }
 
     const failureMessage = resolveEmbeddingJobFailure({
@@ -269,31 +294,23 @@ async function runEmbeddingJobInline(
       throw new Error(failureMessage);
     }
 
-    await prismaClient.embeddingJob.update({
-      where: { id: jobId },
-      data: {
-        status: "completed",
-        processedProducts: processedTotal,
-        failedProducts: failedTotal,
-        skippedProducts: skippedTotal,
-        completedAt: new Date(),
-      },
+    await completeEmbeddingJobInline(jobId, {
+      processedProducts: processedTotal,
+      failedProducts: failedTotal,
+      skippedProducts: skippedTotal,
     });
   } catch (error) {
-    await prismaClient.embeddingJob.update({
-      where: { id: jobId },
-      data: {
-        status: "failed",
-        errorMessage: error instanceof Error ? error.message : "Embedding job failed",
+    if (await shouldContinueEmbeddingJob(jobId)) {
+      await failEmbeddingJobInline(jobId, error instanceof Error ? error.message : "Embedding job failed", {
         processedProducts: processedTotal,
         failedProducts: failedTotal,
         skippedProducts: skippedTotal,
-        completedAt: new Date(),
-      },
-    });
+      });
+    }
   } finally {
-    if (activeInlineJobId === jobId) {
-      activeInlineJobId = null;
+    clearEmbeddingJobCancellation(jobId);
+    if (getActiveInlineJobId() === jobId) {
+      setActiveInlineJobId(null);
     }
   }
 }
@@ -306,7 +323,7 @@ export async function triggerEmbeddingJob(
 
   if (request.restart && !isScopedJob) {
     await abandonActiveCatalogEmbeddingJobs("Superseded by operator restart");
-    activeInlineJobId = null;
+    setActiveInlineJobId(null);
   }
 
   if (!isScopedJob) {
@@ -316,15 +333,22 @@ export async function triggerEmbeddingJob(
     }
   }
 
-  if (activeInlineJobId) {
-    const inlineActive = await getEmbeddingJob(activeInlineJobId);
+  const inlineJobId = getActiveInlineJobId();
+  if (inlineJobId) {
+    const inlineActive = await getEmbeddingJob(inlineJobId);
     if (
       inlineActive &&
       (inlineActive.status === "queued" || inlineActive.status === "running")
     ) {
       return inlineActive;
     }
-    activeInlineJobId = null;
+    setActiveInlineJobId(null);
+  }
+
+  try {
+    await assertEmbeddingJobCanRun();
+  } catch (error) {
+    throw error;
   }
 
   const config = await getAiRankingConfig();
@@ -339,31 +363,16 @@ export async function triggerEmbeddingJob(
 
   const { id: jobId } = await enqueueEmbeddingJob(request, targetCount);
 
-  try {
-    await assertEmbeddingJobCanRun();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Embedding provider not ready";
-    await prismaClient.embeddingJob.update({
-      where: { id: jobId },
-      data: {
-        status: "failed",
-        errorMessage: message,
-        completedAt: new Date(),
-      },
-    });
-    const failed = await getEmbeddingJob(jobId);
-    if (failed) {
-      return failed;
-    }
-  }
-
   if (workerConfig.enabled) {
     const job = await getEmbeddingJob(jobId);
     return job ?? toDto(await prismaClient.embeddingJob.findUnique({ where: { id: jobId } }));
   }
 
-  activeInlineJobId = jobId;
+  setActiveInlineJobId(jobId);
+  await markEmbeddingJobRunning(jobId);
+
   void runEmbeddingJobInline(jobId, products, config.embeddingBatchSize, request.productIds);
+
   const created = await getEmbeddingJob(jobId);
   return created ?? toDto(await prismaClient.embeddingJob.findUnique({ where: { id: jobId } }));
 }

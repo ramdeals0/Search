@@ -165,8 +165,13 @@ export function registerAiSearchRoutes(app: Express, deps: AiSearchRouteDeps): v
     const products = isLargeCatalogMode()
       ? []
       : await deps.getProducts();
-    const job = await triggerEmbeddingJob(products, parsed.data);
-    res.status(202).json(job);
+    try {
+      const job = await triggerEmbeddingJob(products, parsed.data);
+      res.status(202).json(job);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to queue embedding job";
+      res.status(400).json({ error: "embedding_job_unavailable", message });
+    }
   });
 
   app.get("/api/v1/admin/ai-search/embedding-coverage", async (req, res) => {

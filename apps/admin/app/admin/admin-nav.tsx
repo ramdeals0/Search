@@ -14,10 +14,14 @@ export interface AdminNavItem {
   allowedRoles: WorkspaceRole[] | "all";
 }
 
-export interface AdminNavGroup {
-  title: string;
-  items: AdminNavItem[];
-  expandable?: AdminNavExpandableItem;
+export interface AdminNavChildLink {
+  href: string;
+  label: string;
+}
+
+export interface AdminNavChildGroup {
+  label: string;
+  items: AdminNavChildLink[];
 }
 
 export interface AdminNavExpandableItem {
@@ -25,7 +29,13 @@ export interface AdminNavExpandableItem {
   label: string;
   icon: ReactNode;
   allowedRoles: WorkspaceRole[] | "all";
-  children: Array<{ href: string; label: string }>;
+  childGroups: AdminNavChildGroup[];
+}
+
+export interface AdminNavGroup {
+  title: string;
+  items: AdminNavItem[];
+  expandable?: AdminNavExpandableItem;
 }
 
 function NavIcon({ children }: { children: ReactNode }) {
@@ -78,9 +88,14 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
           </NavIcon>
         ),
       },
+    ],
+  },
+  {
+    title: "Search & ranking",
+    items: [
       {
         href: "/admin/search",
-        label: "Search",
+        label: "Search analytics",
         allowedRoles: "all",
         icon: (
           <NavIcon>
@@ -143,17 +158,35 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
           </svg>
         </NavIcon>
       ),
-      children: [
-        { href: "/admin/merchandising", label: "Overview" },
-        { href: "/admin/merchandising/rules", label: "Rules" },
-        { href: "/admin/merchandising/synonyms", label: "Synonyms" },
-        { href: "/admin/merchandising/modules", label: "Content modules" },
-        { href: "/admin/merchandising/workflows/new-rule", label: "Guided new rule" },
-        { href: "/admin/merchandising/snapshots", label: "Snapshots" },
-        { href: "/admin/merchandising/promotions", label: "Promotions" },
-        { href: "/admin/merchandising/workflows/new-promotion", label: "Guided promotion" },
-        { href: "/admin/merchandising/workflows/publish", label: "Guided publish" },
-        { href: "/admin/merchandising/suggestions", label: "Suggestions" },
+      childGroups: [
+        {
+          label: "Workspace",
+          items: [{ href: "/admin/merchandising", label: "Overview" }],
+        },
+        {
+          label: "Configure",
+          items: [
+            { href: "/admin/merchandising/rules", label: "Rules" },
+            { href: "/admin/merchandising/synonyms", label: "Synonyms" },
+            { href: "/admin/merchandising/modules", label: "Content modules" },
+            { href: "/admin/merchandising/suggestions", label: "Suggestions" },
+          ],
+        },
+        {
+          label: "Environments",
+          items: [
+            { href: "/admin/merchandising/snapshots", label: "Snapshots" },
+            { href: "/admin/merchandising/promotions", label: "Promotions" },
+          ],
+        },
+        {
+          label: "Workflows",
+          items: [
+            { href: "/admin/merchandising/workflows/new-rule", label: "New rule wizard" },
+            { href: "/admin/merchandising/workflows/new-promotion", label: "New promotion wizard" },
+            { href: "/admin/merchandising/workflows/publish", label: "Publish wizard" },
+          ],
+        },
       ],
     },
   },
@@ -175,7 +208,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       },
       {
         href: "/admin/audit",
-        label: "Audit",
+        label: "Audit trail",
         allowedRoles: "all",
         icon: (
           <NavIcon>
@@ -202,7 +235,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     ],
     expandable: {
       href: "/admin/access",
-      label: "Access",
+      label: "Access control",
       allowedRoles: "all",
       icon: (
         <NavIcon>
@@ -212,117 +245,61 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
           </svg>
         </NavIcon>
       ),
-      children: [
-        { href: "/admin/access", label: "Overview" },
-        { href: "/admin/access/jit", label: "JIT elevation" },
-        { href: "/admin/access/requests", label: "Standing requests" },
-        { href: "/admin/access/reviews", label: "Access reviews" },
+      childGroups: [
+        {
+          label: "Overview",
+          items: [{ href: "/admin/access", label: "Access home" }],
+        },
+        {
+          label: "Requests & reviews",
+          items: [
+            { href: "/admin/access/jit", label: "JIT elevation" },
+            { href: "/admin/access/requests", label: "Standing requests" },
+            { href: "/admin/access/reviews", label: "Access reviews" },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    title: "Integrations",
+    items: [],
+    expandable: {
+      href: "/admin/integrations",
+      label: "Integrations hub",
+      allowedRoles: "all",
+      icon: (
+        <NavIcon>
+          <svg {...iconProps}>
+            <path d="M5 8.5h6" />
+            <circle cx="4" cy="8.5" r="1.5" />
+            <circle cx="12" cy="8.5" r="1.5" />
+          </svg>
+        </NavIcon>
+      ),
+      childGroups: [
+        {
+          label: "Connect",
+          items: [{ href: "/admin/integrations", label: "Webhooks & delivery" }],
+        },
+        {
+          label: "API platform",
+          items: [
+            { href: "/admin/integrations/api-keys", label: "API keys" },
+            { href: "/admin/integrations/usage", label: "API usage" },
+            { href: "/admin/developer", label: "Developer portal" },
+          ],
+        },
+        {
+          label: "Data",
+          items: [{ href: "/admin/exports", label: "Export jobs" }],
+        },
       ],
     },
   },
   {
     title: "Platform",
     items: [
-      {
-        href: "/admin/platform/catalogs",
-        label: "Catalogs",
-        allowedRoles: ["admin"],
-        icon: (
-          <NavIcon>
-            <svg {...iconProps}>
-              <path d="M2.5 4.5h11v9h-11z" />
-              <path d="M5.5 7.5h5M5.5 10h3" />
-            </svg>
-          </NavIcon>
-        ),
-      },
-      {
-        href: "/admin/platform/plugins",
-        label: "Plugins",
-        allowedRoles: ["admin"],
-        icon: (
-          <NavIcon>
-            <svg {...iconProps}>
-              <path d="M5 8.5h6" />
-              <circle cx="4" cy="8.5" r="1.5" />
-              <circle cx="12" cy="8.5" r="1.5" />
-            </svg>
-          </NavIcon>
-        ),
-      },
-    ],
-  },
-  {
-    title: "Operations",
-    items: [
-      {
-        href: "/admin/exports",
-        label: "Exports",
-        allowedRoles: "all",
-        icon: (
-          <NavIcon>
-            <svg {...iconProps}>
-              <path d="M8 3.5v7" />
-              <path d="M5.5 8 8 10.5 10.5 8" />
-              <path d="M3.5 12.5h9" />
-            </svg>
-          </NavIcon>
-        ),
-      },
-      {
-        href: "/admin/integrations",
-        label: "Integrations",
-        allowedRoles: "all",
-        icon: (
-          <NavIcon>
-            <svg {...iconProps}>
-              <path d="M5 8.5h6" />
-              <circle cx="4" cy="8.5" r="1.5" />
-              <circle cx="12" cy="8.5" r="1.5" />
-            </svg>
-          </NavIcon>
-        ),
-      },
-      {
-        href: "/admin/integrations/api-keys",
-        label: "API keys",
-        allowedRoles: ["admin"],
-        icon: (
-          <NavIcon>
-            <svg {...iconProps}>
-              <path d="M5 8.5h6" />
-              <circle cx="4" cy="8.5" r="1.5" />
-              <circle cx="12" cy="8.5" r="1.5" />
-            </svg>
-          </NavIcon>
-        ),
-      },
-      {
-        href: "/admin/integrations/usage",
-        label: "API usage",
-        allowedRoles: ["admin", "developer"],
-        icon: (
-          <NavIcon>
-            <svg {...iconProps}>
-              <path d="M3 12h10" />
-              <path d="M5 12V8M8 12V5M11 12V9" />
-            </svg>
-          </NavIcon>
-        ),
-      },
-      {
-        href: "/admin/developer",
-        label: "Developer portal",
-        allowedRoles: ["developer", "admin"],
-        icon: (
-          <NavIcon>
-            <svg {...iconProps}>
-              <path d="M4 11.5 6.5 9 4 6.5" />
-              <path d="M8 11.5h4.5" />
-            </svg>
-          </NavIcon>
-        ),
-      },
       {
         href: "/admin/settings",
         label: "Settings",
@@ -336,40 +313,63 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
           </NavIcon>
         ),
       },
+      {
+        href: "/admin/platform/catalogs",
+        label: "Catalog registry",
+        allowedRoles: ["admin"],
+        icon: (
+          <NavIcon>
+            <svg {...iconProps}>
+              <path d="M2.5 4.5h11v9h-11z" />
+              <path d="M5.5 7.5h5M5.5 10h3" />
+            </svg>
+          </NavIcon>
+        ),
+      },
+      {
+        href: "/admin/platform/plugins",
+        label: "Search plugins",
+        allowedRoles: ["admin"],
+        icon: (
+          <NavIcon>
+            <svg {...iconProps}>
+              <path d="M5 8.5h6" />
+              <circle cx="4" cy="8.5" r="1.5" />
+              <circle cx="12" cy="8.5" r="1.5" />
+            </svg>
+          </NavIcon>
+        ),
+      },
     ],
   },
 ];
 
-const UTILITY_NAV_ITEMS: AdminNavItem[] = [
-  {
-    href: "/login",
-    label: "Sign out",
-    allowedRoles: "all",
-    icon: (
-      <NavIcon>
-        <svg {...iconProps}>
-          <path d="M6 8H13" />
-          <path d="M10.5 5.5 13 8l-2.5 2.5" />
-          <path d="M3.5 3.5v9" />
-        </svg>
-      </NavIcon>
-    ),
-  },
-];
-
-function canAccessItem(item: AdminNavItem, role: WorkspaceRole): boolean {
+function canAccessItem(item: AdminNavItem | AdminNavExpandableItem, role: WorkspaceRole): boolean {
   return canAccessWorkspace(role, item.allowedRoles);
+}
+
+function canAccessChildLink(
+  link: AdminNavChildLink,
+  expandable: AdminNavExpandableItem,
+  role: WorkspaceRole,
+): boolean {
+  if (link.href === "/admin/integrations/api-keys") {
+    return canAccessWorkspace(role, ["admin"]);
+  }
+  if (link.href === "/admin/integrations/usage") {
+    return canAccessWorkspace(role, ["admin", "developer"]);
+  }
+  if (link.href === "/admin/developer") {
+    return canAccessWorkspace(role, ["developer", "admin"]);
+  }
+  return canAccessItem(expandable, role);
 }
 
 function isExpandableRootPath(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function isSubNavActive(
-  pathname: string,
-  href: string,
-  rootHref: string,
-): boolean {
+function isSubNavActive(pathname: string, href: string, rootHref: string): boolean {
   if (href === rootHref) {
     return pathname === href;
   }
@@ -387,39 +387,119 @@ function isActivePath(pathname: string, href: string): boolean {
   if (href === "/admin") {
     return pathname === "/admin";
   }
-  if (href === "/login") {
-    return false;
-  }
-  if (href === "/admin/merchandising" || href === "/admin/access") {
+  if (href === "/admin/merchandising" || href === "/admin/access" || href === "/admin/integrations") {
     return isExpandableRootPath(pathname, href);
   }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function flattenChildGroups(expandable: AdminNavExpandableItem): AdminNavChildLink[] {
+  return expandable.childGroups.flatMap((group) => group.items);
+}
+
 interface AdminNavProps {
   mobileOpen: boolean;
   onNavigate?: () => void;
-  variant?: "primary" | "utility";
 }
 
-export function AdminNav({
-  mobileOpen,
+interface ExpandableNavSectionProps {
+  expandable: AdminNavExpandableItem;
+  pathname: string;
+  role: WorkspaceRole;
+  expanded: boolean;
+  onToggle: () => void;
+  onNavigate?: () => void;
+}
+
+function ExpandableNavSection({
+  expandable,
+  pathname,
+  role,
+  expanded,
+  onToggle,
   onNavigate,
-  variant = "primary",
-}: AdminNavProps) {
+}: ExpandableNavSectionProps) {
+  const rootActive = isActivePath(pathname, expandable.href);
+
+  return (
+    <li className="forge-nav-expandable">
+      <div className="forge-nav-expandable__row">
+        <Link
+          href={expandable.href}
+          onClick={onNavigate}
+          className={`forge-nav-link${rootActive ? " forge-nav-link--active" : ""}`}
+          aria-current={rootActive ? "page" : undefined}
+        >
+          {expandable.icon}
+          <span className="forge-nav-link__text">{expandable.label}</span>
+        </Link>
+        <button
+          type="button"
+          className="forge-nav-expand-btn"
+          aria-expanded={expanded}
+          aria-label={expanded ? `Collapse ${expandable.label}` : `Expand ${expandable.label}`}
+          onClick={onToggle}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            className={`forge-nav-expand-btn__chevron${expanded ? " forge-nav-expand-btn__chevron--open" : ""}`}
+          >
+            <path d="M4 5.5 7 8.5 10 5.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
+      {expanded ? (
+        <div className="forge-nav-sublist">
+          {expandable.childGroups.map((group) => {
+            const visibleItems = group.items.filter((item) =>
+              canAccessChildLink(item, expandable, role),
+            );
+            if (visibleItems.length === 0) {
+              return null;
+            }
+
+            return (
+              <div key={group.label} className="forge-nav-subgroup">
+                <div className="forge-nav-subgroup__label">{group.label}</div>
+                <ul className="forge-nav-list forge-nav-list--nested">
+                  {visibleItems.map((child) => {
+                    const childActive = isSubNavActive(pathname, child.href, expandable.href);
+                    return (
+                      <li key={child.href}>
+                        <Link
+                          href={child.href}
+                          onClick={onNavigate}
+                          className={`forge-nav-link forge-nav-link--child${childActive ? " forge-nav-link--active" : ""}`}
+                          aria-current={childActive ? "page" : undefined}
+                        >
+                          {child.label}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+export function AdminNav({ mobileOpen, onNavigate }: AdminNavProps) {
   const pathname = usePathname();
   const { activeRole: role } = useWorkspaceRoleState();
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    "/admin/merchandising": true,
-    "/admin/access": true,
-  });
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     for (const group of ADMIN_NAV_GROUPS) {
-      if (
-        group.expandable &&
-        isExpandableRootPath(pathname, group.expandable.href)
-      ) {
+      if (group.expandable && isExpandableRootPath(pathname, group.expandable.href)) {
         setExpandedSections((current) => ({
           ...current,
           [group.expandable!.href]: true,
@@ -435,40 +515,31 @@ export function AdminNav({
         items: group.items.filter((item) => canAccessItem(item, role)),
         expandable:
           group.expandable && canAccessItem(group.expandable, role)
-            ? group.expandable
+            ? {
+                ...group.expandable,
+                childGroups: group.expandable.childGroups
+                  .map((childGroup) => ({
+                    ...childGroup,
+                    items: childGroup.items.filter((item) =>
+                      canAccessChildLink(item, group.expandable!, role),
+                    ),
+                  }))
+                  .filter((childGroup) => childGroup.items.length > 0),
+              }
             : undefined,
-      })).filter((group) => group.items.length > 0 || group.expandable),
+      })).filter(
+        (group) =>
+          group.items.length > 0 ||
+          (group.expandable && group.expandable.childGroups.length > 0),
+      ),
     [role],
   );
-
-  const utilityItems = useMemo(
-    () => UTILITY_NAV_ITEMS.filter((item) => canAccessItem(item, role)),
-    [role],
-  );
-
-  if (variant === "utility") {
-    return (
-      <nav aria-label="Utility navigation">
-        <ul className="forge-nav-list">
-          {utilityItems.map((item) => (
-            <li key={item.href}>
-              <Link
-                href={item.href}
-                onClick={onNavigate}
-                className={`forge-nav-link${isActivePath(pathname, item.href) ? " forge-nav-link--active" : ""}`}
-              >
-                {item.icon}
-                {item.label}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
-    );
-  }
 
   return (
-    <nav aria-label="Admin navigation" style={{ display: mobileOpen ? "block" : undefined }}>
+    <nav
+      aria-label="Admin navigation"
+      className={`forge-nav${mobileOpen ? " forge-nav--mobile-open" : ""}`}
+    >
       {visibleGroups.map((group) => (
         <div key={group.title} className="forge-nav-section">
           <div className="forge-nav-section__label">{group.title}</div>
@@ -484,85 +555,35 @@ export function AdminNav({
                     aria-current={active ? "page" : undefined}
                   >
                     {item.icon}
-                    {item.label}
+                    <span className="forge-nav-link__text">{item.label}</span>
                   </Link>
                 </li>
               );
             })}
             {group.expandable ? (
-              <li>
-                <div style={{ display: "grid", gap: 2 }}>
-                  <div style={{ display: "flex", alignItems: "stretch", gap: 2 }}>
-                    <Link
-                      href={group.expandable.href}
-                      onClick={onNavigate}
-                      className={`forge-nav-link${isActivePath(pathname, group.expandable.href) ? " forge-nav-link--active" : ""}`}
-                      style={{ flex: 1 }}
-                      aria-current={
-                        isActivePath(pathname, group.expandable.href) ? "page" : undefined
-                      }
-                    >
-                      {group.expandable.icon}
-                      {group.expandable.label}
-                    </Link>
-                    <button
-                      type="button"
-                      aria-expanded={expandedSections[group.expandable.href] ?? true}
-                      aria-label={
-                        expandedSections[group.expandable.href] ?? true
-                          ? `Collapse ${group.expandable.label} navigation`
-                          : `Expand ${group.expandable.label} navigation`
-                      }
-                      onClick={() =>
-                        setExpandedSections((current) => ({
-                          ...current,
-                          [group.expandable!.href]: !(current[group.expandable!.href] ?? true),
-                        }))
-                      }
-                      className="forge-nav-link"
-                      style={{
-                        width: "2rem",
-                        justifyContent: "center",
-                        paddingInline: 0,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {(expandedSections[group.expandable.href] ?? true) ? "▾" : "▸"}
-                    </button>
-                  </div>
-                  {(expandedSections[group.expandable.href] ?? true) ? (
-                    <ul
-                      className="forge-nav-list"
-                      style={{ paddingLeft: "1.35rem", marginTop: 2 }}
-                    >
-                      {group.expandable.children.map((child) => {
-                        const childActive = isSubNavActive(
-                          pathname,
-                          child.href,
-                          group.expandable!.href,
-                        );
-                        return (
-                          <li key={child.href}>
-                            <Link
-                              href={child.href}
-                              onClick={onNavigate}
-                              className={`forge-nav-link${childActive ? " forge-nav-link--active" : ""}`}
-                              style={{ fontSize: "0.8125rem", paddingBlock: "0.4rem" }}
-                              aria-current={childActive ? "page" : undefined}
-                            >
-                              {child.label}
-                            </Link>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : null}
-                </div>
-              </li>
+              <ExpandableNavSection
+                expandable={group.expandable}
+                pathname={pathname}
+                role={role}
+                expanded={expandedSections[group.expandable.href] ?? false}
+                onToggle={() =>
+                  setExpandedSections((current) => ({
+                    ...current,
+                    [group.expandable!.href]: !(current[group.expandable!.href] ?? false),
+                  }))
+                }
+                onNavigate={onNavigate}
+              />
             ) : null}
           </ul>
         </div>
       ))}
     </nav>
+  );
+}
+
+export function getAdminNavChildLinks(): AdminNavChildLink[] {
+  return ADMIN_NAV_GROUPS.flatMap((group) =>
+    group.expandable ? flattenChildGroups(group.expandable) : [],
   );
 }

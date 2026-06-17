@@ -166,7 +166,10 @@ export function AiSearchSettingsPanel() {
     (job) => job.status !== "completed" && job.jobType !== "incremental",
   );
   const latestFailedJob = jobs.find(
-    (job) => job.status === "failed" || job.status === "dead_letter",
+    (job) =>
+      (job.status === "failed" || job.status === "dead_letter") &&
+      job.processedProducts === 0 &&
+      job.id !== activeJob?.id,
   );
   const canRestartReindex =
     Boolean(activeJob) ||
@@ -174,7 +177,13 @@ export function AiSearchSettingsPanel() {
     latestIncompleteJob?.status === "dead_letter";
 
   useEffect(() => {
-    if (!activeJob) {
+    const shouldPoll = jobs.some(
+      (job) =>
+        job.status === "queued" ||
+        job.status === "running" ||
+        (job.status === "failed" && job.processedProducts > 0),
+    );
+    if (!shouldPoll) {
       return;
     }
 
@@ -185,7 +194,7 @@ export function AiSearchSettingsPanel() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [activeJob?.id, activeJob?.status, loadData]);
+  }, [jobs, loadData]);
 
   const updateField = <K extends keyof AiRankingConfigDto>(
     field: K,
@@ -300,7 +309,11 @@ export function AiSearchSettingsPanel() {
       });
 
       if (!response.ok) {
-        throw new Error(`Reindex request failed with HTTP ${response.status}`);
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+          message?: string;
+        } | null;
+        throw new Error(body?.message ?? body?.error ?? `Reindex request failed (${response.status})`);
       }
 
       const job = (await response.json()) as EmbeddingJobDto;
@@ -692,7 +705,9 @@ export function AiSearchSettingsPanel() {
             className="forge-callout forge-callout--info"
             style={{ margin: 0, borderColor: "#93c5fd", background: "#eff6ff" }}
           >
-            <strong style={{ fontSize: 13 }}>Reindex in progress</strong>
+            <strong style={{ fontSize: 13 }}>
+              {activeJob.status === "queued" ? "Reindex queued" : "Reindex in progress"}
+            </strong>
             <p style={{ margin: "0.35rem 0 0.5rem", fontSize: 12, color: "#475569" }}>
               Job {activeJob.id.slice(0, 8)} · {activeJob.jobType} ·{" "}
               {activeJob.processedProducts.toLocaleString()} /{" "}
@@ -702,6 +717,18 @@ export function AiSearchSettingsPanel() {
                 {activeJob.status}
               </span>
             </p>
+            {activeJob.status === "queued" && activeJob.processedProducts === 0 ? (
+              <p style={{ margin: "0 0 0.5rem", fontSize: 12, color: "#64748b" }}>
+                Waiting for the embedding worker to pick up this job. Progress should appear within
+                a few seconds if the worker service is running.
+              </p>
+            ) : null}
+            {activeJob.status === "running" && activeJob.processedProducts === 0 ? (
+              <p style={{ margin: "0 0 0.5rem", fontSize: 12, color: "#64748b" }}>
+                Preparing catalog and embedding provider. First batch progress can take a minute on
+                large catalogs or OpenRouter.
+              </p>
+            ) : null}
             {(() => {
               const timing = formatJobTiming(activeJob);
               return timing ? (
