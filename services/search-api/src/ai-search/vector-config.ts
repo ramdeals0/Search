@@ -88,7 +88,7 @@ export function getEmbeddingWorkerRuntimeConfig(): EmbeddingWorkerRuntimeConfig 
     concurrency: envNumber("EMBEDDINGS_CONCURRENCY", 1),
     batchSize: envNumber("EMBEDDINGS_BATCH_SIZE", envNumber("EMBEDDING_BATCH_SIZE", 32)),
     maxRetries: envNumber("EMBEDDINGS_MAX_RETRIES", 3),
-    lockTimeoutMs: envNumber("EMBEDDING_JOB_LOCK_TIMEOUT_MS", 300_000),
+    lockTimeoutMs: envNumber("EMBEDDING_JOB_LOCK_TIMEOUT_MS", 7_200_000),
     workerId: process.env.EMBEDDING_WORKER_ID ?? `worker-${hostname}-${process.pid}`,
   };
 }

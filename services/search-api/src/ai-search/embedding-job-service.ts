@@ -92,20 +92,28 @@ async function abandonStaleCatalogEmbeddingJobs(): Promise<void> {
     where: {
       status: "running",
       jobType: { in: ["backfill", "reindex", "consistency_scan"] },
-      OR: [
-        { startedAt: { lt: staleBefore } },
-        { lockedAt: { lt: staleBefore } },
-        { startedAt: null, createdAt: { lt: staleBefore } },
-      ],
+      updatedAt: { lt: staleBefore },
     },
     data: {
       status: "failed",
-      errorMessage: "Job abandoned after exceeding the worker lock timeout",
+      errorMessage:
+        "Job abandoned after no progress within the lock timeout. Increase EMBEDDING_JOB_LOCK_TIMEOUT_MS for large OpenRouter reindexes.",
       completedAt: new Date(),
       lockedAt: null,
       lockedBy: null,
     },
   });
+}
+
+export async function assertEmbeddingJobCanRun(): Promise<void> {
+  const config = await getAiRankingConfig();
+  const status = getEmbeddingProviderStatus(config);
+
+  if (config.embeddingsProvider !== "mock" && !status.ready) {
+    throw new Error(
+      `Embedding provider "${config.embeddingsProvider}" is not ready. Set OPENROUTER_API_KEY or EMBEDDINGS_API_KEY on search-api (and the embedding worker if separate), then restart.`,
+    );
+  }
 }
 
 async function abandonActiveCatalogEmbeddingJobs(reason: string): Promise<number> {
@@ -160,6 +168,29 @@ export async function getEmbeddingCoverageSummary(
 
 export { enqueueIncrementalEmbeddingJobs };
 
+function resolveEmbeddingJobFailure(
+  stats: {
+    processedProducts: number;
+    failedProducts: number;
+    skippedProducts: number;
+    lastError?: string;
+  },
+): string | null {
+  if (stats.processedProducts > 0) {
+    return null;
+  }
+
+  if (stats.failedProducts === 0 && stats.skippedProducts > 0) {
+    return null;
+  }
+
+  if (stats.failedProducts > 0) {
+    return stats.lastError ?? "All embedding batches failed";
+  }
+
+  return null;
+}
+
 async function runEmbeddingJobInline(
   jobId: string,
   products: ProductDocument[],
@@ -169,11 +200,14 @@ async function runEmbeddingJobInline(
   let processedTotal = 0;
   let failedTotal = 0;
   let skippedTotal = 0;
+  let lastError: string | undefined;
 
   try {
+    await assertEmbeddingJobCanRun();
+
     await prismaClient.embeddingJob.update({
       where: { id: jobId },
-      data: { status: "running", startedAt: new Date() },
+      data: { status: "running", startedAt: new Date(), lockedAt: new Date() },
     });
     await hydrateVectorIndex();
 
@@ -184,12 +218,14 @@ async function runEmbeddingJobInline(
           processedTotal += result.processed + result.skipped;
           failedTotal += result.failed;
           skippedTotal += result.skipped;
+          lastError = result.lastError ?? lastError;
           await prismaClient.embeddingJob.update({
             where: { id: jobId },
             data: {
               processedProducts: processedTotal,
               failedProducts: failedTotal,
               skippedProducts: skippedTotal,
+              lockedAt: new Date(),
             },
           });
         },
@@ -210,15 +246,27 @@ async function runEmbeddingJobInline(
         processedTotal += result.processed + result.skipped;
         failedTotal += result.failed;
         skippedTotal += result.skipped;
+        lastError = result.lastError ?? lastError;
         await prismaClient.embeddingJob.update({
           where: { id: jobId },
           data: {
             processedProducts: processedTotal,
             failedProducts: failedTotal,
             skippedProducts: skippedTotal,
+            lockedAt: new Date(),
           },
         });
       }
+    }
+
+    const failureMessage = resolveEmbeddingJobFailure({
+      processedProducts: processedTotal,
+      failedProducts: failedTotal,
+      skippedProducts: skippedTotal,
+      lastError,
+    });
+    if (failureMessage) {
+      throw new Error(failureMessage);
     }
 
     await prismaClient.embeddingJob.update({
@@ -290,6 +338,24 @@ export async function triggerEmbeddingJob(
         : products.length;
 
   const { id: jobId } = await enqueueEmbeddingJob(request, targetCount);
+
+  try {
+    await assertEmbeddingJobCanRun();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Embedding provider not ready";
+    await prismaClient.embeddingJob.update({
+      where: { id: jobId },
+      data: {
+        status: "failed",
+        errorMessage: message,
+        completedAt: new Date(),
+      },
+    });
+    const failed = await getEmbeddingJob(jobId);
+    if (failed) {
+      return failed;
+    }
+  }
 
   if (workerConfig.enabled) {
     const job = await getEmbeddingJob(jobId);

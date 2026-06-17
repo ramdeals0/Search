@@ -8,6 +8,7 @@ import { forEachProductBatchFromDatabase } from "./catalog/catalog-db-queries.js
 import { CATALOG_DB_BATCH_SIZE } from "./catalog/catalog-scale-config.js";
 import { isLargeCatalogMode } from "./catalog-store.js";
 import { getAiRankingConfig } from "./ai-search/ai-ranking-config-store.js";
+import { assertEmbeddingJobCanRun } from "./ai-search/embedding-job-service.js";
 import {
   claimNextEmbeddingJob,
   completeEmbeddingJob,
@@ -40,27 +41,31 @@ async function processClaimedJob(
   let processedTotal = 0;
   let failedTotal = 0;
   let skippedTotal = 0;
+  let lastError: string | undefined;
 
   console.log(
     `[embedding-worker] job=${job.id} type=${job.jobType} retry=${job.retryCount}/${job.maxRetries}`,
   );
 
   try {
+    await assertEmbeddingJobCanRun();
     await hydrateVectorIndex();
 
     if (isLargeCatalogMode() || job.productIds?.length) {
       await forEachProductBatchFromDatabase(
         async (batch) => {
           const result = await embedProductsBatch(batch, workerConfig.batchSize);
-          processedTotal += result.processed;
+          processedTotal += result.processed + result.skipped;
           failedTotal += result.failed;
           skippedTotal += result.skipped;
+          lastError = result.lastError ?? lastError;
           await prismaClient.embeddingJob.update({
             where: { id: job.id },
             data: {
               processedProducts: processedTotal,
               failedProducts: failedTotal,
               skippedProducts: skippedTotal,
+              lockedAt: new Date(),
             },
           });
         },
@@ -90,9 +95,14 @@ async function processClaimedJob(
         updatedAt: row.updatedAt.toISOString(),
       }));
       const result = await embedProductsBatch(products, workerConfig.batchSize);
-      processedTotal = result.processed;
+      processedTotal = result.processed + result.skipped;
       failedTotal = result.failed;
       skippedTotal = result.skipped;
+      lastError = result.lastError;
+    }
+
+    if (processedTotal === 0 && failedTotal > 0) {
+      throw new Error(lastError ?? "All embedding batches failed");
     }
 
     await completeEmbeddingJob(job.id, {

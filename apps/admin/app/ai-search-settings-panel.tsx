@@ -165,7 +165,13 @@ export function AiSearchSettingsPanel() {
   const latestIncompleteJob = jobs.find(
     (job) => job.status !== "completed" && job.jobType !== "incremental",
   );
-  const canRestartReindex = Boolean(activeJob) || latestIncompleteJob?.status === "failed" || latestIncompleteJob?.status === "dead_letter";
+  const latestFailedJob = jobs.find(
+    (job) => job.status === "failed" || job.status === "dead_letter",
+  );
+  const canRestartReindex =
+    Boolean(activeJob) ||
+    latestIncompleteJob?.status === "failed" ||
+    latestIncompleteJob?.status === "dead_letter";
 
   useEffect(() => {
     if (!activeJob) {
@@ -661,6 +667,25 @@ export function AiSearchSettingsPanel() {
             Product embeddings enabled
           </label>
         </div>
+
+        {latestFailedJob && !activeJob ? (
+          <div
+            className="forge-callout"
+            style={{
+              margin: 0,
+              borderColor: "#fecaca",
+              background: "#fef2f2",
+              color: "#991b1b",
+            }}
+          >
+            <strong style={{ fontSize: 13 }}>Latest reindex failed</strong>
+            <p style={{ margin: "0.35rem 0 0", fontSize: 13 }}>
+              Job {latestFailedJob.id.slice(0, 8)} · {latestFailedJob.provider} /{" "}
+              {latestFailedJob.model}
+              {latestFailedJob.errorMessage ? ` — ${latestFailedJob.errorMessage}` : ""}
+            </p>
+          </div>
+        ) : null}
 
         {activeJob ? (
           <div

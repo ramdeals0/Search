@@ -22,6 +22,7 @@ import {
   type EmbeddingProvider,
 } from "./embedding-provider.js";
 import { getAiRankingConfig } from "./ai-ranking-config-store.js";
+import { getVectorSearchRuntimeConfig } from "./vector-config.js";
 
 const prismaClient = prisma as any;
 
@@ -127,7 +128,10 @@ export async function upsertProductEmbedding(
 
   if (databaseVectorSearchEnabled) {
     try {
-      await syncEmbeddingVectorColumn(product.id, vector, { sourceText: text, textHash });
+      const pgvectorDimensions = getVectorSearchRuntimeConfig().dimensions;
+      if (vector.length === pgvectorDimensions) {
+        await syncEmbeddingVectorColumn(product.id, vector, { sourceText: text, textHash });
+      }
     } catch {
       // pgvector column may be unavailable until migration runs.
     }
@@ -137,7 +141,7 @@ export async function upsertProductEmbedding(
 export async function embedProductsBatch(
   products: ProductDocument[],
   batchSize?: number,
-): Promise<{ processed: number; skipped: number; failed: number }> {
+): Promise<{ processed: number; skipped: number; failed: number; lastError?: string }> {
   const config = await getAiRankingConfig();
   const provider = resolveEmbeddingProviderFromEnv({
     provider: config.embeddingsProvider,
@@ -148,6 +152,7 @@ export async function embedProductsBatch(
   let processed = 0;
   let skipped = 0;
   let failed = 0;
+  let lastError: string | undefined;
 
   for (let index = 0; index < products.length; index += size) {
     const batch = products.slice(index, index + size);
@@ -227,10 +232,13 @@ export async function embedProductsBatch(
           });
           if (databaseVectorSearchEnabled) {
             try {
-              await syncEmbeddingVectorColumn(item.product.id, vector, {
-                sourceText: item.text,
-                textHash: item.textHash,
-              });
+              const pgvectorDimensions = getVectorSearchRuntimeConfig().dimensions;
+              if (vector.length === pgvectorDimensions) {
+                await syncEmbeddingVectorColumn(item.product.id, vector, {
+                  sourceText: item.text,
+                  textHash: item.textHash,
+                });
+              }
             } catch {
               // Ignore pgvector sync failures for individual rows.
             }
@@ -238,12 +246,14 @@ export async function embedProductsBatch(
         }
         processed += 1;
       }
-    } catch {
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "Embedding batch failed";
+      console.warn("[embedProductsBatch] batch failed:", lastError);
       failed += pending.length;
     }
   }
 
-  return { processed, skipped, failed };
+  return { processed, skipped, failed, lastError };
 }
 
 export class StoredVectorSearchProvider implements VectorSearchProvider {
