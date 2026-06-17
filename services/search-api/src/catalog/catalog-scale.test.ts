@@ -17,6 +17,24 @@ test("shouldUseDatabaseCatalogMode switches above in-memory threshold", () => {
   assert.equal(shouldUseDatabaseCatalogMode(80_000_000), true);
 });
 
+test("readTargetProductCount defaults to 35k when unset", () => {
+  const previous = process.env.TARGET_PRODUCT_COUNT;
+  const previousSeed = process.env.SEED_PRODUCT_COUNT;
+  delete process.env.TARGET_PRODUCT_COUNT;
+  delete process.env.SEED_PRODUCT_COUNT;
+  assert.equal(readTargetProductCount(), 35_000);
+  if (previous === undefined) {
+    delete process.env.TARGET_PRODUCT_COUNT;
+  } else {
+    process.env.TARGET_PRODUCT_COUNT = previous;
+  }
+  if (previousSeed === undefined) {
+    delete process.env.SEED_PRODUCT_COUNT;
+  } else {
+    process.env.SEED_PRODUCT_COUNT = previousSeed;
+  }
+});
+
 test("readTargetProductCount caps at MAX_CATALOG_PRODUCTS", () => {
   const previous = process.env.TARGET_PRODUCT_COUNT;
   process.env.TARGET_PRODUCT_COUNT = "999999999";

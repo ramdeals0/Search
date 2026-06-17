@@ -2,6 +2,8 @@
 
 export const MAX_CATALOG_PRODUCTS = 80_000_000;
 
+export const DEFAULT_TARGET_PRODUCT_COUNT = 35_000;
+
 const DEFAULT_IN_MEMORY_THRESHOLD = isRailwayRuntime() ? 25_000 : 100_000;
 
 export const CATALOG_IN_MEMORY_THRESHOLD = readIntEnv(
@@ -54,11 +56,11 @@ function readIntEnv(name: string, fallback: number): number {
 export function readTargetProductCount(): number {
   const raw = process.env.TARGET_PRODUCT_COUNT ?? process.env.SEED_PRODUCT_COUNT;
   if (raw === undefined || raw.trim() === "") {
-    return 50_000;
+    return DEFAULT_TARGET_PRODUCT_COUNT;
   }
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed < 0) {
-    return 50_000;
+    return DEFAULT_TARGET_PRODUCT_COUNT;
   }
   return Math.min(parsed, MAX_CATALOG_PRODUCTS);
 }

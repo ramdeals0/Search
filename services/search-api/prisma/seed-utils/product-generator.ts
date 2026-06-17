@@ -26,20 +26,7 @@ import {
 } from "./random.js";
 import { enrichHeroProductCopy, generateProductCopy } from "./product-attribute-templates.js";
 import { generateProfitMetrics } from "./profit-metrics.js";
-
-const MAX_CATALOG_PRODUCTS = 80_000_000;
-
-function readTargetProductCount(): number {
-  const raw = process.env.TARGET_PRODUCT_COUNT ?? process.env.SEED_PRODUCT_COUNT;
-  if (raw === undefined || raw.trim() === "") {
-    return 50_000;
-  }
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return 50_000;
-  }
-  return Math.min(parsed, MAX_CATALOG_PRODUCTS);
-}
+import { readTargetProductCount } from "../../src/catalog/catalog-scale-config.js";
 
 export const TARGET_PRODUCT_COUNT = readTargetProductCount();
 
