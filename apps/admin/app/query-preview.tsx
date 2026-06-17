@@ -28,6 +28,8 @@ const EXPLANATION_LABELS: Record<SearchExplanationCode, string> = {
   user_category_affinity: "Category affinity",
   user_product_affinity: "Product affinity",
   merchandising_rule_applied: "Merchandising rule",
+  in_stock_boost: "In-stock boost",
+  profit_margin_boost: "Profit margin boost",
   zero_results_semantic_recovery: "Semantic recovery",
   personalization_rerank: "Personalization rerank",
 };
