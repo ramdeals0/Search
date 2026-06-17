@@ -11,6 +11,7 @@ import type {
 } from "@retailer-search/shared-types";
 import { getAuthHeaders } from "./lib/auth-headers";
 import { getSearchApiUrl } from "./lib/search-api-url";
+import { RankingModeBadge } from "./components/ranking-mode-badge";
 
 const PROVIDER_OPTIONS: EmbeddingsProviderName[] = ["mock", "openai", "openrouter"];
 
@@ -57,6 +58,43 @@ function jobProgressPercent(job: EmbeddingJobDto): number {
     100,
     Math.round((job.processedProducts / job.totalProducts) * 100),
   );
+}
+
+function formatJobTimestamp(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toLocaleString();
+}
+
+function formatJobTiming(job: EmbeddingJobDto): string | null {
+  const started = formatJobTimestamp(job.startedAt);
+  const completed = formatJobTimestamp(job.completedAt);
+  const created = formatJobTimestamp(job.createdAt);
+
+  if (started && completed) {
+    return `Started ${started} · Completed ${completed}`;
+  }
+
+  if (started) {
+    return `Started ${started}`;
+  }
+
+  if (job.status === "queued" && created) {
+    return `Queued ${created}`;
+  }
+
+  if (created) {
+    return `Created ${created}`;
+  }
+
+  return null;
 }
 
 export function AiSearchSettingsPanel() {
@@ -307,6 +345,14 @@ export function AiSearchSettingsPanel() {
                 {config.enabled ? "Enabled" : "Disabled"}
               </div>
             </div>
+            {config.liveRankingMode ? (
+              <div style={{ margin: 0, gridColumn: "1 / -1" }}>
+                <RankingModeBadge
+                  mode={config.liveRankingMode}
+                  label="Live storefront ranking mode"
+                />
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -552,6 +598,12 @@ export function AiSearchSettingsPanel() {
                 {activeJob.status}
               </span>
             </p>
+            {(() => {
+              const timing = formatJobTiming(activeJob);
+              return timing ? (
+                <p style={{ margin: "0 0 0.5rem", fontSize: 11, color: "#64748b" }}>{timing}</p>
+              ) : null;
+            })()}
             <div
               style={{
                 height: 6,
@@ -588,28 +640,43 @@ export function AiSearchSettingsPanel() {
                 gap: "0.35rem",
               }}
             >
-              {jobs.map((job) => (
-                <li
-                  key={job.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: "0.75rem",
-                    fontSize: 12,
-                    color: "var(--forge-text-muted)",
-                  }}
-                >
-                  <span>
-                    {job.jobType} · {job.processedProducts.toLocaleString()}/
-                    {job.totalProducts.toLocaleString()} products
-                    {job.failedProducts > 0 ? ` · ${job.failedProducts} failed` : ""}
-                    {job.errorMessage ? ` · ${job.errorMessage}` : ""}
-                  </span>
-                  <span style={{ color: jobStatusColor(job.status), fontWeight: 600 }}>
-                    {job.status}
-                  </span>
-                </li>
-              ))}
+              {jobs.map((job) => {
+                const timing = formatJobTiming(job);
+                return (
+                  <li
+                    key={job.id}
+                    style={{
+                      display: "grid",
+                      gap: "0.2rem",
+                      padding: "0.45rem 0",
+                      borderBottom: "1px solid #e2e8f0",
+                      fontSize: 12,
+                      color: "var(--forge-text-muted)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: "0.75rem",
+                      }}
+                    >
+                      <span>
+                        {job.jobType} · {job.processedProducts.toLocaleString()}/
+                        {job.totalProducts.toLocaleString()} products
+                        {job.failedProducts > 0 ? ` · ${job.failedProducts} failed` : ""}
+                        {job.errorMessage ? ` · ${job.errorMessage}` : ""}
+                      </span>
+                      <span style={{ color: jobStatusColor(job.status), fontWeight: 600 }}>
+                        {job.status}
+                      </span>
+                    </div>
+                    {timing ? (
+                      <span style={{ fontSize: 11, color: "#64748b" }}>{timing}</span>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         ) : null}

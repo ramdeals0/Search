@@ -2985,20 +2985,46 @@ app.get("/api/v1/admin/query-preview", async (req, res) => {
     "staging",
   );
 
-  const products = await getSearchProductCatalog();
-  const result = searchProducts(
-    products,
-    {
-      query: parsed.data.query,
-      page: 1,
-      pageSize: parsed.data.pageSize,
-    },
-    { rules: getActiveMerchandisingRules(previewEnvironment), debug: true },
-  );
+  await ensureProductCatalogLoaded();
+  const largeCatalog = isLargeCatalogMode();
+  const products = largeCatalog ? [] : await getSearchProductCatalog();
+  const rules = getActiveMerchandisingRules(previewEnvironment);
+  const aiBaseConfig = await getAiRankingConfig();
+  const pipeline = getSearchPipelineOptions();
+  const request = {
+    query: parsed.data.query,
+    page: 1,
+    pageSize: parsed.data.pageSize,
+  };
+
+  let largeCatalogCandidates: ProductDocument[] | undefined;
+  if (largeCatalog) {
+    largeCatalogCandidates = await fetchSearchCandidatesFromDatabase({
+      query: request.query,
+    });
+  }
+
+  const result = largeCatalog
+    ? await searchLargeCatalog(request, {
+        candidates: largeCatalogCandidates,
+        rules,
+        debug: true,
+        ...pipeline,
+        config: aiBaseConfig,
+        useHybrid: true,
+      })
+    : await executeHybridRankingPipeline(products, request, {
+        rules,
+        debug: true,
+        ...pipeline,
+        config: aiBaseConfig,
+      });
 
   const response: QueryPreviewResponseDto = {
     query: parsed.data.query,
     total: result.totalHits,
+    rankingMode: result.rankingMode,
+    aiRankingDebug: result.aiRankingDebug as QueryPreviewResponseDto["aiRankingDebug"],
     appliedRuleNames: result.appliedRuleNames ?? [],
     hits: result.hits.map((hit) => ({
       id: hit.id,

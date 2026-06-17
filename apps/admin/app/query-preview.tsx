@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   AiQueryPreviewResponseDto,
+  AiRankingConfigDto,
   AiSearchPreviewMode,
   SearchExplanationCode,
 } from "@retailer-search/shared-types";
 import { getAuthHeaders } from "./lib/auth-headers";
 import { buildSearchApiUrl } from "./lib/search-api-url";
+import { RankingModeBadge } from "./components/ranking-mode-badge";
 import { RankingScoreBreakdown } from "./ranking-score-breakdown";
 
 const PREVIEW_MODE_OPTIONS: Array<{ value: AiSearchPreviewMode; label: string }> = [
@@ -63,8 +65,26 @@ export function QueryPreview() {
   const [previewMode, setPreviewMode] = useState<AiSearchPreviewMode>("hybrid");
   const [sessionId, setSessionId] = useState("");
   const [preview, setPreview] = useState<AiQueryPreviewResponseDto | null>(null);
+  const [liveRankingMode, setLiveRankingMode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(
+          buildSearchApiUrl("/api/v1/admin/ai-search/config").toString(),
+          { headers: getAuthHeaders("none"), cache: "no-store" },
+        );
+        if (response.ok) {
+          const config = (await response.json()) as AiRankingConfigDto;
+          setLiveRankingMode(config.liveRankingMode ?? null);
+        }
+      } catch {
+        // Non-blocking; preview still works without live mode badge.
+      }
+    })();
+  }, []);
 
   const runPreview = async () => {
     const trimmed = query.trim();
@@ -112,6 +132,12 @@ export function QueryPreview() {
       }}
     >
       <h2 style={{ margin: "0 0 1rem", fontSize: "1.1rem" }}>Query preview</h2>
+
+      {liveRankingMode ? (
+        <div style={{ marginBottom: "1rem" }}>
+          <RankingModeBadge mode={liveRankingMode} label="Live storefront ranking mode" />
+        </div>
+      ) : null}
 
       <div
         style={{
@@ -201,8 +227,16 @@ export function QueryPreview() {
             {preview.total} result{preview.total === 1 ? "" : "s"} for{" "}
             <strong>{preview.query}</strong>
             {" · "}
-            mode <strong>{preview.previewMode}</strong>
+            preview mode <strong>{preview.previewMode}</strong>
           </p>
+
+          <div style={{ marginBottom: "0.75rem" }}>
+            <RankingModeBadge
+              mode={preview.rankingMode ?? preview.aiRankingDebug?.rankingMode}
+              label="Result ranking mode"
+              compact
+            />
+          </div>
 
           {preview.appliedRuleNames.length > 0 && (
             <p style={{ margin: "0 0 0.75rem", fontSize: 13, color: "#64748b" }}>

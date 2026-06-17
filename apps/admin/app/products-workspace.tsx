@@ -8,6 +8,7 @@ import type {
 } from "@retailer-search/shared-types";
 
 import { RankingScoreBreakdown } from "./ranking-score-breakdown";
+import { RankingModeBadge } from "./components/ranking-mode-badge";
 
 interface ProductsWorkspaceProps {
   insights: CatalogAnalyticsInsightsDto;
@@ -134,6 +135,11 @@ export function ProductsWorkspace({
               {preview.total} result{preview.total === 1 ? "" : "s"} for{" "}
               <strong style={{ color: "var(--forge-text)" }}>{preview.query}</strong>
             </p>
+            {preview.rankingMode ? (
+              <div style={{ marginBottom: "0.75rem" }}>
+                <RankingModeBadge mode={preview.rankingMode} label="Ranking mode" compact />
+              </div>
+            ) : null}
             {preview.total === 0 ? (
               <p style={{ margin: "0 0 0.75rem", fontSize: 14, color: "var(--forge-text-subtle)" }}>
                 No matching products. Try <strong>cordless drill</strong>,{" "}

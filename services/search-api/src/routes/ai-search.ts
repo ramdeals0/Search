@@ -13,6 +13,7 @@ import {
   resolvePreviewModeConfig,
   updateAiRankingConfig,
 } from "../ai-search/ai-ranking-config-store.js";
+import { resolveLiveRankingMode } from "../ai-search/live-ranking-mode.js";
 import {
   getEmbeddingCoverageSummary,
   getEmbeddingJob,
@@ -93,7 +94,11 @@ export function registerAiSearchRoutes(app: Express, deps: AiSearchRouteDeps): v
     if (!user) {
       return;
     }
-    const body: AiRankingConfigDto = await getAiRankingConfig();
+    const config = await getAiRankingConfig();
+    const body: AiRankingConfigDto = {
+      ...config,
+      liveRankingMode: resolveLiveRankingMode(config),
+    };
     res.json(body);
   });
 
@@ -113,7 +118,10 @@ export function registerAiSearchRoutes(app: Express, deps: AiSearchRouteDeps): v
       userId: user.id,
       email: user.email,
     });
-    res.json(body);
+    res.json({
+      ...body,
+      liveRankingMode: resolveLiveRankingMode(body),
+    });
   });
 
   app.get("/api/v1/admin/ai-search/embedding-jobs", async (req, res) => {
@@ -221,6 +229,7 @@ export function registerAiSearchRoutes(app: Express, deps: AiSearchRouteDeps): v
     const body: AiQueryPreviewResponseDto = {
       query: parsed.data.query,
       previewMode: parsed.data.previewMode,
+      rankingMode: result.rankingMode as AiQueryPreviewResponseDto["rankingMode"],
       total: result.totalHits,
       appliedRuleNames: result.appliedRuleNames ?? [],
       aiRankingDebug: result.aiRankingDebug,

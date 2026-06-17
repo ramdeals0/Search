@@ -10,6 +10,12 @@ export type AiSearchPreviewMode =
   | "hybrid_personalization"
   | "semantic_rescue";
 
+export type LiveRankingMode =
+  | "lexical"
+  | "hybrid"
+  | "hybrid_personalization"
+  | "hybrid_rerank";
+
 export type SearchExplanationCode =
   | "lexical_match"
   | "semantic_match"
@@ -40,6 +46,8 @@ export interface AiRankingConfigDto {
   personalizationDecayHalfLifeDays: number;
   embeddingBatchSize: number;
   productEmbeddingsEnabled: boolean;
+  /** Effective ranking mode for live storefront search (computed server-side). */
+  liveRankingMode?: LiveRankingMode;
   updatedAt?: ISODateString;
   updatedByUserId?: string;
 }
@@ -154,6 +162,7 @@ export interface AiQueryPreviewRequestDto {
 export interface AiQueryPreviewResponseDto {
   query: string;
   previewMode: AiSearchPreviewMode;
+  rankingMode?: AiSearchPreviewMode | LiveRankingMode;
   total: number;
   appliedRuleNames: string[];
   aiRankingDebug?: AiRankingDebugDto;

@@ -76,6 +76,7 @@ export type {
   ExperimentArmAiConfigDto,
   ExtendedRankingDebugDto,
   SearchExplanationCode,
+  LiveRankingMode,
   TriggerEmbeddingJobRequestDto,
   UpdateAiRankingConfigRequestDto,
 } from "./ai-search.js";
@@ -441,6 +442,8 @@ export interface QueryPreviewHitDto {
 export interface QueryPreviewResponseDto {
   query: string;
   total: number;
+  rankingMode?: string;
+  aiRankingDebug?: import("./ai-search.js").AiRankingDebugDto;
   appliedRuleNames: string[];
   hits: QueryPreviewHitDto[];
 }
