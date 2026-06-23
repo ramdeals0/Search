@@ -15,7 +15,7 @@ import {
   getDemoRuleCounts,
 } from "./seed-data/search-rules.js";
 import { generateProductCatalog, generateSimpleProductBatch, summarizeCatalog, TARGET_PRODUCT_COUNT } from "./seed-utils/product-generator.js";
-import { seedCatalogTables, seedLargeCatalogTables } from "./seed-utils/catalog-db.js";
+import { seedCatalogTables, seedLargeCatalogTables, purgeAllProductCatalogData } from "./seed-utils/catalog-db.js";
 import { buildWorkflowSeedBundle } from "./seed-utils/workflow-generator.js";
 import { DEMO_RNG_SEED } from "./seed-utils/random.js";
 
@@ -43,9 +43,7 @@ async function clearDemoData(): Promise<void> {
   await prisma.approvalRequest.deleteMany({ where: { id: { startsWith: "approval-demo-" } } });
   await prisma.auditTrailEntry.deleteMany({ where: { id: { startsWith: "audit-demo-" } } });
   await prisma.systemConfig.deleteMany({ where: { key: { startsWith: "demo." } } });
-  await prisma.product.deleteMany();
-  await prisma.category.deleteMany();
-  await prisma.brand.deleteMany();
+  await purgeAllProductCatalogData(prisma);
 }
 
 async function seedUsers(): Promise<void> {

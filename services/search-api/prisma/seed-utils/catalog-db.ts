@@ -39,12 +39,21 @@ function chunk<T>(items: T[], size: number): T[][] {
   return batches;
 }
 
-export async function clearCatalogTables(
+/** Remove all catalog products and related vector/index state from the database. */
+export async function purgeAllProductCatalogData(
   prisma: PrismaClient,
 ): Promise<void> {
+  await prisma.embeddingJob.deleteMany();
+  await prisma.productEmbedding.deleteMany();
   await prisma.product.deleteMany();
   await prisma.category.deleteMany();
   await prisma.brand.deleteMany();
+}
+
+export async function clearCatalogTables(
+  prisma: PrismaClient,
+): Promise<void> {
+  await purgeAllProductCatalogData(prisma);
 }
 
 async function ensureDefaultCatalogRecord(

@@ -66,7 +66,7 @@ For production-scale ingestion (millions+), use your ETL pipeline with batched `
 | `CATALOG_DB_BATCH_SIZE` | 1000 | Embedding job / DB iteration batch size |
 | `CATALOG_VECTOR_SEARCH_LIMIT` | 500 | Max semantic hits from pgvector |
 | `CATALOG_SEED_BATCH_SIZE` | 2000 | Products per seed insert batch |
-| `TARGET_PRODUCT_COUNT` | 35000 | Demo seed size (max 80M) |
+| `TARGET_PRODUCT_COUNT` | 20000 | Demo seed size (max 80M) |
 
 ## Operational notes
 
