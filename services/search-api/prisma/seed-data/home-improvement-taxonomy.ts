@@ -17,7 +17,14 @@ export type AttributeTemplateKey =
   | "outdoor_power"
   | "storage"
   | "smart_home"
-  | "safety";
+  | "safety"
+  | "pet_supply"
+  | "farm_livestock"
+  | "automotive"
+  | "fishing"
+  | "workwear"
+  | "grocery"
+  | "sporting_outdoor";
 
 export interface LeafCategory {
   id: string;

@@ -3,6 +3,7 @@ import type {
   LeafCategory,
 } from "../seed-data/home-improvement-taxonomy.js";
 import { LEAF_SEARCH_KEYWORDS } from "../seed-data/product-templates.js";
+import { FLEET_FARM_LEAF_KEYWORDS } from "../seed-data/fleet-farm-product-templates.js";
 import type { SyntheticBrand } from "../seed-data/brands.js";
 import type { SeededRng } from "./random.js";
 
@@ -14,6 +15,7 @@ export interface ProductCopyBundle {
   aiSearchBlurb: string;
   useCases: string[];
   searchCriteria: string[];
+  features: string[];
 }
 
 export interface HeroCopyInput {
@@ -154,7 +156,32 @@ const TEMPLATE_SHOPPER_PHRASES: Record<AttributeTemplateKey, string[]> = {
     "workshop protection",
     "ANSI rated safety gear",
   ],
+  pet_supply: ["dog food", "cat food", "pet treats", "wild bird seed"],
+  farm_livestock: ["livestock feed", "cattle mineral", "poultry feed", "farm fencing"],
+  automotive: ["motor oil", "oil filter", "car battery", "trailer hitch"],
+  fishing: ["fishing rod", "spinning reel", "tackle box", "fishing line"],
+  workwear: ["work boots", "carhartt jacket", "work jeans", "insulated bibs"],
+  grocery: ["beef jerky", "snack mix", "bottled water", "candy"],
+  sporting_outdoor: ["trail camera", "rifle scope", "cooler", "camping gear"],
 };
+
+function buildFeatureList(input: {
+  leaf: LeafCategory;
+  specs: Record<string, string | number | boolean>;
+  useCases: string[];
+}): string[] {
+  const specFeatures = Object.entries(input.specs)
+    .filter(([key]) => !["productType", "department", "category", "subcategory"].includes(key))
+    .slice(0, 8)
+    .map(([key, value]) => `${key.replace(/([A-Z])/g, " $1").trim()}: ${value}`);
+  const useCaseFeatures = input.useCases.slice(0, 3).map((useCase) => `Built for ${useCase}`);
+  return [
+    `Fleet Farm ${input.leaf.department} assortment`,
+    `Category: ${input.leaf.category} > ${input.leaf.subcategory}`,
+    ...specFeatures,
+    ...useCaseFeatures,
+  ];
+}
 
 function buildAiSearchBlurb(input: {
   title: string;
@@ -203,7 +230,8 @@ function buildSearchCriteria(input: {
     }
     return [String(value)];
   });
-  const leafKeywords = LEAF_SEARCH_KEYWORDS[input.leaf.id] ?? [];
+  const leafKeywords =
+    LEAF_SEARCH_KEYWORDS[input.leaf.id] ?? FLEET_FARM_LEAF_KEYWORDS[input.leaf.id] ?? [];
 
   return [
     input.leaf.productType.toLowerCase(),
@@ -406,6 +434,67 @@ function generateSpecs(
         touchscreen: rng.bool(0.35),
         packCount: rng.pick([1, 2, 3, 6]),
       };
+    case "pet_supply":
+      return {
+        ...base,
+        animalType: rng.pick(["dog", "cat", "wild bird", "small animal"]),
+        lifeStage: rng.pick(["puppy", "adult", "senior", "all life stages"]),
+        bagWeight: rng.pick(["4 lb", "15 lb", "30 lb", "40 lb"]),
+        flavor: rng.pick(["chicken", "beef", "salmon", "mixed"]),
+        grainFree: rng.bool(0.4),
+      };
+    case "farm_livestock":
+      return {
+        ...base,
+        species: rng.pick(["cattle", "horse", "poultry", "goat", "sheep"]),
+        form: rng.pick(["pellets", "block", "loose mineral", "bagged feed"]),
+        bagWeight: rng.pick(["40 lb", "50 lb", "80 lb"]),
+        medicated: rng.bool(0.15),
+        organic: rng.bool(0.2),
+      };
+    case "automotive":
+      return {
+        ...base,
+        viscosity: rng.pick(["5W-30", "10W-30", "15W-40", "SAE 30"]),
+        containerSize: rng.pick(["1 qt", "5 qt", "1 gal", "2 gal"]),
+        synthetic: rng.bool(0.55),
+        vehicleType: rng.pick(["car", "truck", "farm equipment", "ATV"]),
+        coldWeatherRated: rng.bool(0.35),
+      };
+    case "fishing":
+      return {
+        ...base,
+        rodLength: rng.pick(["6 ft", "6 ft 6 in", "7 ft", "7 ft 6 in"]),
+        power: rng.pick(["ultralight", "medium", "medium-heavy", "heavy"]),
+        lineWeight: rng.pick(["4-8 lb", "6-12 lb", "10-20 lb"]),
+        species: rng.pick(["walleye", "bass", "panfish", "northern pike"]),
+        freshwater: true,
+      };
+    case "workwear":
+      return {
+        ...base,
+        size: rng.pick(["S", "M", "L", "XL", "2XL"]),
+        material: rng.pick(["cotton duck", "denim", "polyester blend", "fleece"]),
+        insulated: rng.bool(0.45),
+        steelToe: rng.bool(0.35),
+        waterproof: rng.bool(0.3),
+      };
+    case "grocery":
+      return {
+        ...base,
+        packSize: rng.pick(["single", "6-pack", "12-pack", "family size"]),
+        flavor: rng.pick(["original", "smoky", "honey", "spicy"]),
+        shelfStable: true,
+        midwestFavorite: true,
+      };
+    case "sporting_outdoor":
+      return {
+        ...base,
+        activity: rng.pick(["hunting", "fishing", "camping", "hiking", "target shooting"]),
+        weatherRated: rng.pick(["waterproof", "water-resistant", "all-season"]),
+        magnification: rng.pick(["none", "3-9x40", "4-12x50", "10x42"]),
+        batteryPowered: rng.bool(0.5),
+      };
     default:
       return base;
   }
@@ -545,6 +634,55 @@ const USE_CASES_BY_TEMPLATE: Record<AttributeTemplateKey, string[]> = {
     "landscaping protection",
     "warehouse tasks",
   ],
+  pet_supply: [
+    "daily pet feeding",
+    "backyard bird watching",
+    "small animal care",
+    "training rewards",
+    "farm dog nutrition",
+  ],
+  farm_livestock: [
+    "cattle herd nutrition",
+    "horse barn feeding",
+    "backyard poultry",
+    "pasture management",
+    "winter livestock care",
+  ],
+  automotive: [
+    "oil change service",
+    "farm truck maintenance",
+    "winter driving prep",
+    "trailer towing",
+    "fleet vehicle upkeep",
+  ],
+  fishing: [
+    "walleye opener",
+    "bass fishing weekends",
+    "ice fishing season",
+    "shore fishing trips",
+    "tackle organization",
+  ],
+  workwear: [
+    "farm chores",
+    "construction jobs",
+    "cold weather work",
+    "weekend projects",
+    "warehouse shifts",
+  ],
+  grocery: [
+    "road trip snacks",
+    "hunting camp pantry",
+    "job site lunch",
+    "family movie night",
+    "tailgate treats",
+  ],
+  sporting_outdoor: [
+    "deer season prep",
+    "camping weekends",
+    "trail scouting",
+    "target practice",
+    "outdoor recreation",
+  ],
 };
 
 export function generateProductCopy(input: {
@@ -564,7 +702,8 @@ export function generateProductCopy(input: {
   const useCases = input.rng.shuffle(USE_CASES_BY_TEMPLATE[input.leaf.attributeTemplate]).slice(0, 4);
   const audience = input.leaf.contractorOriented ? "professional contractors" : "DIY homeowners";
   const shopperPhrases = TEMPLATE_SHOPPER_PHRASES[input.leaf.attributeTemplate] ?? [];
-  const leafKeywords = LEAF_SEARCH_KEYWORDS[input.leaf.id] ?? [];
+  const leafKeywords =
+    LEAF_SEARCH_KEYWORDS[input.leaf.id] ?? FLEET_FARM_LEAF_KEYWORDS[input.leaf.id] ?? [];
   const searchCriteria = buildSearchCriteria({
     leaf: input.leaf,
     brand: input.brand,
@@ -609,6 +748,8 @@ export function generateProductCopy(input: {
     `Specifications include ${specSummary(specs)}.`,
   ].join(" ");
 
+  const features = buildFeatureList({ leaf: input.leaf, specs, useCases });
+
   return {
     specs,
     shortDescription,
@@ -617,6 +758,7 @@ export function generateProductCopy(input: {
     aiSearchBlurb,
     useCases,
     searchCriteria,
+    features,
   };
 }
 
@@ -669,6 +811,11 @@ export function enrichHeroProductCopy(input: {
   });
 
   const description = [shortDescription, longDescription].join(" ");
+  const features = buildFeatureList({
+    leaf: input.leaf,
+    specs: input.hero.specs,
+    useCases,
+  });
 
   return {
     specs: input.hero.specs,
@@ -678,5 +825,6 @@ export function enrichHeroProductCopy(input: {
     aiSearchBlurb,
     useCases,
     searchCriteria,
+    features,
   };
 }

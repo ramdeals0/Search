@@ -2,7 +2,7 @@
 
 export const MAX_CATALOG_PRODUCTS = 80_000_000;
 
-export const DEFAULT_TARGET_PRODUCT_COUNT = 20_000;
+export const DEFAULT_TARGET_PRODUCT_COUNT = 30_000;
 
 const DEFAULT_IN_MEMORY_THRESHOLD = isRailwayRuntime() ? 25_000 : 100_000;
 

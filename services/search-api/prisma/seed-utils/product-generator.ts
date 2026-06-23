@@ -1,4 +1,4 @@
-import type { ProductDocument } from "@retailer-search/shared-types";
+import type { HeroProductTemplate, VariantFamilyTemplate } from "../seed-data/product-templates.js";
 import {
   HOME_IMPROVEMENT_TAXONOMY,
   getLeafCategoryById,
@@ -12,8 +12,6 @@ import {
 import {
   HERO_PRODUCT_TEMPLATES,
   VARIANT_FAMILY_TEMPLATES,
-  type HeroProductTemplate,
-  type VariantFamilyTemplate,
 } from "../seed-data/product-templates.js";
 import {
   createSeededRng,
@@ -29,6 +27,20 @@ import { generateProfitMetrics } from "./profit-metrics.js";
 import { readTargetProductCount } from "../../src/catalog/catalog-scale-config.js";
 
 export const TARGET_PRODUCT_COUNT = readTargetProductCount();
+
+export interface ProductCatalogSeedConfig {
+  taxonomy: LeafCategory[];
+  heroes: HeroProductTemplate[];
+  variantFamilies: VariantFamilyTemplate[];
+  pickBrand: (leafId: string, rngPick: <T>(items: readonly T[]) => T) => SyntheticBrand;
+  getLeafById?: (id: string) => LeafCategory | undefined;
+  targetCount?: number;
+  retailer?: {
+    name: string;
+    website: string;
+    catalogLabel: string;
+  };
+}
 
 export interface GeneratedCatalog {
   products: ProductDocument[];
@@ -50,6 +62,7 @@ interface InternalProduct extends ProductDocument {
     keywords: string[];
     useCases?: string[];
     searchCriteria?: string[];
+    features?: string[];
     department: string;
     productType: string;
     isHero?: boolean;
@@ -159,8 +172,45 @@ function attachProfitMetrics(
   };
 }
 
-function mapHeroToProduct(hero: HeroProductTemplate, rng: SeededRng): InternalProduct {
-  const leaf = getLeafCategoryById(hero.leafId);
+function applyRetailerMetadata(
+  product: InternalProduct,
+  retailer?: ProductCatalogSeedConfig["retailer"],
+): InternalProduct {
+  if (!retailer) {
+    return product;
+  }
+  return {
+    ...product,
+    attributes: {
+      ...product.attributes,
+      retailer: retailer.name,
+      retailerWebsite: retailer.website,
+      catalogLabel: retailer.catalogLabel,
+      features: product.attributes.features ?? copyFeaturesFromDescription(product),
+    },
+  };
+}
+
+function copyFeaturesFromDescription(product: InternalProduct): string[] {
+  const existing = product.attributes.features;
+  if (Array.isArray(existing)) {
+    return existing.map(String);
+  }
+  return product.description.split(".").map((part) => part.trim()).filter((part) => part.length > 10).slice(0, 5);
+}
+
+function heroIndexFromId(heroId: string): number {
+  const digits = heroId.match(/(\d+)$/);
+  return digits ? Number.parseInt(digits[1]!, 10) : 1;
+}
+
+function mapHeroToProduct(
+  hero: HeroProductTemplate,
+  rng: SeededRng,
+  pickBrand: ProductCatalogSeedConfig["pickBrand"],
+  getLeafById: (id: string) => LeafCategory | undefined,
+): InternalProduct {
+  const leaf = getLeafById(hero.leafId);
   if (!leaf) {
     throw new Error(`Hero references unknown leaf ${hero.leafId}`);
   }
@@ -173,7 +223,7 @@ function mapHeroToProduct(hero: HeroProductTemplate, rng: SeededRng): InternalPr
   return attachProfitMetrics(
     {
       id: hero.id,
-      sku: buildSku(leaf, Number(hero.id.replace("prod-hero-", ""))),
+      sku: buildSku(leaf, heroIndexFromId(hero.id)),
       title: hero.title,
       brand: hero.brand,
       category: leaf.department,
@@ -197,6 +247,7 @@ function mapHeroToProduct(hero: HeroProductTemplate, rng: SeededRng): InternalPr
         keywords: [...hero.keywords, ...copy.searchCriteria.slice(0, 8)],
         useCases: copy.useCases,
         searchCriteria: copy.searchCriteria,
+        features: copy.features,
         department: leaf.department,
         productType: leaf.productType,
         isHero: true,
@@ -231,6 +282,7 @@ function mapVariantProduct(input: {
   inventory: number;
   popularityScore: number;
   rng: SeededRng;
+  pickBrand: ProductCatalogSeedConfig["pickBrand"];
 }): InternalProduct {
   const title = `${input.family.baseTitle} - ${input.suffix}`;
   const slug = slugify(title);
@@ -272,6 +324,7 @@ function mapVariantProduct(input: {
         keywords: [...input.family.keywords, ...copy.searchCriteria],
         useCases: copy.useCases,
         searchCriteria: copy.searchCriteria,
+        features: copy.features,
         department: input.leaf.department,
         productType: input.leaf.productType,
         isContractorGrade: input.leaf.contractorOriented ?? false,
@@ -297,6 +350,7 @@ function mapSimpleProduct(input: {
   brand: SyntheticBrand;
   productIndex: number;
   rng: SeededRng;
+  pickBrand: ProductCatalogSeedConfig["pickBrand"];
 }): InternalProduct {
   const adjective = input.rng.pick(TITLE_ADJECTIVES);
   const descriptor = input.rng.pick(TITLE_DESCRIPTORS);
@@ -344,6 +398,7 @@ function mapSimpleProduct(input: {
         keywords: copy.searchCriteria,
         useCases: copy.useCases,
         searchCriteria: copy.searchCriteria,
+        features: copy.features,
         department: input.leaf.department,
         productType: input.leaf.productType,
         isContractorGrade: input.leaf.contractorOriented ?? false,
@@ -369,21 +424,23 @@ function expandVariantFamilies(
   rng: SeededRng,
   startIndex: number,
   targetVariantProducts: number,
+  config: ProductCatalogSeedConfig,
 ): { products: InternalProduct[]; nextIndex: number } {
+  const getLeafById = config.getLeafById ?? getLeafCategoryById;
   const products: InternalProduct[] = [];
   let productIndex = startIndex;
   let generated = 0;
   let familyCursor = 0;
 
   while (generated < targetVariantProducts) {
-    const family = VARIANT_FAMILY_TEMPLATES[familyCursor % VARIANT_FAMILY_TEMPLATES.length]!;
-    const leaf = getLeafCategoryById(family.leafId);
+    const family = config.variantFamilies[familyCursor % config.variantFamilies.length]!;
+    const leaf = getLeafById(family.leafId);
     if (!leaf) {
       familyCursor += 1;
       continue;
     }
 
-    const brand = pickBrandForLeaf(leaf.id, (items) => rng.pick(items));
+    const brand = config.pickBrand(leaf.id, (items) => rng.pick(items));
     const basePrice =
       rng.float(leaf.priceRange[0], leaf.priceRange[1]) * tierPriceMultiplier(brand.tier);
 
@@ -399,20 +456,24 @@ function expandVariantFamilies(
           : Math.max(1, Math.round(inventoryFromStatus(inventoryStatus, rng) * variant.inventoryWeight * 0.35));
 
       products.push(
-        mapVariantProduct({
-          leaf,
-          brand,
-          family,
-          variantIndex,
-          productIndex,
-          suffix: variant.suffix,
-          specs: variant.specs,
-          price: formatMoney(basePrice * variant.priceMultiplier),
-          inventoryStatus,
-          inventory,
-          popularityScore: rng.int(45, 92),
-          rng,
-        }),
+        applyRetailerMetadata(
+          mapVariantProduct({
+            leaf,
+            brand,
+            family,
+            variantIndex,
+            productIndex,
+            suffix: variant.suffix,
+            specs: variant.specs,
+            price: formatMoney(basePrice * variant.priceMultiplier),
+            inventoryStatus,
+            inventory,
+            popularityScore: rng.int(45, 92),
+            rng,
+            pickBrand: config.pickBrand,
+          }),
+          config.retailer,
+        ),
       );
 
       productIndex += 1;
@@ -429,21 +490,26 @@ function generateSimpleProducts(
   rng: SeededRng,
   startIndex: number,
   targetSimpleProducts: number,
+  config: ProductCatalogSeedConfig,
 ): { products: InternalProduct[]; nextIndex: number } {
   const products: InternalProduct[] = [];
   let productIndex = startIndex;
-  const leaves = rng.shuffle(HOME_IMPROVEMENT_TAXONOMY);
+  const leaves = rng.shuffle(config.taxonomy);
 
   for (let count = 0; count < targetSimpleProducts; count += 1) {
     const leaf = leaves[count % leaves.length]!;
-    const brand = pickBrandForLeaf(leaf.id, (items) => rng.pick(items));
+    const brand = config.pickBrand(leaf.id, (items) => rng.pick(items));
     products.push(
-      mapSimpleProduct({
-        leaf,
-        brand,
-        productIndex,
-        rng,
-      }),
+      applyRetailerMetadata(
+        mapSimpleProduct({
+          leaf,
+          brand,
+          productIndex,
+          rng,
+          pickBrand: config.pickBrand,
+        }),
+        config.retailer,
+      ),
     );
     productIndex += 1;
   }
@@ -451,25 +517,42 @@ function generateSimpleProducts(
   return { products, nextIndex: productIndex };
 }
 
-export function generateProductCatalog(
+const HOME_IMPROVEMENT_CATALOG_CONFIG: ProductCatalogSeedConfig = {
+  taxonomy: HOME_IMPROVEMENT_TAXONOMY,
+  heroes: HERO_PRODUCT_TEMPLATES,
+  variantFamilies: VARIANT_FAMILY_TEMPLATES,
+  pickBrand: pickBrandForLeaf,
+  getLeafById: getLeafCategoryById,
+};
+
+export function generateProductCatalogFromConfig(
+  config: ProductCatalogSeedConfig,
   seed: number = DEMO_RNG_SEED,
 ): GeneratedCatalog {
   const rng = createSeededRng(seed);
-  const heroes = HERO_PRODUCT_TEMPLATES.map((hero) => mapHeroToProduct(hero, rng));
+  const targetCount = config.targetCount ?? TARGET_PRODUCT_COUNT;
+  const getLeafById = config.getLeafById ?? getLeafCategoryById;
 
-  const remaining = TARGET_PRODUCT_COUNT - heroes.length;
+  const heroes = config.heroes.map((hero) =>
+    applyRetailerMetadata(
+      mapHeroToProduct(hero, rng, config.pickBrand, getLeafById),
+      config.retailer,
+    ),
+  );
+
+  const remaining = targetCount - heroes.length;
   const targetVariantProducts = Math.round(remaining * 0.35);
   const targetSimpleProducts = remaining - targetVariantProducts;
 
   let nextIndex = heroes.length + 1;
-  const variantResult = expandVariantFamilies(rng, nextIndex, targetVariantProducts);
+  const variantResult = expandVariantFamilies(rng, nextIndex, targetVariantProducts, config);
   nextIndex = variantResult.nextIndex;
 
-  const simpleResult = generateSimpleProducts(rng, nextIndex, targetSimpleProducts);
+  const simpleResult = generateSimpleProducts(rng, nextIndex, targetSimpleProducts, config);
 
   const products = [...heroes, ...variantResult.products, ...simpleResult.products].slice(
     0,
-    TARGET_PRODUCT_COUNT,
+    targetCount,
   );
 
   return {
@@ -477,30 +560,41 @@ export function generateProductCatalog(
     heroCount: heroes.length,
     variantProductCount: variantResult.products.length,
     simpleProductCount: simpleResult.products.length,
-    variantGroupCount: VARIANT_FAMILY_TEMPLATES.length,
+    variantGroupCount: config.variantFamilies.length,
   };
+}
+
+export function generateProductCatalog(
+  seed: number = DEMO_RNG_SEED,
+): GeneratedCatalog {
+  return generateProductCatalogFromConfig(HOME_IMPROVEMENT_CATALOG_CONFIG, seed);
 }
 
 export function generateSimpleProductBatch(
   startIndex: number,
   batchSize: number,
   seed: number = DEMO_RNG_SEED,
+  config: ProductCatalogSeedConfig = HOME_IMPROVEMENT_CATALOG_CONFIG,
 ): ProductDocument[] {
   const rng = createSeededRng(seed + startIndex);
-  const leaves = HOME_IMPROVEMENT_TAXONOMY;
+  const leaves = config.taxonomy;
   const products: ProductDocument[] = [];
 
   for (let offset = 0; offset < batchSize; offset += 1) {
     const productIndex = startIndex + offset;
     const leaf = leaves[productIndex % leaves.length]!;
-    const brand = pickBrandForLeaf(leaf.id, (items) => rng.pick(items));
+    const brand = config.pickBrand(leaf.id, (items) => rng.pick(items));
     products.push(
-      mapSimpleProduct({
-        leaf,
-        brand,
-        productIndex,
-        rng,
-      }),
+      applyRetailerMetadata(
+        mapSimpleProduct({
+          leaf,
+          brand,
+          productIndex,
+          rng,
+          pickBrand: config.pickBrand,
+        }),
+        config.retailer,
+      ),
     );
   }
 

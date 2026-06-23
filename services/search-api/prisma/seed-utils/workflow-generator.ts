@@ -105,7 +105,9 @@ export function buildWorkflowSeedBundle(
   seed: number = DEMO_RNG_SEED,
 ): WorkflowSeedBundle {
   const rng = createSeededRng(seed + 99);
-  const heroIds = products.filter((p) => p.id.startsWith("prod-hero-")).map((p) => p.id);
+  const heroIds = products
+    .filter((product) => product.id.startsWith("prod-hero-") || product.id.startsWith("ff-hero-"))
+    .map((product) => product.id);
   const sampleProduct = (index: number) => products[index % products.length]!;
 
   const approvals: Prisma.ApprovalRequestCreateManyInput[] = Array.from({ length: 12 }, (_, index) => {

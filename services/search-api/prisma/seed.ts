@@ -15,7 +15,19 @@ import {
   getDemoRuleCounts,
 } from "./seed-data/search-rules.js";
 import { generateProductCatalog, generateSimpleProductBatch, summarizeCatalog, TARGET_PRODUCT_COUNT } from "./seed-utils/product-generator.js";
+import {
+  FLEET_FARM_BRANDS,
+  FLEET_FARM_TAXONOMY,
+  generateFleetFarmCatalog,
+  isFleetFarmCatalogTheme,
+  readCatalogTheme,
+} from "./seed-utils/fleet-farm-catalog.js";
 import { seedCatalogTables, seedLargeCatalogTables, purgeAllProductCatalogData } from "./seed-utils/catalog-db.js";
+import {
+  clearPlatformDemoData,
+  DEMO_API_KEY_SECRET,
+  seedPlatformTables,
+} from "./seed-utils/platform-tables-seed.js";
 import { buildWorkflowSeedBundle } from "./seed-utils/workflow-generator.js";
 import { DEMO_RNG_SEED } from "./seed-utils/random.js";
 
@@ -43,6 +55,7 @@ async function clearDemoData(): Promise<void> {
   await prisma.approvalRequest.deleteMany({ where: { id: { startsWith: "approval-demo-" } } });
   await prisma.auditTrailEntry.deleteMany({ where: { id: { startsWith: "audit-demo-" } } });
   await prisma.systemConfig.deleteMany({ where: { key: { startsWith: "demo." } } });
+  await clearPlatformDemoData(prisma);
   await purgeAllProductCatalogData(prisma);
 }
 
@@ -89,13 +102,15 @@ function writeCatalogArtifacts(products: ReturnType<typeof generateProductCatalo
 async function seedSystemConfig(
   catalog: ReturnType<typeof generateProductCatalog>,
   workflow: ReturnType<typeof buildWorkflowSeedBundle>,
+  taxonomy = HOME_IMPROVEMENT_TAXONOMY,
+  brands = SYNTHETIC_BRANDS,
 ): Promise<void> {
   const synonymMap = buildSynonymMap();
   const merchandisingRules = buildDemoMerchandisingRules();
   const entries: Array<{ key: string; value: unknown }> = [
     { key: "demo.catalog.meta", value: summarizeCatalog(catalog) },
-    { key: "demo.taxonomy.leaves", value: HOME_IMPROVEMENT_TAXONOMY },
-    { key: "demo.brands", value: SYNTHETIC_BRANDS },
+    { key: "demo.taxonomy.leaves", value: taxonomy },
+    { key: "demo.brands", value: brands },
     { key: "demo.search.synonyms.staging", value: synonymMap },
     { key: "demo.search.synonyms.live", value: synonymMap },
     { key: "demo.search.rules.staging", value: merchandisingRules },
@@ -145,6 +160,19 @@ async function seedWorkflow(workflow: ReturnType<typeof buildWorkflowSeedBundle>
   await prisma.exportJob.createMany({ data: workflow.exportJobs });
 }
 
+async function seedAllSupportingTables(
+  workflow: ReturnType<typeof buildWorkflowSeedBundle>,
+  products: ReturnType<typeof generateProductCatalog>["products"],
+  fleetFarmTheme: boolean,
+): Promise<ReturnType<typeof seedPlatformTables>> {
+  await seedWorkflow(workflow);
+  return seedPlatformTables(prisma, workflow, products, {
+    seed: DEMO_RNG_SEED,
+    productCount: TARGET_PRODUCT_COUNT,
+    fleetFarmTheme,
+  });
+}
+
 async function markDemoBootstrapComplete(): Promise<void> {
   await prisma.bootstrapState.upsert({
     where: { id: "default" },
@@ -174,11 +202,21 @@ async function markDemoBootstrapComplete(): Promise<void> {
 
 const STREAMING_SEED_THRESHOLD = 100_000;
 
+function generateCatalogForTheme(seed: number) {
+  return isFleetFarmCatalogTheme() ? generateFleetFarmCatalog(seed) : generateProductCatalog(seed);
+}
+
 async function main(): Promise<void> {
-  console.log(`Seeding synthetic home improvement demo data (seed=${DEMO_RNG_SEED})...`);
+  const catalogTheme = readCatalogTheme();
+  console.log(
+    `Seeding ${catalogTheme} demo catalog (${TARGET_PRODUCT_COUNT.toLocaleString()} products, seed=${DEMO_RNG_SEED})...`,
+  );
 
   await clearDemoData();
   await seedUsers();
+
+  const taxonomy = isFleetFarmCatalogTheme() ? FLEET_FARM_TAXONOMY : HOME_IMPROVEMENT_TAXONOMY;
+  const brands = isFleetFarmCatalogTheme() ? FLEET_FARM_BRANDS : SYNTHETIC_BRANDS;
 
   if (TARGET_PRODUCT_COUNT > STREAMING_SEED_THRESHOLD) {
     console.log(
@@ -198,8 +236,12 @@ async function main(): Promise<void> {
       variantGroupCount: 0,
     };
     const workflow = buildWorkflowSeedBundle(sampleProducts, DEMO_RNG_SEED);
-    await seedSystemConfig(catalog, workflow);
-    await seedWorkflow(workflow);
+    const platformCounts = await seedAllSupportingTables(
+      workflow,
+      sampleProducts,
+      isFleetFarmCatalogTheme(),
+    );
+    await seedSystemConfig(catalog, workflow, taxonomy, brands);
     await markDemoBootstrapComplete();
 
     console.log("Large demo seed completed.");
@@ -211,6 +253,8 @@ async function main(): Promise<void> {
           brands: catalogCounts.brands,
           categories: catalogCounts.categories,
           catalogScaleMode: "database",
+          ...platformCounts,
+          demoApiKeySecret: DEMO_API_KEY_SECRET,
         },
         null,
         2,
@@ -219,7 +263,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const catalog = generateProductCatalog(DEMO_RNG_SEED);
+  const catalog = generateCatalogForTheme(DEMO_RNG_SEED);
   if (catalog.products.length !== TARGET_PRODUCT_COUNT) {
     throw new Error(`Expected ${TARGET_PRODUCT_COUNT} products, got ${catalog.products.length}`);
   }
@@ -228,8 +272,12 @@ async function main(): Promise<void> {
   const workflow = buildWorkflowSeedBundle(catalog.products, DEMO_RNG_SEED);
 
   const catalogCounts = await seedCatalogTables(prisma, catalog.products);
-  await seedSystemConfig(catalog, workflow);
-  await seedWorkflow(workflow);
+  const platformCounts = await seedAllSupportingTables(
+    workflow,
+    catalog.products,
+    isFleetFarmCatalogTheme(),
+  );
+  await seedSystemConfig(catalog, workflow, taxonomy, brands);
   await markDemoBootstrapComplete();
 
   const ruleCounts = getDemoRuleCounts();
@@ -241,8 +289,9 @@ async function main(): Promise<void> {
     heroProducts: catalog.heroCount,
     variantProducts: catalog.variantProductCount,
     simpleProducts: catalog.simpleProductCount,
-    leafCategories: HOME_IMPROVEMENT_TAXONOMY.length,
-    syntheticBrands: SYNTHETIC_BRANDS.length,
+    leafCategories: taxonomy.length,
+    syntheticBrands: brands.length,
+    catalogTheme,
     approvals: workflow.approvals.length,
     accessReviewRuns: workflow.accessReviews.length,
     jitRequests: workflow.jitRequests.length,
@@ -255,6 +304,8 @@ async function main(): Promise<void> {
     exportJobs: workflow.exportJobs.length,
     experiments: workflow.experiments.experiments.length,
     experimentRuns: workflow.experiments.runs.length,
+    ...platformCounts,
+    demoApiKeySecret: DEMO_API_KEY_SECRET,
     ...ruleCounts,
   };
 
