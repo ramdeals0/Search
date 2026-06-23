@@ -1,6 +1,5 @@
--- Tier 1/2: API keys, persistent search analytics, product updatedAt index
-
-CREATE INDEX IF NOT EXISTS "Product_updatedAt_idx" ON "Product"("updatedAt");
+-- Tier 1/2: API keys, persistent search analytics
+-- Product_updatedAt_idx is created in postgres_baseline (Product table must exist first).
 
 CREATE TABLE "ApiKey" (
     "id" TEXT NOT NULL,

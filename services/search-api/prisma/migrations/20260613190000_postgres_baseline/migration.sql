@@ -489,6 +489,8 @@ CREATE INDEX "Product_inStock_idx" ON "Product"("inStock");
 -- CreateIndex
 CREATE INDEX "Product_title_idx" ON "Product"("title");
 
+CREATE INDEX "Product_updatedAt_idx" ON "Product"("updatedAt");
+
 -- AddForeignKey
 ALTER TABLE "Session" ADD CONSTRAINT "Session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
