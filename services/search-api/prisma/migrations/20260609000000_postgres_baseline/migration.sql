@@ -20,7 +20,7 @@ CREATE TYPE "ExportJobStatus" AS ENUM ('generated', 'failed');
 CREATE TYPE "ExportFormat" AS ENUM ('json', 'csv');
 
 -- CreateEnum
-CREATE TYPE "ExportTargetType" AS ENUM ('audit_trail', 'approvals', 'access_reviews', 'security_timeline', 'audit_review_findings');
+CREATE TYPE "ExportTargetType" AS ENUM ('audit_trail', 'approvals', 'access_reviews', 'security_timeline', 'audit_review_findings', 'soc2_audit_package', 'audit_hash_chain_report', 'api_usage_meters');
 
 -- CreateEnum
 CREATE TYPE "BootstrapStatusEnum" AS ENUM ('not_started', 'admin_created', 'security_configured', 'platform_configured', 'completed');

@@ -1,8 +1,4 @@
--- Tier 3/4: scheduled releases, rule drafts, API usage meters, export targets, key rate limits
-
-ALTER TYPE "ExportTargetType" ADD VALUE IF NOT EXISTS 'soc2_audit_package';
-ALTER TYPE "ExportTargetType" ADD VALUE IF NOT EXISTS 'audit_hash_chain_report';
-ALTER TYPE "ExportTargetType" ADD VALUE IF NOT EXISTS 'api_usage_meters';
+-- Tier 3/4: scheduled releases, rule drafts, API usage meters (enum values live in postgres_baseline)
 
 CREATE TYPE "ScheduledReleaseType" AS ENUM ('promote_snapshot', 'rollback_snapshot');
 CREATE TYPE "ScheduledReleaseStatus" AS ENUM ('pending', 'executed', 'cancelled', 'failed');

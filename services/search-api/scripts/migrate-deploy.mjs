@@ -1,6 +1,9 @@
 import { spawnSync } from "node:child_process";
 
-const FAILED_MIGRATION = "20260610120000_tier1_tier2_search_platform";
+const ROLLED_BACK_MIGRATIONS = [
+  "20260610120000_tier1_tier2_search_platform",
+  "20260610140000_tier3_tier4_platform",
+];
 
 function run(command, args, { allowFailure = false } = {}) {
   const result = spawnSync(command, args, {
@@ -15,9 +18,10 @@ function run(command, args, { allowFailure = false } = {}) {
   return result.status ?? 0;
 }
 
-// Recover from a previously failed tier1 migration (P3009) then apply pending migrations.
-run("npx", ["prisma", "migrate", "resolve", "--rolled-back", FAILED_MIGRATION], {
-  allowFailure: true,
-});
+for (const migration of ROLLED_BACK_MIGRATIONS) {
+  run("npx", ["prisma", "migrate", "resolve", "--rolled-back", migration], {
+    allowFailure: true,
+  });
+}
 
 run("npx", ["prisma", "migrate", "deploy"]);

@@ -1,7 +1,7 @@
 -- Tier 1/2: API keys, persistent search analytics
 -- Product_updatedAt_idx is created in postgres_baseline (Product table must exist first).
 
-CREATE TABLE "ApiKey" (
+CREATE TABLE IF NOT EXISTS "ApiKey" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "keyHash" TEXT NOT NULL,
@@ -21,7 +21,7 @@ CREATE UNIQUE INDEX "ApiKey_keyHash_key" ON "ApiKey"("keyHash");
 CREATE INDEX "ApiKey_tenantId_idx" ON "ApiKey"("tenantId");
 CREATE INDEX "ApiKey_enabled_idx" ON "ApiKey"("enabled");
 
-CREATE TABLE "SearchEvent" (
+CREATE TABLE IF NOT EXISTS "SearchEvent" (
     "id" TEXT NOT NULL,
     "query" TEXT NOT NULL,
     "normalizedQuery" TEXT NOT NULL,
@@ -39,7 +39,7 @@ CREATE INDEX "SearchEvent_normalizedQuery_idx" ON "SearchEvent"("normalizedQuery
 CREATE INDEX "SearchEvent_resultCount_idx" ON "SearchEvent"("resultCount");
 CREATE INDEX "SearchEvent_createdAt_idx" ON "SearchEvent"("createdAt");
 
-CREATE TABLE "SearchClickEvent" (
+CREATE TABLE IF NOT EXISTS "SearchClickEvent" (
     "id" TEXT NOT NULL,
     "query" TEXT NOT NULL,
     "normalizedQuery" TEXT NOT NULL,
