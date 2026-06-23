@@ -83,6 +83,8 @@ export const DEMO_TYPO_CORRECTIONS: Record<string, string> = {
   "drywll screws": "drywall screws",
   "smoke detecter": "smoke detector",
   "cordles drill": "cordless drill",
+  "contractar drill": "contractor drill",
+  contractar: "contractor",
   lawnmover: "lawn mower",
   "gfic outlet": "gfci outlet",
   "impct driver": "impact driver",
@@ -165,6 +167,9 @@ export function buildSynonymMap(): Record<string, string> {
     map[left] = right;
     map[right] = left;
   }
+  // One-way shopper typo aliases (do not reverse-map catalog terms).
+  map["contractar drill"] = "contractor drill";
+  map.contractar = "contractor";
   return map;
 }
 

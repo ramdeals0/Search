@@ -11,6 +11,7 @@ const PHRASE_SYNONYMS: Array<[string, string]> = [
   ["drywall screws", "sheetrock screws"],
   ["pull down faucet", "pull-down faucet"],
   ["smart thermostat", "wifi thermostat"],
+  ["contractar drill", "contractor drill"],
 ];
 
 const PHRASE_TYPO_CORRECTIONS: Record<string, string> = Object.fromEntries(
